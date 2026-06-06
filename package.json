@@ -1,0 +1,11 @@
+{
+  "name": "entviz-monorepo",
+  "private": true,
+  "description": "entviz TypeScript core + React component (npm workspace)",
+  "workspaces": [
+    "packages/core",
+    "packages/react"
+  ],
+  "license": "MIT",
+  "repository": "github:dhh1128/entviz-js"
+}

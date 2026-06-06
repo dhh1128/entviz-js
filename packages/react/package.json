@@ -1,0 +1,22 @@
+{
+  "name": "@entviz/react",
+  "version": "0.1.0",
+  "description": "React component for entviz — render a comparable SVG fingerprint of any high-entropy value.",
+  "type": "module",
+  "main": "src/Entviz.tsx",
+  "types": "src/Entviz.tsx",
+  "exports": {
+    ".": "./src/Entviz.tsx"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "dependencies": {
+    "@entviz/core": "0.1.0"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "license": "MIT",
+  "repository": "github:dhh1128/entviz-js"
+}
