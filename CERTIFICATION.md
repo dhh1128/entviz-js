@@ -1,6 +1,6 @@
 # Conformance certification — @entviz/core
 
-**Spec:** entviz v6 · **Corpus:** entviz `compliance/` · **Tiers:** A (render
+**Spec:** entviz v7 · **Corpus:** entviz `compliance/` · **Tiers:** A (render
 model) + B (canonical raster, cairosvg) · **Result:** 24/24 supported vectors.
 
 Run from the entviz repo:

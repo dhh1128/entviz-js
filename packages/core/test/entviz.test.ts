@@ -9,6 +9,7 @@ import {
   nucleusColors,
   oklabLightness,
   chooseGrid,
+  SPEC_VERSION,
 } from "../src/entviz.ts";
 
 test("tokenize hex into 24-bit quants", () => {
@@ -49,7 +50,7 @@ test("render is deterministic and stamps version", () => {
   const a = render("0123456789abcdef0123456789abcdef");
   const b = render("0123456789abcdef0123456789abcdef");
   assert.equal(a, b);
-  assert.match(a, /data-entviz-version="v6"/);
+  assert.match(a, new RegExp(`data-entviz-version="${SPEC_VERSION}"`));
   assert.match(a, /viewBox="0 0 /);
 });
 

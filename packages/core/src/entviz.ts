@@ -12,7 +12,7 @@
  */
 import { createHash } from "node:crypto";
 
-export const SPEC_VERSION = "v6";
+export const SPEC_VERSION = "v7";
 export const LIB_VERSION = "0.1.0";
 const DPI = 96;
 

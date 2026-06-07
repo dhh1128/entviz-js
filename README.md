@@ -1,7 +1,7 @@
 # entviz-js
 
 TypeScript implementation of [entviz](https://github.com/dhh1128/entviz) (spec
-**v6**) — visualize high-entropy values as comparable SVG diagrams — plus a
+**v7**) — visualize high-entropy values as comparable SVG diagrams — plus a
 React component. An npm workspace:
 
 - **`packages/core`** (`@entviz/core`) — the renderer. Pure TypeScript, runs
