@@ -1,0 +1,39 @@
+# Dependabot config for entviz-js.
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # npm dependencies across the workspace. The runtime dependency set is tiny
+  # (core has none beyond node:crypto; react has a peer on react), so this is
+  # mostly about keeping the lockfile and any dev tooling fresh and pulling in
+  # security fixes promptly. Grouped into one PR to keep review noise low.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      npm:
+        patterns:
+          - "*"
+
+  # GitHub Actions versions — node20 → node24 deprecations are exactly the
+  # class of change that bites CI (see the node24 note in CLAUDE.md). Actions
+  # are pinned by commit SHA with `# vN` comments, which Dependabot bumps
+  # alongside the SHA. Batched into one PR.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"

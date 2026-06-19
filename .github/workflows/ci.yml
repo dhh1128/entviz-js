@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Third-party actions are pinned by full commit SHA (node24-runtime versions,
+# resolved 2026-06-19). A mutable tag like @v7 can be silently retargeted;
+# Dependabot bumps the SHAs (with the `# vN` comment) weekly.
+jobs:
+  test:
+    name: node --test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Node 24 runs the TypeScript sources directly via native type-stripping;
+      # the packages ship source (no build step), so this is the same code that
+      # is published and certified.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Install (workspace, reproducible)
+        run: npm ci
+
+      - name: Test
+        run: npm test --workspaces --if-present
+
+  conformance:
+    name: spec-sync + Tier-A conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      # The entviz reference repo carries the algorithm spec, SPEC_VERSION, and
+      # the golden conformance corpus this package is certified against.
+      - name: Check out the entviz reference (spec + corpus)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          repository: dhh1128/entviz
+          path: entviz-ref
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Install the Tier-A harness (lxml only; no rasterizer needed)
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/harness
+          /tmp/harness/bin/pip install --quiet --upgrade pip
+          /tmp/harness/bin/pip install --quiet lxml
+
+      # @entviz/core ports a SUBSET of the corpus (the parsers listed in
+      # CERTIFICATION.md); the unported formats are tracked there. We certify
+      # exactly that subset at Tier A (render model) + the error-rejection
+      # vectors. No untrusted GitHub event data is interpolated (only trusted
+      # workspace paths).
+      - name: Spec-version sync check + Tier-A conformance
+        run: |
+          set -euo pipefail
+          subset='hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,err-note-too-long,err-note-space,err-note-punct,err-fontsize-low,err-fontsize-high'
+          ours=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' packages/core/src/entviz.ts)
+          ref=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' entviz-ref/src/entviz/__init__.py)
+          echo "entviz-js targets spec ${ours}; reference impl/spec is ${ref}"
+          run_conformance() {
+            ( cd entviz-ref \
+              && PYTHONPATH=src:. /tmp/harness/bin/python -m compliance.runner \
+                   --impl-cmd "node ${GITHUB_WORKSPACE}/packages/core/src/cli.ts" \
+                   --tiers A --only "${subset}" )
+          }
+          if [ "${ours}" = "${ref}" ]; then
+            echo "Spec versions match - conformance is a hard gate."
+            run_conformance
+          else
+            echo "::warning title=Spec drift::reference impl/spec is ${ref} but entviz-js targets ${ours} - an upgrade is needed"
+            if [ "${ref#v}" -gt "${ours#v}" ]; then
+              echo "Reference is AHEAD; the corpus run is informational while this package catches up."
+              run_conformance || echo "::warning title=Conformance::failed against the newer reference corpus (expected while behind)"
+            else
+              echo "This package is ahead of the reference - hard gate."
+              run_conformance
+            fi
+          fi

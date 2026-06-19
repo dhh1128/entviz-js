@@ -1,5 +1,9 @@
 # entviz-js
 
+[![CI](https://github.com/dhh1128/entviz-js/actions/workflows/ci.yml/badge.svg)](https://github.com/dhh1128/entviz-js/actions/workflows/ci.yml)
+[![npm (@entviz/core)](https://img.shields.io/npm/v/@entviz/core.svg?label=%40entviz%2Fcore)](https://www.npmjs.com/package/@entviz/core)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 TypeScript implementation of [entviz](https://github.com/dhh1128/entviz) (spec
 **v7**) — visualize high-entropy values as comparable SVG diagrams — plus a
 React component. An npm workspace:
