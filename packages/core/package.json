@@ -1,7 +1,7 @@
 {
   "name": "@entviz/core",
   "version": "0.7.1",
-  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v7) — certified against the entviz conformance corpus.",
+  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v10) — certified against the entviz conformance corpus.",
   "type": "module",
   "main": "src/entviz.ts",
   "types": "src/entviz.ts",
@@ -17,7 +17,9 @@
     "entviz-conformance": "src/cli.ts"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts"
+    "test": "npm run test:unit && npm run test:full",
+    "test:unit": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=80 'test/unit/*.test.ts'",
+    "test:full": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=95 'test/unit/*.test.ts' 'test/integration/*.test.ts'"
   },
   "engines": {
     "node": ">=22.6"

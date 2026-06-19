@@ -39,6 +39,38 @@ This repository has an established test suite. Follow strict TDD:
 3. Never commit unless all tests pass. Coverage of any code you touch
    must not decrease.
 
+### Two test suites + coverage guardrail (do not weaken)
+
+`@entviz/core` tests are split deliberately, and `npm test` runs **both gates in
+order** (`test:unit` then `test:full`); either failing fails the build, and CI
+runs the same `npm test`:
+
+- **`packages/core/test/unit/`** — pure unit tests that **must NOT call
+  `render()`**. They exercise the individual stage functions (`tokenize`,
+  `classifyInput`, `computeGeometry`, `fingerprintEdgeCells`, `drawColorBar`,
+  `drawBlankCells`, …) directly, with real assertions on their outputs.
+- **`packages/core/test/integration/`** — end-to-end `render()` tests that
+  confirm the orchestration wires the stages together.
+
+Enforced floors (Node's built-in `--test-coverage-*`):
+- **Unit suite alone:** ≥ **80 % lines** of `src/`. This is the load-bearing
+  rule: the bulk of coverage must come from real unit tests, not from
+  `render()` running end-to-end as a side effect. If you add logic to
+  `render()`, **extract it into a small exported function and unit-test that** —
+  do not let `render()`'s integration coverage paper over an untested helper.
+- **Full suite (unit + integration):** **100 % lines, 100 % functions, ≥ 95 %
+  branches** of `src/`.
+
+When you add a feature: add its unit tests first (TDD), and if it lands inside
+`render()`, extract the logic so the unit gate still clears 80 %. The remaining
+uncovered branches are a small set of provably-unreachable defensive guards
+(e.g. the `tokenizeFingerprint` ftok-count assertion, the `drawEllipse`
+degenerate-geometry guards); keep them, and keep the branch floor honest rather
+than deleting safety code to chase 100 %. The cross-language **conformance
+harness** in the sister `entviz` repo (`compliance/runner.py`, Tier A + B) is
+the authority on rendered correctness — run it after any change to the renderer
+(see `README.md` → Conformance and `CERTIFICATION.md`).
+
 ## CI and Documentation
 
 This repo has CI: `.github/workflows/ci.yml` builds and tests on every push

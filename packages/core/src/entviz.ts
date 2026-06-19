@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v6) for the
+ * A faithful port of the Python reference (docs/spec.md, v10) for the
  * short-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). Parsers ported so far: hex,
  * UUID, and the UTF-8→base64url fallback; the blockchain / CESR / SSH /
@@ -12,8 +12,8 @@
  */
 import { createHash } from "node:crypto";
 
-export const SPEC_VERSION = "v7";
-export const LIB_VERSION = "0.1.0";
+export const SPEC_VERSION = "v10";
+export const LIB_VERSION = "0.10.0";
 const DPI = 96;
 
 // ---------------------------------------------------------------------------
@@ -50,8 +50,8 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
   const tokenLen = Math.floor(24 / bits);
   const tokens: Token[] = [];
   for (let i = 0; i < text.length; i += tokenLen) {
+    // i < text.length and tokenLen >= 1, so the slice always yields ≥ 1 char.
     const chunk = text.slice(i, i + tokenLen);
-    if (!chunk) continue;
     let val = 0;
     let actualBits = 0;
     for (const ch of chunk) {
@@ -65,6 +65,9 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
       val = (val << bits) | cv;
       actualBits += bits;
     }
+    // A chunk is at most floor(24/bits) chars, so actualBits is in {bits,
+    // 2·bits, …, 24} — it can never exceed 24. Only the short-token case needs
+    // the bit-extension below; a full token already fills 24 bits.
     let quant = val;
     if (actualBits > 0 && actualBits < 24) {
       while (actualBits < 24) {
@@ -74,8 +77,6 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
         quant = (quant << shift) | add;
         actualBits += shift;
       }
-    } else if (actualBits > 24) {
-      quant = val & 0xffffff;
     }
     tokens.push({ text: chunk, index: tokens.length, quant: quant & 0xffffff });
   }
@@ -87,6 +88,20 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // ---------------------------------------------------------------------------
 export function computeFingerprint(core: string): Buffer {
   return createHash("sha512").update(core, "utf8").digest();
+}
+
+// The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
+// EVERY input (v9): it drives the two color-bar markers on all inputs (and,
+// on >512-bit inputs, the 4 fingerprint-middle cells — not yet ported here).
+// The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is
+// the fixed construction version, NOT the spec version — do not change it (see
+// docs/spec.md / this.i:b4rm4rks).
+const MIDDLE_DOMAIN_TAG = Buffer.from("entviz/fingerprint-middle/v6\0", "latin1");
+export function fingerprintMiddleDigest(core: string): Buffer {
+  return createHash("sha512")
+    .update(MIDDLE_DOMAIN_TAG)
+    .update(core, "utf8")
+    .digest();
 }
 
 export function tokenizeFingerprint(digest: Buffer): Token[] {
@@ -165,7 +180,7 @@ export function nucleusColors(quant: number): [string, string] {
   return [bg, fg];
 }
 
-function hexToRgb(h: string): [number, number, number] {
+export function hexToRgb(h: string): [number, number, number] {
   return [
     parseInt(h.slice(1, 3), 16),
     parseInt(h.slice(3, 5), 16),
@@ -173,7 +188,7 @@ function hexToRgb(h: string): [number, number, number] {
   ];
 }
 
-function weightedRgbDistance(c1: string, c2: string): number {
+export function weightedRgbDistance(c1: string, c2: string): number {
   const [r1, g1, b1] = hexToRgb(c1);
   const [r2, g2, b2] = hexToRgb(c2);
   return Math.sqrt(
@@ -318,7 +333,7 @@ export function sanitizeNote(note: string | null | undefined): string | null {
 // ---------------------------------------------------------------------------
 // Round half to EVEN (banker's rounding) — matches Python's round(), which the
 // spec's rendered-font-size rule relies on ("ties broken toward even").
-function roundHalfEven(x: number): number {
+export function roundHalfEven(x: number): number {
   const f = Math.floor(x);
   const diff = x - f;
   if (diff < 0.5) return f;
@@ -339,7 +354,7 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-class El {
+export class El {
   tag: string;
   attrs: [string, string][] = [];
   children: El[] = [];
@@ -389,6 +404,229 @@ const OVERLAY_BY_BG: Record<string, [string, number, number]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Render-stage helpers — the logic-bearing pieces of render(), extracted as
+// pure functions so they can be unit-tested in isolation (render() itself is
+// thin orchestration over these + the draw* helpers above).
+// ---------------------------------------------------------------------------
+export interface ClassifiedInput {
+  core: string;
+  typeName: string;
+  alphabet: Alphabet;
+  prefix: string | null;
+  suffix: string | null;
+}
+
+// Map a trimmed raw input to its (core, type label, alphabet, prefix, suffix)
+// via the ported parsers, falling back to UTF-8 → base64url for anything no
+// parser claims.
+export function classifyInput(rawInput: string): ClassifiedInput {
+  const parsed = parse(rawInput);
+  if (parsed === null) {
+    return {
+      core: Buffer.from(rawInput, "utf8").toString("base64url"),
+      typeName: `txt(${rawInput.length})->b64url`,
+      alphabet: BASE64URL,
+      prefix: null,
+      suffix: null,
+    };
+  }
+  const typeName = parsed.type === "hex" ? `hex(${parsed.core.length})` : parsed.type;
+  return {
+    core: parsed.core,
+    typeName,
+    alphabet: parsed.alphabet,
+    prefix: parsed.prefix,
+    suffix: parsed.suffix,
+  };
+}
+
+export interface Geometry {
+  fs: number; nucleusWidth: number; nucleusHeight: number;
+  boxWidth: number; boxHeight: number; cellWidth: number; cellHeight: number;
+  gm: number; barWidth: number; gridW: number; gridH: number;
+  boundingW: number; boundingH: number; gridLeft: number; gridTop: number;
+}
+
+// All pixel geometry, derived from the reference font size and the chosen grid
+// (see the spec's geometry section). `hasBottom` adds a bottom label strip.
+export function computeGeometry(fontSizePt: number, grid: Grid, hasBottom: boolean): Geometry {
+  const fs = (fontSizePt * DPI) / 72;
+  const nucleusWidth = fs * 3;
+  const nucleusHeight = fs * 1.25;
+  const boxWidth = nucleusWidth / 8;
+  const boxHeight = nucleusHeight / 2;
+  const cellWidth = nucleusWidth + 2 * boxWidth;
+  const cellHeight = nucleusHeight + 2 * boxHeight;
+  const gm = boxHeight / 2;
+  const barWidth = 2 * boxHeight;
+  const gridW = cellWidth * grid.cols;
+  const gridH = cellHeight * grid.rows;
+  const boundingW = 1 + barWidth + 1 + gm + gridW + gm + 1;
+  const bottomRegion = hasBottom ? nucleusHeight + gm : gm;
+  const boundingH = 1 + gm + nucleusHeight + gridH + bottomRegion + 1;
+  const gridLeft = 1 + barWidth + 1 + gm;
+  const gridTop = 1 + gm + nucleusHeight;
+  return {
+    fs, nucleusWidth, nucleusHeight, boxWidth, boxHeight, cellWidth, cellHeight,
+    gm, barWidth, gridW, gridH, boundingW, boundingH, gridLeft, gridTop,
+  };
+}
+
+// Rendered cell-text and label-text sizes in px. 4-bit alphabets (hex) render
+// their 6-char tokens at 0.75× so they fit the nucleus; 6-bit at reference.
+export function cellTextSizes(fontSizePt: number, alphabet: Alphabet): { cellTextPx: number; labelTextPx: number } {
+  const cellTextPt = alphabet.bitsPerChar === 4 ? roundHalfEven(fontSizePt * 0.75) : fontSizePt;
+  return {
+    cellTextPx: (cellTextPt * DPI) / 72,
+    labelTextPx: (roundHalfEven(fontSizePt * 0.75) * DPI) / 72,
+  };
+}
+
+// v10: the fingerprint-edge cells — top-left (grid position 0) plus the 1st/2nd
+// quartile-ftok cells — whose surround edge colour is fingerprint-driven.
+// Skipped where the target cell is blank or the quartile ftok is null.
+export function fingerprintEdgeCells(
+  quartFtoks: (Token | null)[],
+  cellIndices: Map<number, number>,
+  usedCellIndices: Set<number>,
+): Set<number> {
+  const out = new Set<number>();
+  if (usedCellIndices.has(0)) out.add(0);
+  for (const q of quartFtoks.slice(0, 2)) {
+    if (!q) continue;
+    const qci = cellIndices.get(q.index);
+    if (qci !== undefined) out.add(qci);
+  }
+  return out;
+}
+
+// minftok cell = smallest ftok quant (tie-break: highest cell index); maxftok
+// cell = largest quant (tie-break: highest cell index). Drives the blank-map.
+export function minMaxFtokCells(
+  tokens: Token[],
+  usedFtoks: Token[],
+  cellIndices: Map<number, number>,
+): { minCi: number; maxCi: number } {
+  const pairs = tokens.map((t) => ({ q: usedFtoks[t.index].quant, ci: cellIndices.get(t.index) as number }));
+  let minCi = pairs[0].ci, maxCi = pairs[0].ci, minQ = pairs[0].q, maxQ = pairs[0].q;
+  for (const p of pairs) {
+    if (p.q < minQ || (p.q === minQ && p.ci > minCi)) { minQ = p.q; minCi = p.ci; }
+    if (p.q > maxQ || (p.q === maxQ && p.ci > maxCi)) { maxQ = p.q; maxCi = p.ci; }
+  }
+  return { minCi, maxCi };
+}
+
+// Cell indices in the grid that no token landed on (row-major order).
+export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): number[] {
+  const out: number[] = [];
+  for (let ci = 0; ci < grid.cols * grid.rows; ci++) if (!usedCellIndices.has(ci)) out.push(ci);
+  return out;
+}
+
+// v10 hybrid fingerprint blank fill: the j-th *coloured* blank (in cell-index
+// order) takes edge_palette[digest[32 + j] & 0b11]. The map blank is coloured
+// only when it is the sole blank; otherwise it keeps the white/gold anchor and
+// is excluded here.
+export function blankFillColors(
+  blankIndices: number[],
+  mapCellIdx: number | null,
+  digest: Buffer,
+  edgeColors: string[],
+): Map<number, string> {
+  const soleBlank = blankIndices.length === 1;
+  const out = new Map<number, string>();
+  let j = 0;
+  for (const bi of blankIndices) {
+    if (bi === mapCellIdx && !soleBlank) continue;
+    out.set(bi, edgeColors[digest[32 + j] & 0b11]);
+    j++;
+  }
+  return out;
+}
+
+// v10: in the sole-blank case the map fill is fingerprint-coloured, so both
+// markers take the luminance-contrast colour against it (shape still carries
+// max/min). Otherwise the fixed v9 red plus / blue dot.
+export function blankMapMarkerColors(soleBlank: boolean, mapFillColor: string | undefined): { minColor: string; maxColor: string } {
+  if (soleBlank && mapFillColor) {
+    const [, mc] = nucleusColors(
+      parseInt(mapFillColor.slice(1, 3), 16) |
+        (parseInt(mapFillColor.slice(3, 5), 16) << 8) |
+        (parseInt(mapFillColor.slice(5, 7), 16) << 16),
+    );
+    return { minColor: mc, maxColor: mc };
+  }
+  return { minColor: "#1d4ed8", maxColor: "#d62828" };
+}
+
+// Draw every blank cell's rounded "pill" into its pre-created cell group, and
+// turn the lowest-indexed blank (the map blank) into a miniature grid carrying
+// the min (blue dot) and max (red plus) ftok-cell markers. Each marker's
+// data-blank-map-* attribute carries the literal "row,col" of its cell.
+export function drawBlankCells(
+  cellGroups: Map<number, El>,
+  blankIndices: number[],
+  mapCellIdx: number | null,
+  blankFillColor: Map<number, string>,
+  mapFill: string,
+  minCi: number,
+  maxCi: number,
+  grid: Grid,
+  geom: Geometry,
+): void {
+  const { gridLeft, gridTop, cellWidth, cellHeight, boxWidth, boxHeight, nucleusWidth, nucleusHeight, fs } = geom;
+  const cornerR = nucleusHeight / 2;
+  const soleBlank = blankIndices.length === 1;
+  for (const ci of blankIndices) {
+    const g = cellGroups.get(ci) as El;
+    const col = ci % grid.cols;
+    const row = Math.floor(ci / grid.cols);
+    const nx = gridLeft + col * cellWidth + boxWidth;
+    const ny = gridTop + row * cellHeight + boxHeight;
+    const isMap = ci === mapCellIdx;
+    const blankFill = isMap && !soleBlank ? mapFill : (blankFillColor.get(ci) as string);
+    g.child("rect").set("x", nx).set("y", ny)
+      .set("width", nucleusWidth).set("height", nucleusHeight)
+      .set("rx", cornerR).set("ry", cornerR)
+      .set("fill", blankFill).set("stroke", "#000000").set("stroke-width", "1");
+    if (!isMap) continue;
+    g.set("data-cell-blank-map", "true");
+    const subW = nucleusWidth / grid.cols;
+    const subH = nucleusHeight / grid.rows;
+    const dotR = nucleusHeight / 8 + fs / 16;
+    const sub = (cellIdx: number): [number, number] => [
+      nx + ((cellIdx % grid.cols) + 0.5) * subW,
+      ny + (Math.floor(cellIdx / grid.cols) + 0.5) * subH,
+    ];
+    const [maxCx, maxCy] = sub(maxCi);
+    const [minCx, minCy] = sub(minCi);
+    const maxRow = Math.floor(maxCi / grid.cols), maxCol = maxCi % grid.cols;
+    const minRow = Math.floor(minCi / grid.cols), minCol = minCi % grid.cols;
+    // Plus geometry: arms a touch longer than the dot radius, thinner stroke,
+    // so the cross reads as a distinct shape rather than a blob.
+    const plusArm = dotR * 1.2;
+    const plusW = Math.max(1.0, dotR * 0.55);
+    // v10: in the sole-blank case the map blank is fingerprint-filled, so the
+    // fixed red/blue would clash — both markers take the luminance-contrast
+    // colour against that fill. Max/min identity rides on SHAPE (plus vs dot),
+    // not hue, so this costs only the redundant colour cue.
+    const { minColor, maxColor } = blankMapMarkerColors(soleBlank, blankFillColor.get(mapCellIdx as number));
+    // minftok = blue dot (drawn first); maxftok = red plus (drawn on top, so it
+    // stays visible where both land on one cell). The SHAPE carries the max/min
+    // semantic so it survives total colour blindness (PSY-F1); each marker's
+    // data-blank-map-* attribute carries the literal "row,col" of its cell so a
+    // checker recovers the position directly, not from pixel geometry (SPEC-F2).
+    g.child("circle").set("cx", minCx).set("cy", minCy).set("r", dotR)
+      .set("fill", minColor).set("data-blank-map-min", `${minRow},${minCol}`);
+    g.child("path")
+      .set("d", `M ${n(maxCx - plusArm)},${n(maxCy)} H ${n(maxCx + plusArm)} M ${n(maxCx)},${n(maxCy - plusArm)} V ${n(maxCy + plusArm)}`)
+      .set("fill", "none").set("stroke", maxColor)
+      .set("stroke-width", String(plusW)).set("stroke-linecap", "butt")
+      .set("data-blank-map-max", `${maxRow},${maxCol}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 export interface RenderOptions {
@@ -410,24 +648,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   }
 
   const rawInput = entropy.trim();
-  const parsed = parse(rawInput);
-  let core: string;
-  let typeName: string;
-  let alphabet: Alphabet;
-  let prefix: string | null = null;
-  let suffix: string | null = null;
-  if (parsed === null) {
-    core = Buffer.from(rawInput, "utf8").toString("base64url");
-    typeName = `txt(${rawInput.length})->b64url`;
-    alphabet = BASE64URL;
-  } else {
-    core = parsed.core;
-    typeName = parsed.type;
-    alphabet = parsed.alphabet;
-    prefix = parsed.prefix;
-    suffix = parsed.suffix;
-    if (typeName === "hex") typeName = `hex(${core.length})`;
-  }
+  const { core, typeName, alphabet, prefix, suffix } = classifyInput(rawInput);
 
   // Short-input path only (this port does not yet implement the >512-bit
   // truncation branch).
@@ -448,27 +669,13 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   const cellIndices = assignCellIndices(tokens, grid, medFtok, usedFtoks);
 
   // Geometry
-  const fs = (fontSizePt * DPI) / 72;
-  const nucleusWidth = fs * 3;
-  const nucleusHeight = fs * 1.25;
-  const boxWidth = nucleusWidth / 8;
-  const boxHeight = nucleusHeight / 2;
-  const cellWidth = nucleusWidth + 2 * boxWidth;
-  const cellHeight = nucleusHeight + 2 * boxHeight;
-  const gm = boxHeight / 2;
-  const barWidth = 2 * boxHeight;
-  const gridW = cellWidth * grid.cols;
-  const gridH = cellHeight * grid.rows;
-  const boundingW = 1 + barWidth + 1 + gm + gridW + gm + 1;
   const hasBottom = Boolean(suffix) || Boolean(note);
-  const bottomRegion = hasBottom ? nucleusHeight + gm : gm;
-  const boundingH = 1 + gm + nucleusHeight + gridH + bottomRegion + 1;
-  const gridLeft = 1 + barWidth + 1 + gm;
-  const gridTop = 1 + gm + nucleusHeight;
-
-  const cellTextPt = alphabet.bitsPerChar === 4 ? roundHalfEven(fontSizePt * 0.75) : fontSizePt;
-  const cellTextPx = (cellTextPt * DPI) / 72;
-  const labelTextPx = (roundHalfEven(fontSizePt * 0.75) * DPI) / 72;
+  const geom = computeGeometry(fontSizePt, grid, hasBottom);
+  const {
+    fs, nucleusWidth, nucleusHeight, boxWidth, boxHeight, cellWidth, cellHeight,
+    barWidth, gridW, gridH, boundingW, boundingH, gridLeft, gridTop,
+  } = geom;
+  const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
 
   const digest = computeFingerprint(core);
   const digestHex = digest.toString("hex");
@@ -521,10 +728,20 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     tokenCells.push({ token, ftok: usedFtoks[token.index], ci, nx, ny, nucleusBg });
   }
 
-  // Layer 1: edges
+  // Layer 1: edges.
+  // v10: fingerprint-edge cells — the top-left cell (grid position 0) and the
+  // cells of the 1st & 2nd quartile ftoks take their surround edge colour from
+  // the fingerprint (2 low-order ftok-quant bits → edge palette) instead of the
+  // nearest-palette nucleus echo, so the surround colour avalanches to a casual
+  // glance. Skipped where the target cell is blank or the quartile ftok is null.
+  const usedCellIndices = new Set(cellIndices.values());
+  const fpEdgeCells = fingerprintEdgeCells(quartFtoks, cellIndices, usedCellIndices);
+
   const edgesG = gridG.child("g");
   for (const tc of tokenCells) {
-    const edgeColor = closestPaletteColor(tc.nucleusBg, style.edgeColors);
+    const edgeColor = fpEdgeCells.has(tc.ci)
+      ? style.edgeColors[tc.ftok.quant & 0b11]
+      : closestPaletteColor(tc.nucleusBg, style.edgeColors);
     const cellX = tc.nx - boxWidth;
     const cellY = tc.ny - boxHeight;
     for (let i = 0; i < 24; i++) {
@@ -539,7 +756,6 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   drawEllipse(gridG, digest, gridLeft, gridTop, gridW, gridH, cellWidth, cellHeight, grid, style.bgColor, clipId);
 
   // Layer 3: cell groups (created in cell-index order)
-  const usedCellIndices = new Set(cellIndices.values());
   const nucleiG = gridG.child("g");
   const cellGroups = new Map<number, El>();
   for (let ci = 0; ci < grid.cols * grid.rows; ci++) {
@@ -570,54 +786,16 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     t.text = tc.token.text;
   }
 
-  // Layer 3b: blank cells + map
-  const usedFtokCells = tokens.map((t) => ({ ftok: usedFtoks[t.index], ci: cellIndices.get(t.index) as number }));
-  let minCi = usedFtokCells[0].ci, maxCi = usedFtokCells[0].ci, minQ = usedFtokCells[0].ftok.quant, maxQ = usedFtokCells[0].ftok.quant;
-  for (const fc of usedFtokCells) {
-    // min: smallest quant; tie-break highest cell index
-    if (fc.ftok.quant < minQ || (fc.ftok.quant === minQ && fc.ci > minCi)) { minQ = fc.ftok.quant; minCi = fc.ci; }
-    // max: largest quant; tie-break highest cell index
-    if (fc.ftok.quant > maxQ || (fc.ftok.quant === maxQ && fc.ci > maxCi)) { maxQ = fc.ftok.quant; maxCi = fc.ci; }
-  }
-  const blankIndices: number[] = [];
-  for (let ci = 0; ci < grid.cols * grid.rows; ci++) if (!usedCellIndices.has(ci)) blankIndices.push(ci);
+  // Layer 3b: blank cells + map.
+  // v10 hybrid fingerprint blank fill: the map blank is fingerprint-filled only
+  // when it is the sole blank (where the casual-avalanche colour is needed),
+  // else it keeps the white/gold anchor while its siblings carry the colour.
+  const { minCi, maxCi } = minMaxFtokCells(tokens, usedFtoks, cellIndices);
+  const blankIndices = blankCellIndices(grid, usedCellIndices);
   const mapCellIdx = blankIndices.length ? Math.min(...blankIndices) : null;
-  const cornerR = nucleusHeight / 2;
   const mapFill = style.bgColor === "#ffffff" ? "#e7be00" : "#ffffff";
-  for (const ci of blankIndices) {
-    const g = cellGroups.get(ci) as El;
-    const col = ci % grid.cols;
-    const row = Math.floor(ci / grid.cols);
-    const nx = gridLeft + col * cellWidth + boxWidth;
-    const ny = gridTop + row * cellHeight + boxHeight;
-    const isMap = ci === mapCellIdx;
-    g.child("rect").set("x", nx).set("y", ny)
-      .set("width", nucleusWidth).set("height", nucleusHeight)
-      .set("rx", cornerR).set("ry", cornerR)
-      .set("fill", isMap ? mapFill : "none").set("stroke", "#000000").set("stroke-width", "1");
-    if (!isMap) continue;
-    g.set("data-cell-blank-map", "true");
-    const subW = nucleusWidth / grid.cols;
-    const subH = nucleusHeight / grid.rows;
-    const dotR = nucleusHeight / 8 + fs / 16;
-    const sub = (cellIdx: number): [number, number] => [
-      nx + ((cellIdx % grid.cols) + 0.5) * subW,
-      ny + (Math.floor(cellIdx / grid.cols) + 0.5) * subH,
-    ];
-    const [maxCx, maxCy] = sub(maxCi);
-    const [minCx, minCy] = sub(minCi);
-    if (maxCi === minCi) {
-      g.child("circle").set("cx", minCx).set("cy", minCy).set("r", dotR)
-        .set("fill", "none").set("stroke", "#1d4ed8").set("stroke-width", "1").set("data-blank-map-min", "true");
-      g.child("circle").set("cx", maxCx).set("cy", maxCy).set("r", dotR * 0.5)
-        .set("fill", "#d62828").set("data-blank-map-max", "true");
-    } else {
-      g.child("circle").set("cx", maxCx).set("cy", maxCy).set("r", dotR)
-        .set("fill", "#d62828").set("data-blank-map-max", "true");
-      g.child("circle").set("cx", minCx).set("cy", minCy).set("r", dotR)
-        .set("fill", "#1d4ed8").set("data-blank-map-min", "true");
-    }
-  }
+  const blankFillColor = blankFillColors(blankIndices, mapCellIdx, digest, style.edgeColors);
+  drawBlankCells(cellGroups, blankIndices, mapCellIdx, blankFillColor, mapFill, minCi, maxCi, grid, geom);
 
   // Layer 4: quartile marks
   const cellByIndex = new Map<number, TC>();
@@ -639,7 +817,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   });
 
   // Layer 5a: color bar
-  drawColorBar(svg, digest, style.edgeColors, barWidth, boundingH, cellTextPx);
+  drawColorBar(svg, digest, style.edgeColors, barWidth, boundingH, cellTextPx, fingerprintMiddleDigest(core));
 
   // Layer 5b: labels
   drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, typeName, prefix, suffix, labelTextPx, note);
@@ -654,13 +832,13 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   return svg.render();
 }
 
-function decodedByteLength(core: string, alphabet: Alphabet): number {
+export function decodedByteLength(core: string, alphabet: Alphabet): number {
   // Matches the spec's "decode the core under its declared alphabet" length.
   // For 4-bit (hex) that is ceil(len*4/8); for 6-bit (base64url) ceil(len*6/8).
   return Math.floor((core.length * alphabet.bitsPerChar) / 8);
 }
 
-function boxOrigin(i: number, cellX: number, cellY: number, bw: number, bh: number, nucW: number, nucH: number): [number, number] {
+export function boxOrigin(i: number, cellX: number, cellY: number, bw: number, bh: number, nucW: number, nucH: number): [number, number] {
   const nLeft = cellX + bw;
   const nTop = cellY + bh;
   const nRight = nLeft + nucW;
@@ -671,7 +849,7 @@ function boxOrigin(i: number, cellX: number, cellY: number, bw: number, bh: numb
   return [nLeft - bw, nTop + (23 - i) * bh];
 }
 
-function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nucH: number, qIdx: number, fg: string) {
+export function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nucH: number, qIdx: number, fg: string) {
   const leg = nucH / 2;
   const left = nx, top = ny, right = nx + nucW, bottom = ny + nucH;
   let pts: [number, number][];
@@ -682,7 +860,7 @@ function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nucH: num
   g.child("polygon").set("points", pts.map(([x, y]) => `${n(x)},${n(y)}`).join(" ")).set("fill", fg);
 }
 
-function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, number> {
+export function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, number> {
   const counts = [0, 0, 0, 0];
   for (const byte of digest) for (const shift of [0, 2, 4, 6]) counts[(byte >> shift) & 0x03]++;
   const m = new Map<string, number>();
@@ -690,15 +868,44 @@ function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, number> 
   return m;
 }
 
-function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number) {
+// v9: colors in each 2-bit pattern's FIRST-APPEARANCE order across the 256
+// disjoint slices of the digest (tie-break by pattern value). Decouples the
+// color-bar band *order* from the count^4 band *heights* — through v8 the order
+// was descending count, carrying no information beyond the heights.
+export function twoBitFirstAppearance(digest: Buffer, edgeColors: string[]): string[] {
+  const first = new Map<number, number>();
+  let idx = 0;
+  for (const byte of digest) {
+    for (const shift of [0, 2, 4, 6]) {
+      const pat = (byte >> shift) & 0x03;
+      if (!first.has(pat)) first.set(pat, idx);
+      idx++;
+    }
+  }
+  const order = [0, 1, 2, 3].sort(
+    (a, b) => (first.get(a) ?? 256 + a) - (first.get(b) ?? 256 + b) || a - b,
+  );
+  return order.map((p) => edgeColors[p]);
+}
+
+export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Buffer) {
   const usage = twoBitUsage(digest, edgeColors);
-  const order = new Map<string, number>();
-  edgeColors.forEach((c, i) => order.set(c, i));
+  const paletteOrder = new Map<string, number>();
+  edgeColors.forEach((c, i) => paletteOrder.set(c, i));
+  // v9: band vertical order = each 2-bit pattern's first-appearance order in the
+  // digest scan (decoupled from the count^4 heights), tie-break by palette index.
+  const bandOrder = twoBitFirstAppearance(digest, edgeColors);
+  const orderPos = new Map<string, number>();
+  bandOrder.forEach((c, i) => orderPos.set(c, i));
   const used: [string, number][] = edgeColors
     .map((c) => [c, usage.get(c) ?? 0] as [string, number])
     .filter(([, cnt]) => cnt > 0);
   if (!used.length) return;
-  used.sort((a, b) => b[1] - a[1] || (order.get(a[0]) as number) - (order.get(b[0]) as number));
+  used.sort(
+    (a, b) =>
+      (orderPos.get(a[0]) ?? bandOrder.length) - (orderPos.get(b[0]) ?? bandOrder.length) ||
+      (paletteOrder.get(a[0]) as number) - (paletteOrder.get(b[0]) as number),
+  );
   const total = used.reduce((s, [, cnt]) => s + cnt ** 4, 0);
   const barLeft = 1, barTop = 1, barHeight = boundingH - 2;
   const barCx = barLeft + barWidth / 2;
@@ -722,9 +929,32 @@ function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barWidth: n
     }
     y += h;
   });
+
+  // v9: two fixed-slot discrete CIRCLE markers ride the bar's gutters. Identity
+  // is carried by SIDE — left = second[12], right = second[13] — not shape.
+  // K = clamp(floor(bar_height/12px), 4, 16) equal slots, independent of bands.
+  // Drawn OPAQUE (white fill + ~0.75px black halo, NOT a blend mode) so they
+  // render identically across rasterizers and stay visible across a band cut.
+  const K = Math.max(4, Math.min(16, Math.floor(barHeight / 12)));
+  barG.set("data-bar-slots", String(K));
+  const slotH = barHeight / K;
+  const radius = barWidth * 0.17;
+  const inset = barWidth * 0.06;
+  const markers: [string, number][] = [
+    ["left", secondDigest[12] % K],
+    ["right", secondDigest[13] % K],
+  ];
+  for (const [side, slot] of markers) {
+    barG.set(`data-bar-marker-${side}`, String(slot));
+    const cy = barTop + (slot + 0.5) * slotH;
+    const cx = side === "left" ? barLeft + inset + radius : barLeft + barWidth - inset - radius;
+    barG.child("circle").set("cx", cx).set("cy", cy).set("r", radius)
+      .set("fill", "#ffffff").set("stroke", "#000000")
+      .set("stroke-width", "0.75").set("data-bar-marker", side);
+  }
 }
 
-function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null) {
+export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null) {
   const style = `font-family: ${FONT_FAMILY}; font-size: ${n(textPx)}px;`;
   const topG = svg.child("g").set("data-channel", "label-top");
   let restText: string;
@@ -748,17 +978,17 @@ function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: numb
   }
 }
 
-function borderLine(svg: El, x1: number, y1: number, x2: number, y2: number) {
+export function borderLine(svg: El, x1: number, y1: number, x2: number, y2: number) {
   svg.child("line").set("x1", x1).set("y1", y1).set("x2", x2).set("y2", y2)
     .set("stroke", "#808080").set("stroke-width", "1").set("shape-rendering", "crispEdges");
 }
 
-function enumerateInteriorCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
+export function enumerateInteriorCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
   const pts: [number, number][] = [];
   for (let r = 1; r < rows; r++) for (let c = 1; c < cols; c++) pts.push([ox + c * cw, oy + r * ch]);
   return pts;
 }
-function enumerateExternalCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
+export function enumerateExternalCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
   const pts: [number, number][] = [];
   for (let c = 0; c <= cols; c++) pts.push([ox + c * cw, oy]);
   for (let r = 1; r < rows; r++) { pts.push([ox, oy + r * ch]); pts.push([ox + cols * cw, oy + r * ch]); }
@@ -766,7 +996,7 @@ function enumerateExternalCorners(cols: number, rows: number, cw: number, ch: nu
   return pts;
 }
 
-function drawEllipse(gridG: El, digest: Buffer, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
+export function drawEllipse(gridG: El, digest: Buffer, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
   const cols = grid.cols, rows = grid.rows;
   const interior = (cols - 1) * (rows - 1);
   const pts = interior >= 6
