@@ -23,5 +23,8 @@
     "node": ">=22.6"
   },
   "license": "Apache-2.0",
-  "repository": "github:dhh1128/entviz-js"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dhh1128/entviz-js.git"
+  }
 }

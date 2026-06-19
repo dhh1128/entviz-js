@@ -8,7 +8,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # required for npm publish --provenance
+  id-token: write   # OIDC: lets npm exchange a short-lived token for publish
+                    # rights (Trusted Publishing) and sign provenance. No
+                    # long-lived NPM_TOKEN secret is used.
 
 # Actions pinned by node24-runtime commit SHA (resolved 2026-06-19);
 # Dependabot bumps the SHAs.
@@ -25,6 +27,11 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; ensure it regardless of
+      # which npm the Node 24 image happens to bundle.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install (reproducible)
         run: npm ci
@@ -46,12 +53,16 @@ jobs:
       - name: Test
         run: npm test --workspaces --if-present
 
+      # Publish via OIDC Trusted Publishing — no NODE_AUTH_TOKEN. npm verifies
+      # the OIDC identity against the trusted publisher registered on
+      # @entviz/core (this repo + this workflow file) and auto-attaches a
+      # provenance attestation.
+      #
       # Core only for now (chosen first-release scope). @entviz/react is held
-      # back until core is published and proven; to publish it later, add
+      # back until proven; to publish it later, add (after core, which it
+      # depends on):
       #   npm publish -w @entviz/react --provenance --access public
-      # (after core, which it depends on) — its version already tracks core in
-      # lockstep via scripts/release.mjs.
-      - name: Publish @entviz/core to npm
+      # Its version already tracks core in lockstep via scripts/release.mjs, and
+      # it would need its own trusted publisher registered on npm.
+      - name: Publish @entviz/core to npm (OIDC, with provenance)
         run: npm publish -w @entviz/core --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
