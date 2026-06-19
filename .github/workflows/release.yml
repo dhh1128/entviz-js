@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes to npm when a vX.Y.Z tag is pushed (by scripts/release.mjs).
+# Publishes to npm when a vX.Y.Z tag is pushed (by scripts/release.py).
 # The tag is the trigger; the script is the only supported way to create one.
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
       # back until proven; to publish it later, add (after core, which it
       # depends on):
       #   npm publish -w @entviz/react --provenance --access public
-      # Its version already tracks core in lockstep via scripts/release.mjs, and
+      # Its version already tracks core in lockstep via scripts/release.py, and
       # it would need its own trusted publisher registered on npm.
       - name: Publish @entviz/core to npm (OIDC, with provenance)
         run: npm publish -w @entviz/core --provenance --access public

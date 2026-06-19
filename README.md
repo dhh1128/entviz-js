@@ -77,34 +77,37 @@ the unported parsers and the v8–v10 render-model changes are tracked in
 
 ## Releasing
 
-**Versioning policy:** the release **minor tracks the entviz spec major** this
-port targets — the version is `0.<SPEC_MAJOR>.<patch>`, where `SPEC_MAJOR` is
-read from `SPEC_VERSION` in `packages/core/src/entviz.ts`. The minor is derived,
-never hand-typed: while the spec major is unchanged, releases are patch bumps
-(`0.7.0 → 0.7.1`); bumping `SPEC_VERSION` (e.g. to `"v10"` once the v8–v10
-renderer work is ported) makes the next release `0.10.0` automatically. So the
-version always advertises the spec level honestly.
+**Versioning policy** (shared across the entviz family): the release **minor
+tracks the entviz spec major** this port targets — `0.<spec-major>.x` means
+"compliant with entviz spec v`<spec-major>`", so `0.7.x` ⇒ v7 and `0.10.x` ⇒
+v10. A spec bump is a **`--minor`** release (cut it when you raise
+`SPEC_VERSION` in `packages/core/src/entviz.ts`); `--patch` covers port-only
+changes within a spec version. The script doesn't auto-derive the number, but it
+**warns** if the new minor disagrees with `SPEC_VERSION`, and if the sibling
+[entviz](https://github.com/dhh1128/entviz) reference is on a newer spec than
+this port claims — so the version stays an honest spec badge.
 
 Releases are cut by a maintainer with the human-run script (pushes to `main`
-and tags are reserved for humans — agents must not run it):
+and tags are reserved for humans — agents must not run it). Same interface as
+the sibling repos' `scripts/release.py`:
 
 ```sh
-node scripts/release.mjs                 # derive next version from SPEC_VERSION
-node scripts/release.mjs -m "…"          # ... with a custom commit message
-node scripts/release.mjs --set 1.0.0     # explicit override (escape hatch)
+python scripts/release.py                 # patch bump (default)
+python scripts/release.py -m "…"          # patch bump, custom message
+python scripts/release.py --minor -m "…"  # minor bump (e.g. a spec bump)
+python scripts/release.py --set 0.10.0    # set an explicit version
 ```
 
-It guards (on `main`, clean, in sync with origin), warns if the spec has moved
-ahead, runs the tests, bumps **both** packages in lockstep (keeping
-`@entviz/react`'s pin on `@entviz/core` exact), refreshes the lockfile, commits
-(signed off), and pushes a `vX.Y.Z` tag. The tag triggers
-`.github/workflows/release.yml`, which re-verifies the tag matches the manifest,
-runs the tests, and publishes to npm with provenance.
+It guards (on `main`, clean, in sync with origin), warns on spec drift, runs the
+tests, bumps **both** packages in lockstep (keeping `@entviz/react`'s pin on
+`@entviz/core` exact), refreshes the lockfile, commits (signed off), and pushes a
+`vX.Y.Z` tag. The tag triggers `.github/workflows/release.yml`, which re-verifies
+the tag matches the manifest, runs the tests, and publishes to npm **via OIDC
+trusted publishing** — no stored token — with provenance.
 
-The first release publishes **`@entviz/core` only**; `@entviz/react` is held
-back until core is on npm and proven (the workflow has a one-line spot to enable
-it). Publishing requires an `NPM_TOKEN` repository secret (an npm automation
-token with publish rights to the `@entviz` scope).
+The first release published **`@entviz/core` only**; `@entviz/react` is held
+back until core is proven (the workflow has a one-line spot to enable it, and it
+would need its own trusted publisher registered on npm).
 
 ## License
 

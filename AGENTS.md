@@ -43,7 +43,7 @@ This repository has an established test suite. Follow strict TDD:
 
 This repo has CI: `.github/workflows/ci.yml` builds and tests on every push
 and pull request, and runs a spec-sync + Tier-A conformance check against the
-entviz reference. Releases are cut by `scripts/release.mjs` and published by
+entviz reference. Releases are cut by `scripts/release.py` and published by
 `.github/workflows/release.yml` on a `vX.Y.Z` tag.
 
 When writing or modifying GitHub Actions workflows, always use the latest
