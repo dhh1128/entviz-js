@@ -9,16 +9,22 @@
 // dependency on @entviz/core is pinned to that exact version. @entviz/core's
 // version is the single source of truth that this script reads and bumps.
 //
+// VERSION POLICY: the MINOR component tracks the entviz spec MAJOR this port
+// targets. The version is `0.<SPEC_MAJOR>.<patch>` where SPEC_MAJOR comes from
+// SPEC_VERSION in packages/core/src/entviz.ts (e.g. "v7" -> 0.7.x). The minor
+// is therefore DERIVED, never hand-typed:
+//   * if the spec major advanced since the last release (the manifest's minor
+//     differs from SPEC_VERSION), this is a SPEC release: 0.<SPEC_MAJOR>.0;
+//   * otherwise it is a PATCH within the current spec: bump the last component.
+// So porting to v10 (bump SPEC_VERSION to "v10") makes the next release 0.10.0
+// automatically. To advance the spec major you must change SPEC_VERSION first.
+//
 // Usage:
-//   node scripts/release.mjs                       # patch bump, default message
-//   node scripts/release.mjs -m "add foo"          # patch bump, custom message
-//   node scripts/release.mjs --minor -m "new API"  # minor bump
-//   node scripts/release.mjs --major -m "rewrite"  # major bump
-//   node scripts/release.mjs --set 0.5.0 -m "..."  # set an explicit version
-//                                                  #   (must be > current, and
-//                                                  #    may not jump the major
-//                                                  #    by >1 without
-//                                                  #    --allow-major-jump)
+//   node scripts/release.mjs                       # derive next version from SPEC_VERSION
+//   node scripts/release.mjs -m "add foo"          # ... with a custom commit message
+//   node scripts/release.mjs --set 1.0.0 -m "..."  # explicit override (escape hatch;
+//                                                  #   must be > current, warns if its
+//                                                  #   minor != the spec major)
 //
 // After the tag reaches GitHub, .github/workflows/release.yml verifies the tag
 // matches the manifest version, runs the tests, and publishes to npm.
@@ -32,6 +38,7 @@ import { createInterface } from "node:readline";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_PKG = join(REPO_ROOT, "packages/core/package.json");
 const REACT_PKG = join(REPO_ROOT, "packages/react/package.json");
+const CORE_SRC = join(REPO_ROOT, "packages/core/src/entviz.ts");
 const CORE_NAME = "@entviz/core";
 
 function die(msg) {
@@ -63,22 +70,38 @@ function currentVersion() {
   return v;
 }
 
-function bump(version, part) {
-  const [major, minor, patch] = version.split(".").map(Number);
-  if (part === "major") return `${major + 1}.0.0`;
-  if (part === "minor") return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
+// The spec major this port targets, read from SPEC_VERSION (e.g. "v7" -> 7).
+function specMajor() {
+  const m = readFileSync(CORE_SRC, "utf8").match(/SPEC_VERSION\s*=\s*"v(\d+)"/);
+  if (!m) die(`Could not read SPEC_VERSION from ${relative(REPO_ROOT, CORE_SRC)}.`);
+  return Number(m[1]);
 }
 
-function parseExplicit(value, current, { allowMajorJump }) {
+function gt(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false; // equal
+}
+
+// Derive the next version from the spec major. Returns { version, kind } where
+// kind is "spec" (the spec major advanced -> reset to 0.<specMajor>.0) or
+// "patch" (still on the same spec -> bump the last component).
+function nextAuto(current, specMaj) {
+  const [major, minor, patch] = current.split(".").map(Number);
+  if (minor !== specMaj) return { version: `${major}.${specMaj}.0`, kind: "spec" };
+  return { version: `${major}.${minor}.${patch + 1}`, kind: "patch" };
+}
+
+function parseExplicit(value, current, specMaj) {
   if (!/^\d+\.\d+\.\d+$/.test(value)) die(`--set expects X.Y.Z (got ${value}).`);
   const [n, c] = [value, current].map((v) => v.split(".").map(Number));
-  const gt = n[0] > c[0] || (n[0] === c[0] && (n[1] > c[1] || (n[1] === c[1] && n[2] > c[2])));
-  if (!gt) die(`--set ${value} is not greater than current ${current}; refusing to downgrade.`);
-  if (n[0] - c[0] > 1 && !allowMajorJump) {
-    die(
-      `--set ${value} raises the major version from ${c[0]} to ${n[0]} (more than one ` +
-        `step) — almost always a typo. If intentional, re-run with --allow-major-jump.`,
+  if (!gt(n, c)) die(`--set ${value} is not greater than current ${current}; refusing to downgrade.`);
+  if (n[1] !== specMaj) {
+    console.warn(
+      `\n⚠  --set ${value} has minor ${n[1]} but the spec major is ${specMaj} ` +
+        `(SPEC_VERSION="v${specMaj}").\n   The version policy ties the minor to the ` +
+        `spec major; this override breaks that. Proceeding anyway.\n`,
     );
   }
   return value;
@@ -157,17 +180,11 @@ function prompt(question) {
 }
 
 function parseArgs(argv) {
-  const opts = { part: null, explicit: null, allowMajorJump: false, message: null };
+  const opts = { explicit: null, message: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--major" || a === "--minor" || a === "--patch") {
-      if (opts.part || opts.explicit) die("Pick only one of --major/--minor/--patch/--set.");
-      opts.part = a.slice(2);
-    } else if (a === "--set") {
-      if (opts.part || opts.explicit) die("Pick only one of --major/--minor/--patch/--set.");
+    if (a === "--set") {
       opts.explicit = argv[++i] ?? die("--set requires a version argument.");
-    } else if (a === "--allow-major-jump") {
-      opts.allowMajorJump = true;
     } else if (a === "-m") {
       opts.message = argv[++i] ?? die("-m requires a message argument.");
     } else {
@@ -180,19 +197,21 @@ function parseArgs(argv) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const old = currentVersion();
+  const specMaj = specMajor();
 
-  let newVersion, label;
+  // A "spec" release (the spec major advanced) is significant and wants a real
+  // message, like a minor/major bump; a "patch" within the spec can default.
+  let newVersion, kind;
   if (opts.explicit) {
-    newVersion = parseExplicit(opts.explicit, old, opts);
-    label = "set";
+    newVersion = parseExplicit(opts.explicit, old, specMaj);
+    kind = "set";
   } else {
-    label = opts.part ?? "patch";
-    newVersion = bump(old, label);
+    ({ version: newVersion, kind } = nextAuto(old, specMaj));
   }
 
   let message = opts.message;
   if (!message) {
-    message = label === "patch" ? "misc fixes/enhancements" : await prompt(`Commit message for ${label} release: `);
+    message = kind === "patch" ? "misc fixes/enhancements" : await prompt(`Commit message for ${kind} release (v${newVersion}): `);
     if (!message) die("Commit message cannot be empty.");
   }
 

@@ -77,13 +77,21 @@ the unported parsers and the v8–v10 render-model changes are tracked in
 
 ## Releasing
 
+**Versioning policy:** the release **minor tracks the entviz spec major** this
+port targets — the version is `0.<SPEC_MAJOR>.<patch>`, where `SPEC_MAJOR` is
+read from `SPEC_VERSION` in `packages/core/src/entviz.ts`. The minor is derived,
+never hand-typed: while the spec major is unchanged, releases are patch bumps
+(`0.7.0 → 0.7.1`); bumping `SPEC_VERSION` (e.g. to `"v10"` once the v8–v10
+renderer work is ported) makes the next release `0.10.0` automatically. So the
+version always advertises the spec level honestly.
+
 Releases are cut by a maintainer with the human-run script (pushes to `main`
 and tags are reserved for humans — agents must not run it):
 
 ```sh
-node scripts/release.mjs                 # patch bump (default)
-node scripts/release.mjs --minor -m "…"  # minor / --major / --patch
-node scripts/release.mjs --set 0.2.0     # set an explicit version
+node scripts/release.mjs                 # derive next version from SPEC_VERSION
+node scripts/release.mjs -m "…"          # ... with a custom commit message
+node scripts/release.mjs --set 1.0.0     # explicit override (escape hatch)
 ```
 
 It guards (on `main`, clean, in sync with origin), warns if the spec has moved
