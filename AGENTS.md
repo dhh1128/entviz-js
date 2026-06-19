@@ -41,11 +41,10 @@ This repository has an established test suite. Follow strict TDD:
 
 ## CI and Documentation
 
-This repo has no CI workflows. Until it does, any time you make code
-changes to the user, propose an appropriate set of GitHub actions (e.g.,
-`.github/workflows/ci.yml`) that builds and runs tests on every push and
-pull request. Propose to remove this instruction from AGENTS.md on the
-same commit.
+This repo has CI: `.github/workflows/ci.yml` builds and tests on every push
+and pull request, and runs a spec-sync + Tier-A conformance check against the
+entviz reference. Releases are cut by `scripts/release.mjs` and published by
+`.github/workflows/release.yml` on a `vX.Y.Z` tag.
 
 When writing or modifying GitHub Actions workflows, always use the latest
 stable release of each action. Avoid versions pinned to Node.js 16 or

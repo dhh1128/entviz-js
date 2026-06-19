@@ -57,6 +57,47 @@ PYTHONPATH=src:. python -m compliance.runner \
   --only 'hex-64,hex-128,…'         # the supported subset
 ```
 
+## Spec version & drift
+
+Each rendered SVG stamps the entviz spec revision it targets
+(`SPEC_VERSION` in `packages/core/src/entviz.ts`, currently **v7**). The spec
+and its reference Python impl live in the [entviz](https://github.com/dhh1128/entviz)
+repo and move independently; this port can lag. CI's `conformance` job checks
+out the reference, compares `SPEC_VERSION` against ours, and:
+
+- **versions match (or we're ahead):** runs the certified Tier-A subset as a
+  hard gate;
+- **reference is ahead:** emits a loud `::warning` ("an upgrade is needed") and
+  runs the corpus informationally — so spec drift is always visible without
+  blocking unrelated work.
+
+As of this writing the reference is at **v10** while this port targets **v7**;
+the unported parsers and the v8–v10 render-model changes are tracked in
+[`CERTIFICATION.md`](CERTIFICATION.md).
+
+## Releasing
+
+Releases are cut by a maintainer with the human-run script (pushes to `main`
+and tags are reserved for humans — agents must not run it):
+
+```sh
+node scripts/release.mjs                 # patch bump (default)
+node scripts/release.mjs --minor -m "…"  # minor / --major / --patch
+node scripts/release.mjs --set 0.2.0     # set an explicit version
+```
+
+It guards (on `main`, clean, in sync with origin), warns if the spec has moved
+ahead, runs the tests, bumps **both** packages in lockstep (keeping
+`@entviz/react`'s pin on `@entviz/core` exact), refreshes the lockfile, commits
+(signed off), and pushes a `vX.Y.Z` tag. The tag triggers
+`.github/workflows/release.yml`, which re-verifies the tag matches the manifest,
+runs the tests, and publishes to npm with provenance.
+
+The first release publishes **`@entviz/core` only**; `@entviz/react` is held
+back until core is on npm and proven (the workflow has a one-line spot to enable
+it). Publishing requires an `NPM_TOKEN` repository secret (an npm automation
+token with publish rights to the `@entviz` scope).
+
 ## License
 
 [Apache License 2.0](LICENSE). See also [`NOTICE`](NOTICE).

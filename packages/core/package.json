@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/entviz.ts"
   },
+  "files": ["src", "LICENSE", "NOTICE"],
   "bin": {
     "entviz-conformance": "src/cli.ts"
   },

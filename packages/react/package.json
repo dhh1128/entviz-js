@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/Entviz.tsx"
   },
+  "files": ["src", "LICENSE", "NOTICE"],
   "peerDependencies": {
     "react": ">=17"
   },
