@@ -1,7 +1,7 @@
 {
   "name": "@entviz/core",
   "version": "0.1.0",
-  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v6) — certified against the entviz conformance corpus.",
+  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v7) — certified against the entviz conformance corpus.",
   "type": "module",
   "main": "src/entviz.ts",
   "types": "src/entviz.ts",
@@ -18,6 +18,6 @@
     "node": ">=22.6"
   },
   "keywords": ["entviz", "entropy", "fingerprint", "svg", "visualization"],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": "github:dhh1128/entviz-js"
 }

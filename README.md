@@ -55,4 +55,4 @@ PYTHONPATH=src:. python -m compliance.runner \
 
 ## License
 
-MIT.
+[Apache License 2.0](LICENSE). See also [`NOTICE`](NOTICE).

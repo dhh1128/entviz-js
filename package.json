@@ -6,6 +6,6 @@
     "packages/core",
     "packages/react"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": "github:dhh1128/entviz-js"
 }
