@@ -11,9 +11,18 @@
  * build step required.
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { keccak256Hex } from "./keccak.ts";
 
 export const SPEC_VERSION = "v10";
-export const LIB_VERSION = "0.10.0";
+// Read the published version straight from package.json so the data-entviz-lib
+// stamp can never drift from the release. release.py bumps only package.json;
+// duplicating the version as a literal here would silently go stale on every
+// release (the value would lie about which build produced an SVG).
+const PKG = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
+export const LIB_VERSION = PKG.version;
 const DPI = 96;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +95,11 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // ---------------------------------------------------------------------------
 // Fingerprint
 // ---------------------------------------------------------------------------
+// LOAD-BEARING: the fingerprint hashes the core's UTF-8 TEXT, not its decoded
+// bytes. This is a spec invariant (docs/spec.md) and is what makes a hex string
+// and its byte-equal-but-differently-cased twin fingerprint the same after the
+// parser has normalized case. Do NOT "optimize" this to hash decoded bytes —
+// that silently re-keys every pre-existing entviz.
 export function computeFingerprint(core: string): Buffer {
   return createHash("sha512").update(core, "utf8").digest();
 }
@@ -214,6 +228,11 @@ export interface VisualStyle {
   edgeColors: string[];
 }
 export function selectVisualStyle(medianFtok: Token): VisualStyle {
+  // `& 0x03` maps the median quant to one of the FIRST FOUR palette colors, so
+  // the background is always one of {white, gold, red, blue} and NEVER index 4
+  // (#000000 / black). Keeping black off the background is a spec MUST (black is
+  // reserved as an edge color for maximum contrast). Do NOT change this mask to
+  // `% 5` — that would let black become the background, a silent spec violation.
   const idx = medianFtok.quant & 0x03;
   const bgColor = POSSIBLE_EDGE_COLORS[idx];
   const edgeColors = POSSIBLE_EDGE_COLORS.filter((_, i) => i !== idx);
@@ -294,8 +313,51 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
 const UUID_DASHED_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const UUID_PLAIN_RE = /^[0-9a-fA-F]{32}$/;
+const ETHEREUM_RE = /^(0[xX])?([0-9a-fA-F]{40})$/;
+
+// EIP-55: throw if `body` (40 hex chars, mixed case) disagrees with the
+// canonical checksum case derived from keccak256(lower(body)). Rejecting —
+// rather than silently rendering — is a spec MUST (docs/spec.md "Ethereum
+// (EIP-55) case validation"): a corrupted address must fail closed, not render
+// a plausible-but-wrong entviz that looks like a different valid address.
+function validateEip55(body: string): void {
+  const digestHex = keccak256Hex(Buffer.from(body.toLowerCase(), "ascii"));
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (!/[a-zA-Z]/.test(c)) continue;
+    const canonicalUpper = parseInt(digestHex[i], 16) >= 8;
+    const expected = canonicalUpper ? c.toUpperCase() : c.toLowerCase();
+    if (c !== expected) {
+      throw new Error(
+        `EIP-55 checksum mismatch at position ${i}: '${c}' should be '${expected}'`,
+      );
+    }
+  }
+}
+
+// Recognize an Ethereum address. Recognition requires either an explicit
+// 0x/0X prefix on a 40-hex body, OR EIP-55-style mixed case on a bare 40-hex
+// body. A bare single-case 40-hex string falls through to plain hex ("0x" is a
+// generic hex prefix predating Ethereum, and length-40 alone is too weak a
+// signal). Mixed case — with or without prefix — asserts EIP-55, so the
+// checksum is validated and a bad one is rejected. The parsed core is always
+// the lowercase body; the EIP-55 case is a checksum, not part of the value.
+function parseEthereum(raw: string): Parsed | null {
+  const m = raw.match(ETHEREUM_RE);
+  if (m === null) return null;
+  const hasPrefix = Boolean(m[1]);
+  const body = m[2];
+  const letters = [...body].filter((c) => /[a-zA-Z]/.test(c));
+  const isMixed =
+    letters.some((c) => c >= "a" && c <= "z") && letters.some((c) => c >= "A" && c <= "Z");
+  if (!hasPrefix && !isMixed) return null; // bare single-case 40-hex -> plain hex
+  if (isMixed) validateEip55(body); // throws on a bad checksum
+  return { type: "ETH", core: body.toLowerCase(), alphabet: HEX, prefix: "0x", suffix: null };
+}
 
 export function parse(raw: string): Parsed | null {
+  const eth = parseEthereum(raw);
+  if (eth !== null) return eth;
   if (UUID_DASHED_RE.test(raw)) {
     return {
       type: "UUID",
