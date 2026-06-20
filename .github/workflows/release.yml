@@ -6,21 +6,39 @@ on:
   push:
     tags: ["v*"]
 
+# Least privilege at the top: only the publish job that performs the OIDC
+# exchange gets id-token:write (see the job-level permissions below).
 permissions:
   contents: read
-  id-token: write   # OIDC: lets npm exchange a short-lived token for publish
-                    # rights (Trusted Publishing) and sign provenance. No
-                    # long-lived NPM_TOKEN secret is used.
+
+# Two tags pushed close together must not race to publish the same package.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 # Actions pinned by node24-runtime commit SHA (resolved 2026-06-19);
 # Dependabot bumps the SHAs.
 jobs:
   publish:
-    name: verify + test + publish
+    name: verify + gate + publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # OIDC: lets npm exchange a short-lived token for publish
+                        # rights (Trusted Publishing) and sign provenance. No
+                        # long-lived NPM_TOKEN secret is used.
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          persist-credentials: false
+
+      # The entviz reference repo carries the spec, SPEC_VERSION, and the golden
+      # conformance corpus the release is gated against.
+      - name: Check out the entviz reference (spec + corpus)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          repository: dhh1128/entviz
+          path: entviz-ref
           persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
@@ -28,10 +46,10 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # Trusted Publishing (OIDC) needs npm >= 11.5.1; ensure it regardless of
-      # which npm the Node 24 image happens to bundle.
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1. Pin the version (not
+      # @latest) so the publish environment is reproducible.
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.5.1
 
       - name: Install (reproducible)
         run: npm ci
@@ -50,8 +68,38 @@ jobs:
             exit 1
           fi
 
+      # The full test + coverage gate — the release path must not ship around it.
       - name: Test
         run: npm test --workspaces --if-present
+
+      # Fail the release on a known high/critical advisory (same gate as CI).
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      # Tier-A conformance against the reference corpus — a release must not ship
+      # a crate that diverges from the spec. Mirrors ci.yml's conformance job.
+      - name: Install the Tier-A harness (lxml only; no rasterizer needed)
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/harness
+          /tmp/harness/bin/pip install --quiet --upgrade pip
+          /tmp/harness/bin/pip install --quiet lxml
+
+      - name: Tier-A conformance (certified subset)
+        run: |
+          set -euo pipefail
+          subset='hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-space,err-note-punct,err-fontsize-low,err-fontsize-high'
+          ours=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' packages/core/src/entviz.ts)
+          ref=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' entviz-ref/src/entviz/__init__.py)
+          echo "entviz-js targets spec ${ours}; reference impl/spec is ${ref}"
+          if [ "${ours}" != "${ref}" ]; then
+            echo "::error title=Spec drift::refusing to release — entviz-js targets ${ours} but the reference is ${ref}"
+            exit 1
+          fi
+          ( cd entviz-ref \
+            && PYTHONPATH=src:. /tmp/harness/bin/python -m compliance.runner \
+                 --impl-cmd "node ${GITHUB_WORKSPACE}/packages/core/src/cli.ts" \
+                 --tiers A --only "${subset}" )
 
       # Publish via OIDC Trusted Publishing — no NODE_AUTH_TOKEN. npm verifies
       # the OIDC identity against the trusted publisher registered on

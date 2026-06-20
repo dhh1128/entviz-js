@@ -11,9 +11,18 @@
  * build step required.
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { keccak256Hex } from "./keccak.ts";
 
 export const SPEC_VERSION = "v10";
-export const LIB_VERSION = "0.10.0";
+// Read the published version straight from package.json so the data-entviz-lib
+// stamp can never drift from the release. release.py bumps only package.json;
+// duplicating the version as a literal here would silently go stale on every
+// release (the value would lie about which build produced an SVG).
+const PKG = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
+export const LIB_VERSION = PKG.version;
 const DPI = 96;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +95,11 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // ---------------------------------------------------------------------------
 // Fingerprint
 // ---------------------------------------------------------------------------
+// LOAD-BEARING: the fingerprint hashes the core's UTF-8 TEXT, not its decoded
+// bytes. This is a spec invariant (docs/spec.md) and is what makes a hex string
+// and its byte-equal-but-differently-cased twin fingerprint the same after the
+// parser has normalized case. Do NOT "optimize" this to hash decoded bytes —
+// that silently re-keys every pre-existing entviz.
 export function computeFingerprint(core: string): Buffer {
   return createHash("sha512").update(core, "utf8").digest();
 }
@@ -93,9 +107,12 @@ export function computeFingerprint(core: string): Buffer {
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
 // EVERY input (v9): it drives the two color-bar markers on all inputs (and,
 // on >512-bit inputs, the 4 fingerprint-middle cells — not yet ported here).
-// The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is
-// the fixed construction version, NOT the spec version — do not change it (see
-// docs/spec.md / this.i:b4rm4rks).
+// The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is a
+// fixed construction version, NOT the spec version. It is FROZEN: changing it
+// re-keys the fingerprint-middle digest of every input, so it MUST NOT be
+// bumped when the spec version changes. The normative definition lives in the
+// entviz reference repo's docs/spec.md (this is a port; there is no this.i
+// here).
 const MIDDLE_DOMAIN_TAG = Buffer.from("entviz/fingerprint-middle/v6\0", "latin1");
 export function fingerprintMiddleDigest(core: string): Buffer {
   return createHash("sha512")
@@ -214,6 +231,11 @@ export interface VisualStyle {
   edgeColors: string[];
 }
 export function selectVisualStyle(medianFtok: Token): VisualStyle {
+  // `& 0x03` maps the median quant to one of the FIRST FOUR palette colors, so
+  // the background is always one of {white, gold, red, blue} and NEVER index 4
+  // (#000000 / black). Keeping black off the background is a spec MUST (black is
+  // reserved as an edge color for maximum contrast). Do NOT change this mask to
+  // `% 5` — that would let black become the background, a silent spec violation.
   const idx = medianFtok.quant & 0x03;
   const bgColor = POSSIBLE_EDGE_COLORS[idx];
   const edgeColors = POSSIBLE_EDGE_COLORS.filter((_, i) => i !== idx);
@@ -294,8 +316,51 @@ const HEX_RE = /^[0-9a-fA-F]+$/;
 const UUID_DASHED_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const UUID_PLAIN_RE = /^[0-9a-fA-F]{32}$/;
+const ETHEREUM_RE = /^(0[xX])?([0-9a-fA-F]{40})$/;
+
+// EIP-55: throw if `body` (40 hex chars, mixed case) disagrees with the
+// canonical checksum case derived from keccak256(lower(body)). Rejecting —
+// rather than silently rendering — is a spec MUST (docs/spec.md "Ethereum
+// (EIP-55) case validation"): a corrupted address must fail closed, not render
+// a plausible-but-wrong entviz that looks like a different valid address.
+function validateEip55(body: string): void {
+  const digestHex = keccak256Hex(Buffer.from(body.toLowerCase(), "ascii"));
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (!/[a-zA-Z]/.test(c)) continue;
+    const canonicalUpper = parseInt(digestHex[i], 16) >= 8;
+    const expected = canonicalUpper ? c.toUpperCase() : c.toLowerCase();
+    if (c !== expected) {
+      throw new Error(
+        `EIP-55 checksum mismatch at position ${i}: '${c}' should be '${expected}'`,
+      );
+    }
+  }
+}
+
+// Recognize an Ethereum address. Recognition requires either an explicit
+// 0x/0X prefix on a 40-hex body, OR EIP-55-style mixed case on a bare 40-hex
+// body. A bare single-case 40-hex string falls through to plain hex ("0x" is a
+// generic hex prefix predating Ethereum, and length-40 alone is too weak a
+// signal). Mixed case — with or without prefix — asserts EIP-55, so the
+// checksum is validated and a bad one is rejected. The parsed core is always
+// the lowercase body; the EIP-55 case is a checksum, not part of the value.
+function parseEthereum(raw: string): Parsed | null {
+  const m = raw.match(ETHEREUM_RE);
+  if (m === null) return null;
+  const hasPrefix = Boolean(m[1]);
+  const body = m[2];
+  const letters = [...body].filter((c) => /[a-zA-Z]/.test(c));
+  const isMixed =
+    letters.some((c) => c >= "a" && c <= "z") && letters.some((c) => c >= "A" && c <= "Z");
+  if (!hasPrefix && !isMixed) return null; // bare single-case 40-hex -> plain hex
+  if (isMixed) validateEip55(body); // throws on a bad checksum
+  return { type: "ETH", core: body.toLowerCase(), alphabet: HEX, prefix: "0x", suffix: null };
+}
 
 export function parse(raw: string): Parsed | null {
+  const eth = parseEthereum(raw);
+  if (eth !== null) return eth;
   if (UUID_DASHED_RE.test(raw)) {
     return {
       type: "UUID",
@@ -422,6 +487,14 @@ export interface ClassifiedInput {
 export function classifyInput(rawInput: string): ClassifiedInput {
   const parsed = parse(rawInput);
   if (parsed === null) {
+    // SEC-F1: cap on the cheap BYTE LENGTH before allocating the base64url
+    // encoding. Anything over 64 bytes is the not-yet-ported >512-bit path and
+    // is rejected anyway; converting first would let a multi-megabyte input
+    // allocate a ~1.33× base64 string before that rejection — an avoidable DoS
+    // amplifier. Buffer.byteLength measures without materializing the encoding.
+    if (Buffer.byteLength(rawInput, "utf8") > 64) {
+      throw new Error("large-input (>512-bit) path not yet ported in entviz-js");
+    }
     return {
       core: Buffer.from(rawInput, "utf8").toString("base64url"),
       typeName: `txt(${rawInput.length})->b64url`,
@@ -921,6 +994,11 @@ export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barW
     if (letter !== undefined) {
       const r = parseInt(color.slice(1, 3), 16), gg = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
       const [, fg] = nucleusColors(r | (gg << 8) | (b << 16));
+      // PSY-JS-F2: the letter is bottom-anchored (baseline 0.22·font above the
+      // band's lower edge). On a very short band (height < ~0.78·font, ~0.09% of
+      // inputs) the glyph top bleeds above the band — an accepted design choice:
+      // the band COLOR is the primary channel and the letter is a redundant cue,
+      // and this matches the Python reference's layout exactly.
       const baselineY = y + h - 0.22 * cellTextPx;
       const t = bandG.child("text").set("x", barCx).set("y", baselineY).set("fill", fg)
         .set("style", `font-family: ${FONT_FAMILY}; font-size: ${n(cellTextPx)}px;`)

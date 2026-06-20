@@ -75,3 +75,38 @@ test("render: out-of-range font size and aspect ratio are rejected", () => {
 test("render: a >512-bit input rejects (large-input path not yet ported)", () => {
   assert.throws(() => render("a".repeat(130)), /large-input/); // 65 bytes
 });
+
+// TST-F4: whitespace-only input and the byte-length boundary on the fallback.
+test("render: whitespace-only input produces no tokens and is rejected", () => {
+  assert.throws(() => render("   "), /No tokens/);
+  assert.throws(() => render("\t\n "), /No tokens/);
+});
+
+test("render: the fallback byte-length boundary is exactly 64 bytes", () => {
+  // 'z' is non-hex, so these take the UTF-8 -> base64url fallback. 64 bytes is
+  // the largest short-path input; 65 must reject (SEC-F1 guards this cheaply).
+  assert.match(render("z".repeat(64)), /^<svg/);
+  assert.throws(() => render("z".repeat(65)), /large-input/);
+});
+
+// SEC-F2: SVG/HTML-hostile entropy must never reach the output unescaped. Raw
+// input goes through the base64url fallback (not echoed), and any derived text
+// is XML-escaped — so a markup-injection attempt produces a safe, well-formed
+// document with no live `<script>`/event-handler tags.
+test("render: SVG-hostile entropy is neutralized (no raw injected markup)", () => {
+  const svg = render('</svg><script>alert(1)</script>&"');
+  // Plain substring checks (case-insensitive), not tag-filtering regexes: the
+  // injected markup and payload must not appear anywhere in the output.
+  const lower = svg.toLowerCase();
+  assert.ok(!lower.includes("<script"));
+  assert.ok(!svg.includes("alert(1)"));
+  assert.ok(svg.startsWith("<svg") && svg.endsWith("</svg>"));
+});
+
+// PSY-JS-F5: the spec's oral-readout requirement leans on a monospace font
+// chain; assert it is actually emitted (quotes are XML-escaped in the attr).
+test("render: the monospace font chain is emitted for cell text", () => {
+  const svg = render("The quick brown fox jumps over the lazy dog");
+  assert.match(svg, /&quot;JetBrains Mono&quot;/);
+  assert.match(svg, /monospace/);
+});
