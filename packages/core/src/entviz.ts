@@ -107,9 +107,12 @@ export function computeFingerprint(core: string): Buffer {
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
 // EVERY input (v9): it drives the two color-bar markers on all inputs (and,
 // on >512-bit inputs, the 4 fingerprint-middle cells — not yet ported here).
-// The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is
-// the fixed construction version, NOT the spec version — do not change it (see
-// docs/spec.md / this.i:b4rm4rks).
+// The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is a
+// fixed construction version, NOT the spec version. It is FROZEN: changing it
+// re-keys the fingerprint-middle digest of every input, so it MUST NOT be
+// bumped when the spec version changes. The normative definition lives in the
+// entviz reference repo's docs/spec.md (this is a port; there is no this.i
+// here).
 const MIDDLE_DOMAIN_TAG = Buffer.from("entviz/fingerprint-middle/v6\0", "latin1");
 export function fingerprintMiddleDigest(core: string): Buffer {
   return createHash("sha512")
@@ -484,6 +487,14 @@ export interface ClassifiedInput {
 export function classifyInput(rawInput: string): ClassifiedInput {
   const parsed = parse(rawInput);
   if (parsed === null) {
+    // SEC-F1: cap on the cheap BYTE LENGTH before allocating the base64url
+    // encoding. Anything over 64 bytes is the not-yet-ported >512-bit path and
+    // is rejected anyway; converting first would let a multi-megabyte input
+    // allocate a ~1.33× base64 string before that rejection — an avoidable DoS
+    // amplifier. Buffer.byteLength measures without materializing the encoding.
+    if (Buffer.byteLength(rawInput, "utf8") > 64) {
+      throw new Error("large-input (>512-bit) path not yet ported in entviz-js");
+    }
     return {
       core: Buffer.from(rawInput, "utf8").toString("base64url"),
       typeName: `txt(${rawInput.length})->b64url`,
@@ -983,6 +994,11 @@ export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barW
     if (letter !== undefined) {
       const r = parseInt(color.slice(1, 3), 16), gg = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
       const [, fg] = nucleusColors(r | (gg << 8) | (b << 16));
+      // PSY-JS-F2: the letter is bottom-anchored (baseline 0.22·font above the
+      // band's lower edge). On a very short band (height < ~0.78·font, ~0.09% of
+      // inputs) the glyph top bleeds above the band — an accepted design choice:
+      // the band COLOR is the primary channel and the letter is a redundant cue,
+      // and this matches the Python reference's layout exactly.
       const baselineY = y + h - 0.22 * cellTextPx;
       const t = bandG.child("text").set("x", barCx).set("y", baselineY).set("fill", fg)
         .set("style", `font-family: ${FONT_FAMILY}; font-size: ${n(cellTextPx)}px;`)

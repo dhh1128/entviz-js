@@ -25,7 +25,7 @@ The Light-mode checks above apply in full review too. Plus:
   2. Have a **user-friendly message** — complete sentence, plain language, no all-caps, no exclamation, no raw stack trace or exception class name.
   3. Indicate **whether retry might succeed** — explicitly via a field (`retryable`, `transient`/`permanent`) or implicitly via a correctly chosen status code (503 vs 400, 429 vs 422). Flag generic 500s for client errors and client-blamed codes for server-side failures.
 - **Hardcoded user-visible strings.** Error text, notifications, email bodies, UI labels as literal strings rather than symbolic IDs resolved by a localization layer. If the project routes any strings through l10n, hardcoded ones are violations.
-- **Unmarked tech debt.** Required format: `// TECH_DEBT: <name> [TICKET-NNN]`. Ticket required for cross-module, performance, or security impact; omittable for small local cleanup. Bare TODO/FIXME/HACK is a finding.
+- **Unmarked tech debt.** Required format: `// TECH_DEBT: <name> [~<tick-id>]`, where `~<tick-id>` is a mark in this repo's local `tick` ledger (see AGENTS.md — this project tracks tech debt with `tick`, **not** external tickets). A tick mark is required for cross-module, performance, or security impact; omittable for small local cleanup. Bare TODO/FIXME/HACK is a finding.
 - **Commented-out code.** Disabled blocks left in place. VCS history is the archive; delete.
 - **Code health in regions the diff touches** — duplication near the change, misleading names, methods doing too much, magic numbers, dead code.
 - **New dependencies** in `pom.xml`, `pyproject.toml`, `package.json`, `requirements*.txt`. Note license, maintenance, smaller-alternative-in-project.

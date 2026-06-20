@@ -18,17 +18,22 @@ export interface EntvizProps {
   /** Extra props applied to the wrapping element (className, style, …). */
   className?: string;
   style?: React.CSSProperties;
-  /** Accessible label; defaults to a generic description. */
+  /** Accessible label; defaults to a description that includes the note. */
   title?: string;
   /** Called with the error message if rendering throws (e.g. bad note). */
   onError?: (message: string) => void;
 }
 
 /**
- * Renders the entviz inline (dangerouslySetInnerHTML is safe here: the SVG is
- * produced entirely by our own renderer, which escapes all text content, and
- * never embeds caller markup). The root <svg> carries a viewBox, so the entviz
- * scales responsively to the wrapper's width.
+ * Renders the entviz inline. Injecting the SVG as raw HTML is safe ONLY because
+ * the markup is produced entirely by @entviz/core: it emits a fixed set of SVG
+ * shapes with numeric attributes, XML-escapes every text node (the type label
+ * and the user note), and never interpolates caller-supplied markup, URLs, or
+ * event-handler attributes. The `value`/`note` props are escaped by the
+ * renderer, not trusted here. If this component is ever changed to embed
+ * caller-provided markup, this injection MUST be reconsidered (sanitize, or drop
+ * it) — that would reintroduce an XSS vector this wrapper currently does not
+ * have. The root <svg> carries a viewBox, so the entviz scales responsively.
  */
 export function Entviz(props: EntvizProps): React.ReactElement {
   const { value, targetAr, fontSizePt, note, className, style, title, onError } = props;
@@ -43,14 +48,24 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     }
   }, [value, targetAr, fontSizePt, note, onError]);
 
+  // PSY-JS-F3: fold the note into the default accessible label so a screen
+  // reader conveys the caption a sighted user sees in the bottom strip. An
+  // explicit `title` still wins.
+  const defaultLabel = note ? `entviz fingerprint, note ${note}` : "entviz fingerprint";
+
   if (svg === null) {
-    return React.createElement("span", { className, style, role: "img", "aria-label": title ?? "entviz (render error)" });
+    return React.createElement("span", {
+      className,
+      style,
+      role: "img",
+      "aria-label": title ?? "entviz (render error)",
+    });
   }
   return React.createElement("span", {
     className,
     style,
     role: "img",
-    "aria-label": title ?? "entviz fingerprint",
+    "aria-label": title ?? defaultLabel,
     dangerouslySetInnerHTML: { __html: svg },
   });
 }
