@@ -95,8 +95,11 @@ test("render: the fallback byte-length boundary is exactly 64 bytes", () => {
 // document with no live `<script>`/event-handler tags.
 test("render: SVG-hostile entropy is neutralized (no raw injected markup)", () => {
   const svg = render('</svg><script>alert(1)</script>&"');
-  assert.doesNotMatch(svg, /<script>/);
-  assert.doesNotMatch(svg, /<\/svg><script/);
+  // Plain substring checks (case-insensitive), not tag-filtering regexes: the
+  // injected markup and payload must not appear anywhere in the output.
+  const lower = svg.toLowerCase();
+  assert.ok(!lower.includes("<script"));
+  assert.ok(!svg.includes("alert(1)"));
   assert.ok(svg.startsWith("<svg") && svg.endsWith("</svg>"));
 });
 

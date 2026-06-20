@@ -48,5 +48,6 @@ for (const [input, opts] of DETERMINISM_CASES) {
 test("version stamp: data-entviz-lib equals package.json version", () => {
   assert.equal(LIB_VERSION, pkg.version);
   const svg = render("0123456789abcdef0123456789abcdef");
-  assert.match(svg, new RegExp(`data-entviz-lib="${pkg.version.replace(/\./g, "\\.")}"`));
+  // Plain substring check (no RegExp built from a version string).
+  assert.ok(svg.includes(`data-entviz-lib="${pkg.version}"`));
 });
