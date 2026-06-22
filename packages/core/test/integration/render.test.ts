@@ -43,6 +43,48 @@ test("render: v8 blank-map markers carry row,col; max is a plus path", () => {
   assert.match(svg, /<path[^>]*data-blank-map-max="\d+,\d+"/);
 });
 
+// v10 surround collapse: each filled cell DECLARES its 24-bit surround pattern
+// as data-surround-bits (hex), plus data-edge-color when bits != 0. The boxes
+// are drawn as one <path> per cell in the surround layer (one 'M' subpath per
+// set box). The declared popcount must equal the total subpath count.
+test("render: filled cells declare surround bits + edge color, path subpaths match popcount", () => {
+  const svg = render(
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  );
+
+  // (a) every cell group's data-surround-bits parses as hex, and
+  //     data-edge-color is present iff bits != 0.
+  let totalBits = 0;
+  let sawCell = false;
+  for (const m of svg.matchAll(/<g\b[^>]*data-channel="cell"[^>]*>/g)) {
+    sawCell = true;
+    const tag = m[0];
+    const bitsAttr = tag.match(/data-surround-bits="(0x[0-9a-f]+)"/);
+    if (!bitsAttr) continue;
+    const bits = Number.parseInt(bitsAttr[1], 16);
+    assert.ok(Number.isFinite(bits), `unparseable surround bits in ${tag}`);
+    let pop = 0;
+    for (let b = bits; b; b >>>= 1) pop += b & 1;
+    totalBits += pop;
+    const hasEdge = /data-edge-color="/.test(tag);
+    assert.equal(hasEdge, bits !== 0, `data-edge-color present iff bits != 0: ${tag}`);
+  }
+  assert.ok(sawCell, "no cell groups found");
+  assert.ok(totalBits > 0, "no surround bits set");
+
+  // (b) the surround paths' 'M' subpath count equals the total popcount. The
+  //     surround paths are the <path fill> tags with no data-blank-map-* attr.
+  let totalSubpaths = 0;
+  for (const m of svg.matchAll(/<path\b[^>]*>/g)) {
+    const tag = m[0];
+    if (tag.includes("data-blank-map-")) continue;
+    const d = tag.match(/\bd="([^"]*)"/);
+    if (!d) continue;
+    totalSubpaths += (d[1].match(/M/g) ?? []).length;
+  }
+  assert.equal(totalSubpaths, totalBits, "surround path subpaths must equal declared popcount");
+});
+
 test("render: a user note renders in the bottom strip", () => {
   const svg = render("a1b2c3d4", { note: "git" });
   assert.match(svg, /data-user-note="git"/);
