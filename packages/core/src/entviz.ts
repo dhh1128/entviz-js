@@ -823,6 +823,15 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   const usedCellIndices = new Set(cellIndices.values());
   const fpEdgeCells = fingerprintEdgeCells(quartFtoks, cellIndices, usedCellIndices);
 
+  // v10: a filled cell's 24-bit surround pattern is emitted as ONE <path> (one
+  // subpath per set box) instead of one <rect> per box — repeated box rects were
+  // ~a third of a dense entviz. The bit pattern + edge color are DECLARED on the
+  // cell GROUP below (data-surround-bits / data-edge-color), so a checker
+  // recovers the channel from the attribute, not the box geometry; this path is
+  // purely pixels. The path MUST stay in this surround layer (painted before the
+  // cell groups and the ellipse overlay) so paint order is preserved (the
+  // overlay composites over the boxes exactly as before).
+  const surroundByCell = new Map<number, { bits: number; edgeColor: string }>();
   const edgesG = gridG.child("g");
   for (const tc of tokenCells) {
     const edgeColor = fpEdgeCells.has(tc.ci)
@@ -830,12 +839,16 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
       : closestPaletteColor(tc.nucleusBg, style.edgeColors);
     const cellX = tc.nx - boxWidth;
     const cellY = tc.ny - boxHeight;
+    let bits = 0;
+    let d = "";
     for (let i = 0; i < 24; i++) {
       if (!((tc.ftok.quant >> i) & 1)) continue;
+      bits |= 1 << i;
       const [ox, oy] = boxOrigin(i, cellX, cellY, boxWidth, boxHeight, nucleusWidth, nucleusHeight);
-      edgesG.child("rect").set("x", ox).set("y", oy)
-        .set("width", boxWidth).set("height", boxHeight).set("fill", edgeColor);
+      d += `M${n(ox)} ${n(oy)}h${n(boxWidth)}v${n(boxHeight)}h-${n(boxWidth)}z`;
     }
+    if (d) edgesG.child("path").set("fill", edgeColor).set("d", d);
+    surroundByCell.set(tc.ci, { bits: bits >>> 0, edgeColor });
   }
 
   // Layer 2: ellipse overlay
@@ -853,6 +866,15 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
       .set("data-cell-row", row)
       .set("data-cell-col", col);
     if (!usedCellIndices.has(ci)) g.set("data-cell-blank", "true");
+    // v10: a filled cell declares its surround channel here (hex bit pattern +
+    // edge color); the boxes themselves were drawn as a path in the surround
+    // layer above. data-edge-color is omitted when no box is set (edge color is
+    // then undefined, matching the render model).
+    const surround = surroundByCell.get(ci);
+    if (surround) {
+      g.set("data-surround-bits", `0x${surround.bits.toString(16)}`);
+      if (surround.bits) g.set("data-edge-color", surround.edgeColor);
+    }
     cellGroups.set(ci, g);
   }
 
