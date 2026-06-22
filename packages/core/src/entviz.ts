@@ -407,9 +407,17 @@ export function roundHalfEven(x: number): number {
 }
 
 function n(x: number): string {
-  // Match no particular formatting; the conformance equivalence relation
-  // ignores numeric formatting that denotes the same value.
-  return String(x);
+  // Serialize a coordinate per the spec's numeric-serialization rule: a finite
+  // plain decimal in compact form (<=3 fractional digits, no trailing zeros,
+  // integers without a decimal point, -0 as 0). toFixed (not String()) is used
+  // precisely because String()/Number.toString emit EXPONENTIAL notation for
+  // tiny magnitudes (e.g. 1e-7), which the spec forbids. The rounding mode is
+  // unconstrained by the spec; the checker's 0.05px tolerance absorbs the
+  // cross-impl difference between toFixed's half-up and other impls' half-even.
+  let s = x.toFixed(3);
+  if (s.includes(".")) s = s.replace(/\.?0+$/, "");
+  if (s === "" || s === "-0" || s === "-") s = "0";
+  return s;
 }
 function esc(s: string): string {
   return s
@@ -694,7 +702,7 @@ export function drawBlankCells(
     g.child("path")
       .set("d", `M ${n(maxCx - plusArm)},${n(maxCy)} H ${n(maxCx + plusArm)} M ${n(maxCx)},${n(maxCy - plusArm)} V ${n(maxCy + plusArm)}`)
       .set("fill", "none").set("stroke", maxColor)
-      .set("stroke-width", String(plusW)).set("stroke-linecap", "butt")
+      .set("stroke-width", plusW).set("stroke-linecap", "butt")
       .set("data-blank-map-max", `${maxRow},${maxCol}`);
   }
 }
@@ -1109,5 +1117,5 @@ export function drawEllipse(gridG: El, digest: Buffer, gridLeft: number, gridTop
     .set("cx", ax).set("cy", ay).set("rx", rx).set("ry", ry)
     .set("transform", `rotate(${n(rotationDeg)} ${n(ax)} ${n(ay)})`)
     .set("fill", fill).set("stroke", fill)
-    .set("fill-opacity", String(fillOp)).set("stroke-opacity", String(edgeOp)).set("stroke-width", String(strokeW));
+    .set("fill-opacity", fillOp).set("stroke-opacity", edgeOp).set("stroke-width", strokeW);
 }
