@@ -35,7 +35,7 @@ test("Entviz: the default aria-label folds in the user note (PSY-JS-F3)", () => 
 test("Entviz: a render error calls onError and renders the fallback span (no svg)", () => {
   const errors: string[] = [];
   const html = renderToStaticMarkup(
-    createElement(Entviz, { value: HEX, note: "bad note!", onError: (m) => errors.push(m) }),
+    createElement(Entviz, { value: HEX, note: "toolongnote", onError: (m) => errors.push(m) }),
   );
   assert.equal(errors.length, 1);
   assert.match(errors[0], /note/i);
@@ -45,7 +45,7 @@ test("Entviz: a render error calls onError and renders the fallback span (no svg
 
 test("Entviz: an error without an onError handler still renders the fallback safely", () => {
   const html = renderToStaticMarkup(
-    createElement(Entviz, { value: HEX, note: "bad note!", title: "labelled" }),
+    createElement(Entviz, { value: HEX, note: "toolongnote", title: "labelled" }),
   );
   assert.doesNotMatch(html, /<svg/);
   // The custom title labels the fallback too.

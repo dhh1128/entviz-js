@@ -382,12 +382,24 @@ export function parse(raw: string): Parsed | null {
 // ---------------------------------------------------------------------------
 // User note sanitization (matches the spec error catalog)
 // ---------------------------------------------------------------------------
-const NOTE_RE = /^[A-Za-z0-9]{1,8}$/;
+// Printable ASCII only (U+0020 space through U+007E tilde), max 10 chars. ASCII
+// closes the ENTIRE Unicode-spoofing surface by construction — no control chars,
+// bidi overrides, zero-width or combining marks, homoglyphs/confusables — and the
+// rule is trivially identical across implementations. The note is still
+// XML-escaped on output (esc), so injection is handled regardless.
+const NOTE_MAX_LEN = 10;
+const NOTE_RE = /^[\x20-\x7E]{1,10}$/;
 export function sanitizeNote(note: string | null | undefined): string | null {
-  if (note === null || note === undefined) return null;
+  if (note === null || note === undefined || note === "") return null;
+  // Length first, then charset (matches the reference order / error catalog).
+  if (note.length > NOTE_MAX_LEN) {
+    throw new Error(
+      `note must be at most ${NOTE_MAX_LEN} characters (got ${note.length})`,
+    );
+  }
   if (!NOTE_RE.test(note)) {
     throw new Error(
-      `user note must be 1-8 ASCII alphanumeric characters (got ${JSON.stringify(note)})`,
+      `note must be printable ASCII (U+0020-U+007E); no control or non-ASCII characters (got ${JSON.stringify(note)})`,
     );
   }
   return note;

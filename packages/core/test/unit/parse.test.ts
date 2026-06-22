@@ -56,15 +56,28 @@ test("sanitizeNote: null/undefined pass through as null", () => {
   assert.equal(sanitizeNote(undefined), null);
 });
 
-test("sanitizeNote: a valid 1-8 alnum note is returned unchanged", () => {
-  assert.equal(sanitizeNote("git"), "git");
-  assert.equal(sanitizeNote("ABCdef12"), "ABCdef12");
+test("sanitizeNote: empty/null/undefined mean no note", () => {
+  assert.equal(sanitizeNote(""), null);
 });
 
-test("sanitizeNote: spaces, punctuation, and >8 chars are rejected", () => {
-  assert.throws(() => sanitizeNote("two words"));
-  assert.throws(() => sanitizeNote("a.b"));
-  assert.throws(() => sanitizeNote("toolongnote"));
+test("sanitizeNote: printable-ASCII notes (incl. spaces/punctuation) pass", () => {
+  assert.equal(sanitizeNote("git"), "git");
+  assert.equal(sanitizeNote("ABCdef12"), "ABCdef12");
+  assert.equal(sanitizeNote("two words"), "two words");
+  assert.equal(sanitizeNote("a.b_c-d!"), "a.b_c-d!");
+  // Boundary chars: U+0020 space and U+007E tilde are in range.
+  assert.equal(sanitizeNote(" "), " ");
+  assert.equal(sanitizeNote("~"), "~");
+  // Exactly 10 chars allowed.
+  assert.equal(sanitizeNote("0123456789"), "0123456789");
+});
+
+test("sanitizeNote: too-long, control, and non-ASCII notes are rejected", () => {
+  assert.throws(() => sanitizeNote("toolongnote")); // 11 chars
+  assert.throws(() => sanitizeNote("ab\tcd")); // control char (tab)
+  assert.throws(() => sanitizeNote("café")); // non-ASCII (é = U+00E9)
+  assert.throws(() => sanitizeNote("a\u202Eb")); // bidi override (RLO)
+  assert.throws(() => sanitizeNote("a\u200Bb")); // zero-width space
 });
 
 test("roundHalfEven: below/above .5 and ties toward even", () => {

@@ -90,6 +90,20 @@ test("render: a user note renders in the bottom strip", () => {
   assert.match(svg, /data-user-note="git"/);
 });
 
+test("render: printable-ASCII notes (spaces, punctuation) render", () => {
+  assert.match(render("a1b2c3d4", { note: "two words" }), /data-user-note="two words"/);
+  assert.match(render("a1b2c3d4", { note: "a.b_c-d!" }), /data-user-note="a\.b_c-d!"/);
+});
+
+test("render: a note with XML-special chars is escaped (attribute and text)", () => {
+  // < > & " are valid printable-ASCII note chars now, so they MUST be escaped
+  // in both the data-user-note attribute and the text node — no raw <b>.
+  const svg = render("a1b2c3d4", { note: 'a<b>&"x' });
+  assert.match(svg, /data-user-note="a&lt;b&gt;&amp;&quot;x"/); // attribute
+  assert.match(svg, /\(a&lt;b&gt;&amp;&quot;x\)/); // text node
+  assert.ok(!svg.includes("<b>"), "no raw <b> tag may leak");
+});
+
 test("render: dashed and undashed UUIDs collapse to identical entvizes", () => {
   const strip = (s: string) => s.replace(/ data-input-bytes="\d+"/, "");
   assert.equal(
@@ -103,8 +117,9 @@ test("render: empty input produces no tokens and is rejected", () => {
 });
 
 test("render: invalid note is rejected", () => {
-  assert.throws(() => render("a1b2c3d4", { note: "two words" }));
-  assert.throws(() => render("a1b2c3d4", { note: "toolongnote" }));
+  assert.throws(() => render("a1b2c3d4", { note: "toolongnote" })); // 11 chars
+  assert.throws(() => render("a1b2c3d4", { note: "ab\tcd" })); // control char (tab)
+  assert.throws(() => render("a1b2c3d4", { note: "café" })); // non-ASCII (é)
 });
 
 test("render: out-of-range font size and aspect ratio are rejected", () => {

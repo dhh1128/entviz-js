@@ -13,7 +13,7 @@ export interface EntvizProps {
   targetAr?: number;
   /** Reference font size in points (default 12). */
   fontSizePt?: number;
-  /** Optional out-of-band caption (≤8 ASCII alphanumerics). */
+  /** Optional out-of-band caption (≤10 printable-ASCII chars, U+0020–U+007E). */
   note?: string | null;
   /** Extra props applied to the wrapping element (className, style, …). */
   className?: string;

@@ -1,22 +1,22 @@
 # Conformance certification — @entviz/core
 
 **Spec:** entviz v10 · **Corpus:** entviz `compliance/` · **Tiers:** A (render
-model) + B (canonical raster, cairosvg) · **Result:** 27/27 supported vectors.
+model) + B (canonical raster, cairosvg) · **Result:** 29/29 supported vectors.
 
 Run from the entviz repo:
 
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' \
-  --only 'hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-space,err-note-punct,err-fontsize-low,err-fontsize-high'
-# -> 27/27 vectors passed
+  --only 'hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,note-space,note-punct,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-control,err-note-nonascii,err-fontsize-low,err-fontsize-high'
+# -> 29/29 vectors passed
 ```
 
-## Covered (27)
+## Covered (29)
 
-21 render vectors (hex × 4 sizes, UUID × 4, avalanche × 2, aspect ratio × 3,
-font size × 3, UTF-8 fallback × 2, note × 1, Ethereum × 2) + 6 error vectors
-(note length / charset × 3, font-size range × 2, EIP-55 bad checksum × 1).
+23 render vectors (hex × 4 sizes, UUID × 4, avalanche × 2, aspect ratio × 3,
+font size × 3, UTF-8 fallback × 2, note × 3, Ethereum × 2) + 6 error vectors
+(note length × 1, note charset × 2, font-size range × 2, EIP-55 bad checksum × 1).
 
 Ethereum addresses (EIP-55) are fully ported: lowercase and valid-checksum
 mixed-case addresses render; a bad-checksum mixed-case address is **rejected**

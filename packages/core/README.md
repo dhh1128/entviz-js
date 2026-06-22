@@ -32,7 +32,7 @@ const svg = render("550e8400-e29b-41d4-a716-446655440000");
 const svg2 = render("0123456789abcdef0123456789abcdef", {
   targetAr: 2.0,    // target aspect ratio W/H (default 1.0)
   fontSizePt: 16,   // reference font size in points (default 12)
-  note: "git",      // optional ≤8-char alphanumeric caption (never hashed)
+  note: "git",      // optional ≤10-char printable-ASCII caption (never hashed)
 });
 ```
 
