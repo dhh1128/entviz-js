@@ -33,7 +33,7 @@ test("cli: params default when omitted (target_ar=1, font_size_pt=12, note=null)
 
 test("cli: an invalid note is rejected with a non-zero exit and a message", () => {
   const r = runCli(
-    JSON.stringify({ entropy: "a1b2c3d4", params: { note: "bad note!" } }),
+    JSON.stringify({ entropy: "a1b2c3d4", params: { note: "toolongnote" } }),
   );
   assert.equal(r.status, 1);
   assert.match(r.stderr, /note/i);

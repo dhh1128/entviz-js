@@ -47,7 +47,7 @@ called and an empty labelled `<span>` is rendered instead.
 | `value` | `string` | The high-entropy value to visualize (required). |
 | `targetAr` | `number` | Target aspect ratio W/H (default `1.0`). |
 | `fontSizePt` | `number` | Reference font size in points (default `12`). |
-| `note` | `string \| null` | Optional ≤8-char alphanumeric caption (never hashed). |
+| `note` | `string \| null` | Optional ≤10-char printable-ASCII caption (never hashed). |
 | `className`, `style` | — | Applied to the wrapping `<span>`. |
 | `title` | `string` | Accessible label (`aria-label`). |
 | `onError` | `(message: string) => void` | Called if rendering throws. |

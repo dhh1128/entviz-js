@@ -90,7 +90,7 @@ jobs:
       - name: Spec-version sync check + Tier-A conformance
         run: |
           set -euo pipefail
-          subset='hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-space,err-note-punct,err-fontsize-low,err-fontsize-high'
+          subset='hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,note-space,note-punct,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-control,err-note-nonascii,err-fontsize-low,err-fontsize-high'
           ours=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' packages/core/src/entviz.ts)
           ref=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' entviz-ref/src/entviz/__init__.py)
           echo "entviz-js targets spec ${ours}; reference impl/spec is ${ref}"
