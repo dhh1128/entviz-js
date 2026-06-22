@@ -76,6 +76,25 @@ test("render: a >512-bit input rejects (large-input path not yet ported)", () =>
   assert.throws(() => render("a".repeat(130)), /large-input/); // 65 bytes
 });
 
+// Numeric serialization (spec): coordinates are compact plain decimals — no
+// exponential notation, at most 3 fractional digits, integers without a point.
+test("render: numeric attributes are compact plain decimals (no exponent, <=3dp)", () => {
+  for (const input of [
+    "0123456789abcdef0123456789abcdef",
+    "550e8400-e29b-41d4-a716-446655440000",
+    "a".repeat(66), // forces a blank-cell map + ellipse geometry
+  ]) {
+    const svg = render(input);
+    for (const m of svg.matchAll(/="(-?\d+(?:\.\d+)?)"/g)) {
+      const value = m[1];
+      assert.doesNotMatch(value, /[eE]/, `exponential notation in "${value}"`);
+      const frac = value.split(".")[1];
+      assert.ok(!frac || frac.length <= 3, `>3 fractional digits in "${value}"`);
+      assert.doesNotMatch(value, /^-?\d+\.\d*0$/, `untrimmed trailing zero in "${value}"`);
+    }
+  }
+});
+
 // TST-F4: whitespace-only input and the byte-length boundary on the fallback.
 test("render: whitespace-only input produces no tokens and is rejected", () => {
   assert.throws(() => render("   "), /No tokens/);
