@@ -124,8 +124,28 @@ test("render: SVG-hostile entropy is neutralized (no raw injected markup)", () =
 
 // PSY-JS-F5: the spec's oral-readout requirement leans on a monospace font
 // chain; assert it is actually emitted (quotes are XML-escaped in the attr).
+// The chain is now hoisted ONCE onto the root <svg> as an inherited
+// presentation property, so it still appears (escaped) — just not per-<text>.
 test("render: the monospace font chain is emitted for cell text", () => {
   const svg = render("The quick brown fox jumps over the lazy dog");
   assert.match(svg, /&quot;JetBrains Mono&quot;/);
   assert.match(svg, /monospace/);
+});
+
+// font-family is hoisted to the root <svg> (inherited), not repeated per
+// <text>; each <text> carries only a compact font-size attribute.
+test("render: font-family is set once on the root <svg> and inherited", () => {
+  const svg = render("550e8400-e29b-41d4-a716-446655440000");
+  // The chain marker appears exactly once (on the root <svg>).
+  assert.equal(svg.match(/JetBrains/g)?.length, 1);
+  assert.equal(svg.match(/font-family=/g)?.length, 1);
+  // The root <svg> open tag carries it.
+  const rootTag = svg.slice(0, svg.indexOf(">") + 1);
+  assert.match(rootTag, /font-family=/);
+  // No <text> carries a per-text font-family (neither attr nor style).
+  for (const m of svg.matchAll(/<text\b[^>]*>/g)) {
+    const tag = m[0];
+    assert.ok(!tag.includes("font-family"), `<text> sets its own font-family: ${tag}`);
+    assert.match(tag, /font-size="/, `<text> missing font-size attr: ${tag}`);
+  }
 });

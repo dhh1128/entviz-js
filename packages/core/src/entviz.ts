@@ -769,6 +769,11 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     .set("height", boundingH)
     .set("viewBox", `0 0 ${n(boundingW)} ${n(boundingH)}`)
     .set("xmlns", "http://www.w3.org/2000/svg")
+    // font-family is an inherited SVG presentation property: set the monospace
+    // chain ONCE on the root <svg> so every descendant <text> inherits it; each
+    // <text> then carries only a compact font-size attribute (not the full
+    // per-text style). Mirrors the Python anchor; checker accepts either form.
+    .set("font-family", FONT_FAMILY)
     .set("data-entviz-version", SPEC_VERSION)
     .set("data-entviz-lib", LIB_VERSION)
     .set("data-input-bytes", String(Buffer.byteLength(rawInput, "utf8")))
@@ -861,7 +866,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
       .set("x", tc.nx + nucleusWidth / 2)
       .set("y", tc.ny + nucleusHeight / 2)
       .set("fill", fg)
-      .set("style", `font-family: ${FONT_FAMILY}; font-size: ${n(cellTextPx)}px;`)
+      .set("font-size", cellTextPx)
       .set("text-anchor", "middle")
       .set("dominant-baseline", "central");
     t.text = tc.token.text;
@@ -1009,7 +1014,7 @@ export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barW
       // and this matches the Python reference's layout exactly.
       const baselineY = y + h - 0.22 * cellTextPx;
       const t = bandG.child("text").set("x", barCx).set("y", baselineY).set("fill", fg)
-        .set("style", `font-family: ${FONT_FAMILY}; font-size: ${n(cellTextPx)}px;`)
+        .set("font-size", cellTextPx)
         .set("text-anchor", "middle").set("data-color-bar-letter", "true");
       t.text = letter.toLowerCase();
     }
@@ -1041,18 +1046,19 @@ export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barW
 }
 
 export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null) {
-  const style = `font-family: ${FONT_FAMILY}; font-size: ${n(textPx)}px;`;
+  // font-family is inherited from the root <svg>; each label <text> carries
+  // only a compact font-size presentation attribute.
   const topG = svg.child("g").set("data-channel", "label-top");
   let restText: string;
   if (typeName) restText = prefix ? `${typeName}: ${prefix}...` : `${typeName}:`;
   else restText = prefix ? `${prefix}...` : "";
   const topCy = gridTop - nucleusHeight / 2;
-  const el = topG.child("text").set("x", gridLeft).set("y", topCy).set("fill", "#666666").set("style", style).set("dominant-baseline", "central");
+  const el = topG.child("text").set("x", gridLeft).set("y", topCy).set("fill", "#666666").set("font-size", textPx).set("dominant-baseline", "central");
   el.text = restText;
   if (suffix || note) {
     const bottomG = svg.child("g").set("data-channel", "label-bottom");
     const bottomCy = gridBottom + nucleusHeight / 2;
-    const bel = bottomG.child("text").set("x", gridRight).set("y", bottomCy).set("fill", "#666666").set("style", style).set("text-anchor", "end").set("dominant-baseline", "central");
+    const bel = bottomG.child("text").set("x", gridRight).set("y", bottomCy).set("fill", "#666666").set("font-size", textPx).set("text-anchor", "end").set("dominant-baseline", "central");
     if (suffix && note) {
       const st = bel.child("tspan"); st.text = `...${suffix} `;
       const nt = bel.child("tspan").set("fill", "#808080").set("data-user-note", note); nt.text = `(${note})`;
