@@ -97,6 +97,12 @@ jobs:
         with:
           node-version: 24
 
+      # The conformance CLI (cli.ts -> entviz.ts) now imports @entviz/core's one
+      # runtime dependency (@noble/hashes), so node_modules must be installed —
+      # before the isomorphic change core was zero-dep and this step wasn't needed.
+      - name: Install (workspace, reproducible)
+        run: npm ci
+
       - name: Install the Tier-A harness (lxml only; no rasterizer needed)
         run: |
           set -euo pipefail
