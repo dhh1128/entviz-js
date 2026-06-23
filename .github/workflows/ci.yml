@@ -49,8 +49,8 @@ jobs:
         run: npm ci
 
       # Fail the build on a known high/critical advisory in the dependency tree.
-      # @entviz/core has zero runtime deps; this guards the dev/build tooling and
-      # the React peer surface.
+      # @entviz/core's only runtime dep is the audited, zero-transitive-dep
+      # @noble/hashes; this also guards the dev/build tooling and React peer surface.
       - name: Audit dependencies
         run: npm audit --audit-level=high
 

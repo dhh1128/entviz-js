@@ -8,21 +8,28 @@
  * large-input parsers are tracked follow-ons.
  *
  * Runs under Node's native TypeScript type-stripping (Node >= 22.6); no
- * build step required.
+ * build step required. Isomorphic: hashing/encoding go through @noble/hashes +
+ * the browser-safe helpers in bytes.ts (no node:crypto/node:fs/Buffer), so the
+ * renderer bundles cleanly for the browser too — see isomorphic.test.ts.
  */
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { keccak256Hex } from "./keccak.ts";
+import { sha512 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import {
+  utf8Bytes,
+  utf8ByteLength,
+  exceedsUtf8ByteCap,
+  bytesToHex,
+  bytesToBase64url,
+} from "./bytes.ts";
+import pkg from "../package.json" with { type: "json" };
 
 export const SPEC_VERSION = "v10";
-// Read the published version straight from package.json so the data-entviz-lib
+// Read the published version straight from package.json (via a JSON import, so
+// the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
 // duplicating the version as a literal here would silently go stale on every
 // release (the value would lie about which build produced an SVG).
-const PKG = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-) as { version: string };
-export const LIB_VERSION = PKG.version;
+export const LIB_VERSION = (pkg as { version: string }).version;
 const DPI = 96;
 
 // ---------------------------------------------------------------------------
@@ -100,8 +107,8 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // and its byte-equal-but-differently-cased twin fingerprint the same after the
 // parser has normalized case. Do NOT "optimize" this to hash decoded bytes —
 // that silently re-keys every pre-existing entviz.
-export function computeFingerprint(core: string): Buffer {
-  return createHash("sha512").update(core, "utf8").digest();
+export function computeFingerprint(core: string): Uint8Array {
+  return sha512(utf8Bytes(core));
 }
 
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
@@ -113,17 +120,16 @@ export function computeFingerprint(core: string): Buffer {
 // bumped when the spec version changes. The normative definition lives in the
 // entviz reference repo's docs/spec.md (this is a port; there is no this.i
 // here).
-const MIDDLE_DOMAIN_TAG = Buffer.from("entviz/fingerprint-middle/v6\0", "latin1");
-export function fingerprintMiddleDigest(core: string): Buffer {
-  return createHash("sha512")
-    .update(MIDDLE_DOMAIN_TAG)
-    .update(core, "utf8")
-    .digest();
+// The tag is pure ASCII (incl. the trailing NUL), so its UTF-8 bytes equal the
+// latin1 bytes the reference uses — the digest is unchanged by encoding it here.
+const MIDDLE_DOMAIN_TAG = utf8Bytes("entviz/fingerprint-middle/v6\0");
+export function fingerprintMiddleDigest(core: string): Uint8Array {
+  return sha512.create().update(MIDDLE_DOMAIN_TAG).update(utf8Bytes(core)).digest();
 }
 
-export function tokenizeFingerprint(digest: Buffer): Token[] {
+export function tokenizeFingerprint(digest: Uint8Array): Token[] {
   if (digest.length !== 64) throw new Error("fingerprint must be 64 bytes");
-  const b64 = digest.toString("base64url"); // unpadded
+  const b64 = bytesToBase64url(digest); // unpadded
   const toks = tokenize(b64, BASE64URL);
   if (toks.length !== 22) throw new Error(`expected 22 ftoks, got ${toks.length}`);
   return toks;
@@ -324,7 +330,7 @@ const ETHEREUM_RE = /^(0[xX])?([0-9a-fA-F]{40})$/;
 // (EIP-55) case validation"): a corrupted address must fail closed, not render
 // a plausible-but-wrong entviz that looks like a different valid address.
 function validateEip55(body: string): void {
-  const digestHex = keccak256Hex(Buffer.from(body.toLowerCase(), "ascii"));
+  const digestHex = bytesToHex(keccak_256(utf8Bytes(body.toLowerCase())));
   for (let i = 0; i < body.length; i++) {
     const c = body[i];
     if (!/[a-zA-Z]/.test(c)) continue;
@@ -510,13 +516,14 @@ export function classifyInput(rawInput: string): ClassifiedInput {
     // SEC-F1: cap on the cheap BYTE LENGTH before allocating the base64url
     // encoding. Anything over 64 bytes is the not-yet-ported >512-bit path and
     // is rejected anyway; converting first would let a multi-megabyte input
-    // allocate a ~1.33× base64 string before that rejection — an avoidable DoS
-    // amplifier. Buffer.byteLength measures without materializing the encoding.
-    if (Buffer.byteLength(rawInput, "utf8") > 64) {
+    // allocate a base64 string before that rejection — an avoidable DoS
+    // amplifier. exceedsUtf8ByteCap short-circuits on code-unit length, so a
+    // huge input is rejected without being materialized.
+    if (exceedsUtf8ByteCap(rawInput, 64)) {
       throw new Error("large-input (>512-bit) path not yet ported in entviz-js");
     }
     return {
-      core: Buffer.from(rawInput, "utf8").toString("base64url"),
+      core: bytesToBase64url(utf8Bytes(rawInput)),
       typeName: `txt(${rawInput.length})->b64url`,
       alphabet: BASE64URL,
       prefix: null,
@@ -623,7 +630,7 @@ export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): numb
 export function blankFillColors(
   blankIndices: number[],
   mapCellIdx: number | null,
-  digest: Buffer,
+  digest: Uint8Array,
   edgeColors: string[],
 ): Map<number, string> {
   const soleBlank = blankIndices.length === 1;
@@ -771,7 +778,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
 
   const digest = computeFingerprint(core);
-  const digestHex = digest.toString("hex");
+  const digestHex = bytesToHex(digest);
   const clipId = `grid-clip-${digestHex.slice(0, 16)}-${grid.cols}x${grid.rows}`;
 
   // Root
@@ -788,7 +795,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     .set("font-family", FONT_FAMILY)
     .set("data-entviz-version", SPEC_VERSION)
     .set("data-entviz-lib", LIB_VERSION)
-    .set("data-input-bytes", String(Buffer.byteLength(rawInput, "utf8")))
+    .set("data-input-bytes", String(utf8ByteLength(rawInput)))
     .set("data-cols", grid.cols)
     .set("data-rows", grid.rows);
 
@@ -980,7 +987,7 @@ export function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nu
   g.child("polygon").set("points", pts.map(([x, y]) => `${n(x)},${n(y)}`).join(" ")).set("fill", fg);
 }
 
-export function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, number> {
+export function twoBitUsage(digest: Uint8Array, edgeColors: string[]): Map<string, number> {
   const counts = [0, 0, 0, 0];
   for (const byte of digest) for (const shift of [0, 2, 4, 6]) counts[(byte >> shift) & 0x03]++;
   const m = new Map<string, number>();
@@ -992,7 +999,7 @@ export function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, n
 // disjoint slices of the digest (tie-break by pattern value). Decouples the
 // color-bar band *order* from the count^4 band *heights* — through v8 the order
 // was descending count, carrying no information beyond the heights.
-export function twoBitFirstAppearance(digest: Buffer, edgeColors: string[]): string[] {
+export function twoBitFirstAppearance(digest: Uint8Array, edgeColors: string[]): string[] {
   const first = new Map<number, number>();
   let idx = 0;
   for (const byte of digest) {
@@ -1008,7 +1015,7 @@ export function twoBitFirstAppearance(digest: Buffer, edgeColors: string[]): str
   return order.map((p) => edgeColors[p]);
 }
 
-export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Buffer) {
+export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Uint8Array) {
   const usage = twoBitUsage(digest, edgeColors);
   const paletteOrder = new Map<string, number>();
   edgeColors.forEach((c, i) => paletteOrder.set(c, i));
@@ -1122,7 +1129,7 @@ export function enumerateExternalCorners(cols: number, rows: number, cw: number,
   return pts;
 }
 
-export function drawEllipse(gridG: El, digest: Buffer, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
+export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
   const cols = grid.cols, rows = grid.rows;
   const interior = (cols - 1) * (rows - 1);
   const pts = interior >= 6

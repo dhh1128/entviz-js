@@ -20,7 +20,8 @@ font size × 3, UTF-8 fallback × 2, note × 3, Ethereum × 2) + 6 error vectors
 
 Ethereum addresses (EIP-55) are fully ported: lowercase and valid-checksum
 mixed-case addresses render; a bad-checksum mixed-case address is **rejected**
-(fails closed), backed by a pure-TypeScript Keccak-256 (`src/keccak.ts`).
+(fails closed), backed by the audited [`@noble/hashes`](https://github.com/paulmillr/noble-hashes)
+`keccak_256` (the original-Keccak EIP-55 variant, not NIST SHA3-256).
 
 ## Not yet covered (parsers to port)
 
