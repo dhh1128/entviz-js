@@ -70,9 +70,10 @@ expands on demand.
    └──── click body → expand ────┘
 ```
 
-- **Badge** (left): a **constant** 2×2 of the entviz palette
-  (gold `#e7be00` / red `#ff3f2f` / blue `#2f3fbf` / black `#000000`) with a
-  hairline border so black reads on dark and gold reads on light. It is **the
+- **Badge** (left): a **constant** 2×2 of the entviz palette — gold `#e7be00`
+  and blue `#2f3fbf` on the top row, black `#000000` and red `#ff3f2f` on the
+  bottom (the two dark cells split across rows so it doesn't read bottom-heavy) —
+  with a hairline border so black reads on dark and gold reads on light. It is **the
   same on every entviz** — a *type badge* meaning "this is an entviz, colour
   hiding beneath," carrying **zero identity bits**, so it can never be
   glance-compared for verification. Toggle with `showIcon` (default `true`).

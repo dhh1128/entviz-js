@@ -36,7 +36,9 @@ export interface EntvizPillProps {
 
 export type CopyKind = "value" | "comparison" | "image" | "svg";
 
-const BADGE = ["#e7be00", "#ff3f2f", "#2f3fbf", "#000000"];
+// 2×2 row-major: gold + blue on top, black + red on bottom — keeps the two dark
+// cells off the bottom row so the badge doesn't read as bottom-heavy.
+const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
 
 function prettyType(typeName: string): string {
   const hex = typeName.match(/^hex\((\d+)\)$/);
