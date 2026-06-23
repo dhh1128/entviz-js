@@ -10,10 +10,15 @@ TypeScript implementation of [**entviz**](https://github.com/dhh1128/entviz)
 UUID, blockchain address, post-quantum key, …) into a comparable SVG diagram so
 a human can decide *at a glance* whether two values are the same or different.
 
-Pure TypeScript, **zero runtime dependencies** beyond `node:crypto`. Runs under
-Node's native type-stripping (Node ≥ 22.6) — the package ships source, no build
-step. Certified against the shared entviz conformance corpus (Tier A render
-model + Tier B canonical raster) for every input whose parser is ported.
+Pure TypeScript and **isomorphic** — runs in Node **and** the browser. Its only
+runtime dependency is the audited, zero-transitive-dependency
+[`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
+Keccak-256); no `node:crypto`/`node:fs`/`Buffer`, so it bundles cleanly for the
+web (this is what backs [`@entviz/react`](https://www.npmjs.com/package/@entviz/react)).
+Runs under Node's native type-stripping (Node ≥ 22.6) — the package ships
+source, no build step. Certified against the shared entviz conformance corpus
+(Tier A render model + Tier B canonical raster) for every input whose parser is
+ported.
 
 ## Install
 

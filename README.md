@@ -12,8 +12,10 @@ TypeScript implementation of [entviz](https://github.com/dhh1128/entviz) (spec
 React component. An npm workspace:
 
 - **`packages/core`** (`@entviz/core`) — the renderer. Pure TypeScript, runs
-  under Node's native type-stripping (Node ≥ 22.6); zero runtime dependencies
-  beyond `node:crypto`.
+  under Node's native type-stripping (Node ≥ 22.6). Isomorphic (Node **and**
+  browser); its only runtime dependency is the audited, zero-transitive-dep
+  [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
+  Keccak-256).
 - **`packages/react`** (`@entviz/react`) — a thin React component over the core.
 
 ## Status

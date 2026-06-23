@@ -49,8 +49,8 @@ jobs:
         run: npm ci
 
       # Fail the build on a known high/critical advisory in the dependency tree.
-      # @entviz/core has zero runtime deps; this guards the dev/build tooling and
-      # the React peer surface.
+      # @entviz/core's only runtime dep is the audited, zero-transitive-dep
+      # @noble/hashes; this also guards the dev/build tooling and React peer surface.
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
@@ -74,6 +74,12 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: 24
+
+      # The conformance CLI (cli.ts -> entviz.ts) now imports @entviz/core's one
+      # runtime dependency (@noble/hashes), so node_modules must be installed —
+      # before the isomorphic change core was zero-dep and this step wasn't needed.
+      - name: Install (workspace, reproducible)
+        run: npm ci
 
       - name: Install the Tier-A harness (lxml only; no rasterizer needed)
         run: |
