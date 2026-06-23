@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Entviz } from "@entviz/react";
 import { classifyInput, render, type RenderOptions } from "@entviz/core";
 import {
@@ -19,6 +19,10 @@ export interface EntvizPillProps {
   fontSizePt?: number;
   note?: string | null;
   // --- pill chrome (contextual) ---
+  /** First-party custom text shown after the type (host-set, trusted — unlike the note). */
+  label?: string;
+  /** Show the parser-derived type label (default true). Independent of `label`. */
+  showType?: boolean;
   showIcon?: boolean;
   maxWidth?: number | string;
   locale?: string;
@@ -34,9 +38,6 @@ export type CopyKind = "value" | "comparison" | "image" | "svg";
 
 const BADGE = ["#e7be00", "#ff3f2f", "#2f3fbf", "#000000"];
 
-// Prettify the parser's trusted type label for the pill: "hex(64)" -> "hex·256"
-// (chars*4 bits), "txt(43)->b64url" -> "text", etc. The type is the trusted
-// channel (spec label-strip); never the note, never value characters.
 function prettyType(typeName: string): string {
   const hex = typeName.match(/^hex\((\d+)\)$/);
   if (hex) return `hex·${Number(hex[1]) * 4}`;
@@ -45,7 +46,7 @@ function prettyType(typeName: string): string {
   return typeName; // UUID, etc.
 }
 
-// Comparison text = the filled cells' nucleus text in grid reading order
+// Comparison text = filled cells' nucleus text in grid reading order
 // (data-cell-index is row-major), case-exact, space-separated. Parsed from the
 // authoritative rendered SVG. (Core should eventually expose this directly.)
 function comparisonTextFromSvg(svg: string): { text: string; cells: number } {
@@ -91,17 +92,44 @@ async function rasterizeToPng(svg: string): Promise<Blob> {
   }
 }
 
+// Anchored placement with flip (above when no room below) + shift (clamp into
+// the viewport). position:fixed so it's measured against the viewport and is
+// never clipped under the fold.
+function useFloating(anchorRef: React.RefObject<HTMLElement | null>, open: boolean, rtl: boolean) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({ position: "fixed", top: -9999, left: -9999, visibility: "hidden" });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const a = anchorRef.current?.getBoundingClientRect();
+      const f = ref.current?.getBoundingClientRect();
+      if (!a || !f) return;
+      const vw = window.innerWidth, vh = window.innerHeight, gap = 6, pad = 8;
+      const below = vh - a.bottom >= f.height + gap || vh - a.bottom >= a.top;
+      const top = below ? a.bottom + gap : Math.max(pad, a.top - f.height - gap);
+      let left = rtl ? a.right - f.width : a.left;
+      left = Math.max(pad, Math.min(left, vw - f.width - pad));
+      setStyle({ position: "fixed", top, left, visibility: "visible" });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, rtl, anchorRef]);
+  return { ref, style };
+}
+
 export function EntvizPill(props: EntvizPillProps) {
   const {
     value, targetAr, fontSizePt, note,
-    showIcon = true, maxWidth, locale, messages: overrides,
+    label, showType = true, showIcon = true, maxWidth, locale, messages: overrides,
     className, style, onExpand, onCopy, onError,
   } = props;
 
-  const { locale: resolved, messages: base } = useMemo(
-    () => resolveMessages(locale),
-    [locale],
-  );
+  const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
   const m: Messages = { ...base, ...overrides };
   const rtl = isRtlLocale(resolved);
 
@@ -116,9 +144,7 @@ export function EntvizPill(props: EntvizPillProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, targetAr, fontSizePt, note]);
 
-  useEffect(() => {
-    if (error && onError) onError(error);
-  }, [error, onError]);
+  useEffect(() => { if (error && onError) onError(error); }, [error, onError]);
 
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -126,8 +152,12 @@ export function EntvizPill(props: EntvizPillProps) {
 
   const wrapRef = useRef<HTMLSpanElement>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
+  const kebabRef = useRef<HTMLButtonElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuId = useId();
+
+  const menuFloat = useFloating(wrapRef, menuOpen, rtl);
+  const popFloat = useFloating(wrapRef, expanded, rtl);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -136,26 +166,31 @@ export function EntvizPill(props: EntvizPillProps) {
   };
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  // Dismiss popover/menu on Escape (return focus to the pill) and outside-click.
+  // Dismiss on Escape (focus returns to the pill) and outside-click.
   useEffect(() => {
     if (!expanded && !menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { setExpanded(false); setMenuOpen(false); pillRef.current?.focus(); }
     };
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setExpanded(false); setMenuOpen(false);
-      }
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) { setExpanded(false); setMenuOpen(false); }
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
   }, [expanded, menuOpen]);
 
-  const toggleExpand = () => {
-    setMenuOpen(false);
-    setExpanded((v) => { const n = !v; if (n) onExpand?.(); return n; });
-  };
+  // Move focus to the first menu item when the menu opens (ARIA menu pattern).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const id = requestAnimationFrame(() => {
+      menuFloat.ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [menuOpen, menuFloat.ref]);
+
+  const openExpand = () => { setMenuOpen(false); setExpanded(true); onExpand?.(); };
+  const openMenu = () => { setExpanded(false); setMenuOpen(true); };
 
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
@@ -185,8 +220,28 @@ export function EntvizPill(props: EntvizPillProps) {
     }
   };
 
-  const label = type ?? "unrenderable";
-  const ariaLabel = fmt(m.ariaView, { type: label });
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const items = [...(menuFloat.ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
+  };
+
+  // Type is the trusted, derived channel; `label` is first-party host text.
+  // Never the note (self-declared by the value's source) on the pill.
+  const shownParts = [showType ? type : null, label].filter(Boolean) as string[];
+  const ariaText = shownParts.length ? shownParts.join(", ") : (type ?? "unrenderable");
+  const ariaLabel = fmt(m.ariaView, { type: ariaText });
+
+  const ACTIONS: [string, string, () => void][] = [
+    ["view", m.view, openExpand],
+    ["value", m.copyValue, () => doCopy("value")],
+    ["comparison", m.copyComparison, () => doCopy("comparison")],
+    ["image", m.copyImage, () => doCopy("image")],
+    ["svg", m.copySvg, () => doCopy("svg")],
+  ];
 
   return (
     <span
@@ -210,7 +265,11 @@ export function EntvizPill(props: EntvizPillProps) {
         <button
           ref={pillRef}
           type="button"
-          onClick={toggleExpand}
+          onClick={() => (expanded ? setExpanded(false) : openExpand())}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
+            else if (e.key === "ArrowDown") { e.preventDefault(); openMenu(); }
+          }}
           title={m.view}
           aria-label={ariaLabel}
           aria-expanded={expanded}
@@ -229,24 +288,30 @@ export function EntvizPill(props: EntvizPillProps) {
               {BADGE.map((c) => <span key={c} style={{ background: c }} />)}
             </span>
           )}
-          <span style={{ overflow: "hidden", textOverflow: "clip", whiteSpace: "nowrap", opacity: type ? 1 : 0.6 }}>
-            {label}
-          </span>
+          {shownParts.length > 0 && (
+            <span style={{ display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap" }}>
+              {showType && type && <span style={{ opacity: 0.62 }}>{type}</span>}
+              {label && <span>{label}</span>}
+            </span>
+          )}
         </button>
 
-        {/* Fork A-(c): kebab visible on hover/focus for pointer+keyboard; copies
-            are always reachable inside the expanded view too. */}
+        {/* Fork A-(c): kebab on hover/focus for pointer+keyboard; copies are also
+            inside the expanded view. */}
         <button
+          ref={kebabRef}
           type="button"
           className="entviz-pill__kebab"
-          onClick={() => { setExpanded(false); setMenuOpen((v) => !v); }}
+          onClick={() => (menuOpen ? setMenuOpen(false) : openMenu())}
+          onKeyDown={(e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); openMenu(); } }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          aria-controls={menuId}
-          aria-label={m.copyValue.replace(/ .*/, "…") /* "Copy…" */}
+          aria-controls={menuOpen ? menuId : undefined}
+          aria-label={m.actions}
           style={{
             font: "inherit", color: "inherit", background: "none", border: "none",
             padding: "0 0.15em", margin: 0, cursor: "pointer", lineHeight: 1,
+            opacity: menuOpen ? 0.85 : undefined,
           }}
         >
           ⋮
@@ -254,46 +319,30 @@ export function EntvizPill(props: EntvizPillProps) {
       </span>
 
       {menuOpen && (
-        <span id={menuId} role="menu" style={menuStyle(rtl)}>
-          {([
-            ["value", m.copyValue],
-            ["comparison", m.copyComparison],
-            ["image", m.copyImage],
-            ["svg", m.copySvg],
-          ] as [CopyKind, string][]).map(([kind, lbl]) => (
-            <button key={kind} role="menuitem" type="button" onClick={() => doCopy(kind)} style={menuItemStyle}>
-              {lbl}
-            </button>
+        <span ref={menuFloat.ref} id={menuId} role="menu" aria-label={m.actions} onKeyDown={onMenuKey} style={{ ...menuStyle, ...menuFloat.style }}>
+          {ACTIONS.map(([kind, lbl, fn]) => (
+            <button key={kind} role="menuitem" type="button" onClick={fn} style={menuItemStyle}>{lbl}</button>
           ))}
         </span>
       )}
 
       {expanded && (
-        <span role="dialog" aria-label={ariaLabel} style={popoverStyle(rtl)}>
+        <span ref={popFloat.ref} role="dialog" aria-label={ariaLabel} style={{ ...popoverStyle, ...popFloat.style }}>
           {error ? (
             <span style={{ color: "#b00020", fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{error}</span>
           ) : (
             <Entviz value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note} style={{ width: 240, display: "block" }} />
           )}
           <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {([
-              ["value", m.copyValue],
-              ["comparison", m.copyComparison],
-              ["image", m.copyImage],
-              ["svg", m.copySvg],
-            ] as [CopyKind, string][]).map(([kind, lbl]) => (
-              <button key={kind} type="button" onClick={() => doCopy(kind)} style={copyBtnStyle} disabled={!svg && kind !== "value"}>
-                {lbl}
-              </button>
+            {ACTIONS.slice(1).map(([kind, lbl, fn]) => (
+              <button key={kind} type="button" onClick={fn} style={copyBtnStyle} disabled={!svg}>{lbl}</button>
             ))}
           </span>
         </span>
       )}
 
-      <span aria-live="polite" style={{ position: "absolute", clip: "rect(0 0 0 0)", width: 1, height: 1, overflow: "hidden" }}>
-        {toast}
-      </span>
-      {toast && <span style={toastStyle(rtl)}>{toast}</span>}
+      <span aria-live="polite" style={{ position: "absolute", clip: "rect(0 0 0 0)", width: 1, height: 1, overflow: "hidden" }}>{toast}</span>
+      {toast && <span style={{ ...toastStyle, [rtl ? "left" : "right"]: 0 }}>{toast}</span>}
 
       <style>{`
         .entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
@@ -304,30 +353,28 @@ export function EntvizPill(props: EntvizPillProps) {
   );
 }
 
-const menuStyle = (rtl: boolean): React.CSSProperties => ({
-  position: "absolute", top: "100%", [rtl ? "right" : "left"]: 0, marginTop: 4, zIndex: 20,
-  display: "flex", flexDirection: "column", minWidth: 200,
+const menuStyle: React.CSSProperties = {
+  zIndex: 30, display: "flex", flexDirection: "column", minWidth: 210,
   background: "#fff", color: "#1a1a2e", border: "1px solid #ddd", borderRadius: 8,
   boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 4, font: "13px system-ui, sans-serif",
-});
+};
 const menuItemStyle: React.CSSProperties = {
   textAlign: "start", background: "none", border: "none", borderRadius: 6,
   padding: "7px 10px", cursor: "pointer", font: "inherit", color: "inherit",
 };
-const popoverStyle = (rtl: boolean): React.CSSProperties => ({
-  position: "absolute", top: "100%", [rtl ? "right" : "left"]: 0, marginTop: 6, zIndex: 20,
-  display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
+const popoverStyle: React.CSSProperties = {
+  zIndex: 30, display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
   background: "#fff", border: "1px solid #e6e6f0", borderRadius: 12, padding: 14,
   boxShadow: "0 8px 30px rgba(0,0,0,.16)", font: "13px system-ui, sans-serif",
-});
+};
 const copyBtnStyle: React.CSSProperties = {
   background: "#eef0ff", color: "#3b34b0", border: "none", borderRadius: 7,
   padding: "6px 10px", fontSize: 12, cursor: "pointer",
 };
-const toastStyle = (rtl: boolean): React.CSSProperties => ({
-  position: "absolute", top: "100%", [rtl ? "left" : "right"]: 0, marginTop: 6, zIndex: 25,
+const toastStyle: React.CSSProperties = {
+  position: "absolute", top: "100%", marginTop: 6, zIndex: 35,
   background: "#1a1a2e", color: "#fff", borderRadius: 6, padding: "5px 9px",
   fontSize: 11, whiteSpace: "nowrap", font: "11px system-ui, sans-serif",
-});
+};
 
 export default EntvizPill;

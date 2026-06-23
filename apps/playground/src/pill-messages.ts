@@ -4,12 +4,13 @@
 // or comparison text, and never via locale-aware case operations. See
 // packages/react/docs/pill-design.md §8.
 //
-// Non-English strings are machine-drafted and NEED NATIVE REVIEW before this
+// Non-English strings are MACHINE-DRAFTED and NEED NATIVE REVIEW before this
 // graduates into @entviz/react. Placeholders: {type}, {n}, {unit}.
 
 export interface Messages {
-  view: string; // tooltip / "View full" menu item
+  view: string; // tooltip / "View visualization" menu item
   ariaView: string; // accessible label for the pill ("...{type}")
+  actions: string; // kebab button aria-label
   copyValue: string;
   copyComparison: string;
   copyImage: string;
@@ -24,6 +25,7 @@ export interface Messages {
 const en: Messages = {
   view: "View visualization",
   ariaView: "view visualization, {type}",
+  actions: "Actions",
   copyValue: "Copy value",
   copyComparison: "Copy comparison text",
   copyImage: "Copy image",
@@ -35,88 +37,27 @@ const en: Messages = {
   copyFailed: "Copy failed",
 };
 
-// A representative demo set (incl. two RTL scripts) so localization + RTL can be
-// exercised in the playground. NOT a complete or reviewed translation set.
+// Full target set (incl. RTL ar/he and Simplified/Traditional Chinese).
+// NOT reviewed by native speakers — demo quality.
 const CATALOG: Record<string, Messages> = {
   en,
-  es: {
-    view: "Ver visualización",
-    ariaView: "ver visualización, {type}",
-    copyValue: "Copiar valor",
-    copyComparison: "Copiar texto de comparación",
-    copyImage: "Copiar imagen",
-    copySvg: "Copiar SVG",
-    copiedValue: "Valor copiado · {n} {unit}",
-    copiedComparison: "Texto de comparación copiado · {n} celdas",
-    copiedImage: "Imagen copiada",
-    copiedSvg: "SVG copiado",
-    copyFailed: "Error al copiar",
-  },
-  fr: {
-    view: "Voir la visualisation",
-    ariaView: "voir la visualisation, {type}",
-    copyValue: "Copier la valeur",
-    copyComparison: "Copier le texte de comparaison",
-    copyImage: "Copier l’image",
-    copySvg: "Copier le SVG",
-    copiedValue: "Valeur copiée · {n} {unit}",
-    copiedComparison: "Texte de comparaison copié · {n} cellules",
-    copiedImage: "Image copiée",
-    copiedSvg: "SVG copié",
-    copyFailed: "Échec de la copie",
-  },
-  de: {
-    view: "Visualisierung anzeigen",
-    ariaView: "Visualisierung anzeigen, {type}",
-    copyValue: "Wert kopieren",
-    copyComparison: "Vergleichstext kopieren",
-    copyImage: "Bild kopieren",
-    copySvg: "SVG kopieren",
-    copiedValue: "Wert kopiert · {n} {unit}",
-    copiedComparison: "Vergleichstext kopiert · {n} Zellen",
-    copiedImage: "Bild kopiert",
-    copiedSvg: "SVG kopiert",
-    copyFailed: "Kopieren fehlgeschlagen",
-  },
-  ja: {
-    view: "可視化を表示",
-    ariaView: "可視化を表示、{type}",
-    copyValue: "値をコピー",
-    copyComparison: "比較テキストをコピー",
-    copyImage: "画像をコピー",
-    copySvg: "SVG をコピー",
-    copiedValue: "値をコピーしました · {n} {unit}",
-    copiedComparison: "比較テキストをコピーしました · {n} セル",
-    copiedImage: "画像をコピーしました",
-    copiedSvg: "SVG をコピーしました",
-    copyFailed: "コピーに失敗しました",
-  },
-  ar: {
-    view: "عرض التمثيل المرئي",
-    ariaView: "عرض التمثيل المرئي، {type}",
-    copyValue: "نسخ القيمة",
-    copyComparison: "نسخ نص المقارنة",
-    copyImage: "نسخ الصورة",
-    copySvg: "نسخ SVG",
-    copiedValue: "تم نسخ القيمة · {n} {unit}",
-    copiedComparison: "تم نسخ نص المقارنة · {n} خلايا",
-    copiedImage: "تم نسخ الصورة",
-    copiedSvg: "تم نسخ SVG",
-    copyFailed: "فشل النسخ",
-  },
-  he: {
-    view: "הצג המחשה",
-    ariaView: "הצג המחשה, {type}",
-    copyValue: "העתק ערך",
-    copyComparison: "העתק טקסט השוואה",
-    copyImage: "העתק תמונה",
-    copySvg: "העתק SVG",
-    copiedValue: "הערך הועתק · {n} {unit}",
-    copiedComparison: "טקסט ההשוואה הועתק · {n} תאים",
-    copiedImage: "התמונה הועתקה",
-    copiedSvg: "‏SVG הועתק",
-    copyFailed: "ההעתקה נכשלה",
-  },
+  es: { view: "Ver visualización", ariaView: "ver visualización, {type}", actions: "Acciones", copyValue: "Copiar valor", copyComparison: "Copiar texto de comparación", copyImage: "Copiar imagen", copySvg: "Copiar SVG", copiedValue: "Valor copiado · {n} {unit}", copiedComparison: "Texto de comparación copiado · {n} celdas", copiedImage: "Imagen copiada", copiedSvg: "SVG copiado", copyFailed: "Error al copiar" },
+  fr: { view: "Voir la visualisation", ariaView: "voir la visualisation, {type}", actions: "Actions", copyValue: "Copier la valeur", copyComparison: "Copier le texte de comparaison", copyImage: "Copier l’image", copySvg: "Copier le SVG", copiedValue: "Valeur copiée · {n} {unit}", copiedComparison: "Texte de comparaison copié · {n} cellules", copiedImage: "Image copiée", copiedSvg: "SVG copié", copyFailed: "Échec de la copie" },
+  de: { view: "Visualisierung anzeigen", ariaView: "Visualisierung anzeigen, {type}", actions: "Aktionen", copyValue: "Wert kopieren", copyComparison: "Vergleichstext kopieren", copyImage: "Bild kopieren", copySvg: "SVG kopieren", copiedValue: "Wert kopiert · {n} {unit}", copiedComparison: "Vergleichstext kopiert · {n} Zellen", copiedImage: "Bild kopiert", copiedSvg: "SVG kopiert", copyFailed: "Kopieren fehlgeschlagen" },
+  it: { view: "Mostra visualizzazione", ariaView: "mostra visualizzazione, {type}", actions: "Azioni", copyValue: "Copia valore", copyComparison: "Copia testo di confronto", copyImage: "Copia immagine", copySvg: "Copia SVG", copiedValue: "Valore copiato · {n} {unit}", copiedComparison: "Testo di confronto copiato · {n} celle", copiedImage: "Immagine copiata", copiedSvg: "SVG copiato", copyFailed: "Copia non riuscita" },
+  pt: { view: "Ver visualização", ariaView: "ver visualização, {type}", actions: "Ações", copyValue: "Copiar valor", copyComparison: "Copiar texto de comparação", copyImage: "Copiar imagem", copySvg: "Copiar SVG", copiedValue: "Valor copiado · {n} {unit}", copiedComparison: "Texto de comparação copiado · {n} células", copiedImage: "Imagem copiada", copiedSvg: "SVG copiado", copyFailed: "Falha ao copiar" },
+  ru: { view: "Показать визуализацию", ariaView: "показать визуализацию, {type}", actions: "Действия", copyValue: "Копировать значение", copyComparison: "Копировать текст сравнения", copyImage: "Копировать изображение", copySvg: "Копировать SVG", copiedValue: "Значение скопировано · {n} {unit}", copiedComparison: "Текст сравнения скопирован · {n} ячеек", copiedImage: "Изображение скопировано", copiedSvg: "SVG скопирован", copyFailed: "Не удалось скопировать" },
+  el: { view: "Προβολή οπτικοποίησης", ariaView: "προβολή οπτικοποίησης, {type}", actions: "Ενέργειες", copyValue: "Αντιγραφή τιμής", copyComparison: "Αντιγραφή κειμένου σύγκρισης", copyImage: "Αντιγραφή εικόνας", copySvg: "Αντιγραφή SVG", copiedValue: "Η τιμή αντιγράφηκε · {n} {unit}", copiedComparison: "Το κείμενο σύγκρισης αντιγράφηκε · {n} κελιά", copiedImage: "Η εικόνα αντιγράφηκε", copiedSvg: "Το SVG αντιγράφηκε", copyFailed: "Η αντιγραφή απέτυχε" },
+  "zh-Hans": { view: "查看可视化", ariaView: "查看可视化，{type}", actions: "操作", copyValue: "复制值", copyComparison: "复制比较文本", copyImage: "复制图片", copySvg: "复制 SVG", copiedValue: "已复制值 · {n} {unit}", copiedComparison: "已复制比较文本 · {n} 个单元格", copiedImage: "已复制图片", copiedSvg: "已复制 SVG", copyFailed: "复制失败" },
+  "zh-Hant": { view: "檢視視覺化", ariaView: "檢視視覺化，{type}", actions: "動作", copyValue: "複製值", copyComparison: "複製比較文字", copyImage: "複製圖片", copySvg: "複製 SVG", copiedValue: "已複製值 · {n} {unit}", copiedComparison: "已複製比較文字 · {n} 個儲存格", copiedImage: "已複製圖片", copiedSvg: "已複製 SVG", copyFailed: "複製失敗" },
+  ja: { view: "可視化を表示", ariaView: "可視化を表示、{type}", actions: "操作", copyValue: "値をコピー", copyComparison: "比較テキストをコピー", copyImage: "画像をコピー", copySvg: "SVG をコピー", copiedValue: "値をコピーしました · {n} {unit}", copiedComparison: "比較テキストをコピーしました · {n} セル", copiedImage: "画像をコピーしました", copiedSvg: "SVG をコピーしました", copyFailed: "コピーに失敗しました" },
+  ko: { view: "시각화 보기", ariaView: "시각화 보기, {type}", actions: "작업", copyValue: "값 복사", copyComparison: "비교 텍스트 복사", copyImage: "이미지 복사", copySvg: "SVG 복사", copiedValue: "값 복사됨 · {n} {unit}", copiedComparison: "비교 텍스트 복사됨 · {n}개 셀", copiedImage: "이미지 복사됨", copiedSvg: "SVG 복사됨", copyFailed: "복사 실패" },
+  hi: { view: "विज़ुअलाइज़ेशन देखें", ariaView: "विज़ुअलाइज़ेशन देखें, {type}", actions: "क्रियाएँ", copyValue: "मान कॉपी करें", copyComparison: "तुलना पाठ कॉपी करें", copyImage: "छवि कॉपी करें", copySvg: "SVG कॉपी करें", copiedValue: "मान कॉपी किया गया · {n} {unit}", copiedComparison: "तुलना पाठ कॉपी किया गया · {n} सेल", copiedImage: "छवि कॉपी की गई", copiedSvg: "SVG कॉपी किया गया", copyFailed: "कॉपी विफल" },
+  id: { view: "Lihat visualisasi", ariaView: "lihat visualisasi, {type}", actions: "Tindakan", copyValue: "Salin nilai", copyComparison: "Salin teks perbandingan", copyImage: "Salin gambar", copySvg: "Salin SVG", copiedValue: "Nilai disalin · {n} {unit}", copiedComparison: "Teks perbandingan disalin · {n} sel", copiedImage: "Gambar disalin", copiedSvg: "SVG disalin", copyFailed: "Gagal menyalin" },
+  tr: { view: "Görselleştirmeyi gör", ariaView: "görselleştirmeyi gör, {type}", actions: "Eylemler", copyValue: "Değeri kopyala", copyComparison: "Karşılaştırma metnini kopyala", copyImage: "Görseli kopyala", copySvg: "SVG kopyala", copiedValue: "Değer kopyalandı · {n} {unit}", copiedComparison: "Karşılaştırma metni kopyalandı · {n} hücre", copiedImage: "Görsel kopyalandı", copiedSvg: "SVG kopyalandı", copyFailed: "Kopyalama başarısız" },
+  vi: { view: "Xem trực quan hóa", ariaView: "xem trực quan hóa, {type}", actions: "Tác vụ", copyValue: "Sao chép giá trị", copyComparison: "Sao chép văn bản so sánh", copyImage: "Sao chép hình ảnh", copySvg: "Sao chép SVG", copiedValue: "Đã sao chép giá trị · {n} {unit}", copiedComparison: "Đã sao chép văn bản so sánh · {n} ô", copiedImage: "Đã sao chép hình ảnh", copiedSvg: "Đã sao chép SVG", copyFailed: "Sao chép thất bại" },
+  ar: { view: "عرض التمثيل المرئي", ariaView: "عرض التمثيل المرئي، {type}", actions: "إجراءات", copyValue: "نسخ القيمة", copyComparison: "نسخ نص المقارنة", copyImage: "نسخ الصورة", copySvg: "نسخ SVG", copiedValue: "تم نسخ القيمة · {n} {unit}", copiedComparison: "تم نسخ نص المقارنة · {n} خلية", copiedImage: "تم نسخ الصورة", copiedSvg: "تم نسخ SVG", copyFailed: "فشل النسخ" },
+  he: { view: "הצג המחשה", ariaView: "הצג המחשה, {type}", actions: "פעולות", copyValue: "העתק ערך", copyComparison: "העתק טקסט השוואה", copyImage: "העתק תמונה", copySvg: "העתק SVG", copiedValue: "הערך הועתק · {n} {unit}", copiedComparison: "טקסט ההשוואה הועתק · {n} תאים", copiedImage: "התמונה הועתקה", copiedSvg: "‏SVG הועתק", copyFailed: "ההעתקה נכשלה" },
 };
 
 const RTL = new Set(["ar", "he", "fa", "ur"]);
@@ -126,9 +67,21 @@ export function isRtlLocale(locale: string): boolean {
   return RTL.has(locale.toLowerCase().split("-")[0]);
 }
 
+// Map a BCP-47 tag to a catalog key: exact match, then Chinese script/region
+// resolution (zh-TW/HK/MO/Hant → Traditional, else Simplified), then primary
+// subtag.
+function pickKey(tag: string): string | null {
+  const t = tag.toLowerCase();
+  for (const k of Object.keys(CATALOG)) if (k.toLowerCase() === t) return k;
+  if (t.startsWith("zh")) return /hant|\b(tw|hk|mo)\b|-(tw|hk|mo)/.test(t) ? "zh-Hant" : "zh-Hans";
+  const primary = t.split("-")[0];
+  for (const k of Object.keys(CATALOG)) if (k.toLowerCase() === primary) return k;
+  return null;
+}
+
 /**
- * Resolve a Messages bundle for a locale tag, matching by primary subtag and
- * falling back to English. Pass `undefined` to auto-detect from the browser.
+ * Resolve a Messages bundle for a locale tag, falling back to English. Pass
+ * `undefined` to auto-detect from the browser (navigator.languages).
  */
 export function resolveMessages(locale?: string): { locale: string; messages: Messages } {
   const tags = locale
@@ -137,8 +90,8 @@ export function resolveMessages(locale?: string): { locale: string; messages: Me
       ? [...(navigator.languages ?? [navigator.language])]
       : ["en"];
   for (const tag of tags) {
-    const primary = tag.toLowerCase().split("-")[0];
-    if (CATALOG[primary]) return { locale: primary, messages: CATALOG[primary] };
+    const key = pickKey(tag);
+    if (key) return { locale: key, messages: CATALOG[key] };
   }
   return { locale: "en", messages: en };
 }
