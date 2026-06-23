@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Entviz } from "@entviz/react";
 import { render as renderEntviz } from "@entviz/core";
+import { EntvizPill } from "./EntvizPill.tsx";
+import { SUPPORTED_LOCALES } from "./pill-messages.ts";
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
 const PRESETS: { label: string; value: string }[] = [
@@ -26,6 +28,9 @@ export function App() {
   const [fontSizePt, setFontSizePt] = useState(12);
   const [note, setNote] = useState("");
   const [width, setWidth] = useState(280);
+  const [locale, setLocale] = useState(""); // "" = auto-detect from the browser
+  const [pillLabel, setPillLabel] = useState("");
+  const [showType, setShowType] = useState(true);
 
   const opts = { targetAr, fontSizePt, note: note || null };
 
@@ -109,6 +114,26 @@ export function App() {
           </label>
           <input type="range" min={80} max={480} step={10} value={width}
             onChange={(e) => setWidth(Number(e.target.value))} style={rangeStyle} />
+
+          <label style={labelStyle}>
+            Pill locale <span style={{ fontWeight: 400, color: "#888" }}>(chrome only — never the value; RTL mirrors chrome)</span>
+          </label>
+          <select value={locale} onChange={(e) => setLocale(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }}>
+            <option value="">auto (browser)</option>
+            {SUPPORTED_LOCALES.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+
+          <label style={labelStyle}>
+            Pill label <span style={{ fontWeight: 400, color: "#888" }}>(first-party host text — trusted, unlike the note)</span>
+          </label>
+          <input type="text" value={pillLabel} placeholder="e.g. signing-key"
+            onChange={(e) => setPillLabel(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 10 }} />
+          <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
+            <input type="checkbox" checked={showType} onChange={(e) => setShowType(e.target.checked)} />
+            Show type label
+          </label>
         </section>
 
         {/* Preview */}
@@ -141,6 +166,25 @@ export function App() {
   note={${note ? JSON.stringify(note) : "null"}}
 />`}
           </pre>
+
+          <label style={{ ...labelStyle, marginTop: 16 }}>
+            Collapsed form (&lt;EntvizPill/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— click to expand · hover for the copy menu</span>
+          </label>
+          <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe", fontSize: 15, lineHeight: 2.1 }}>
+            Run:{" "}
+            <code style={{ fontFamily: mono, fontSize: 13 }}>
+              gh secret save{" "}
+              <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onError={(m) => console.warn("pill:", m)} />
+            </code>
+            <br />
+            Inherits the running font &amp; colour:{" "}
+            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />
+            {" "}— and again without its badge:{" "}
+            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} showIcon={false} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />
+          </div>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
+            Type only (the note stays inside the entviz, never on the pill). Copy menu: value vs. comparison text vs. image vs. SVG.
+          </p>
         </section>
       </div>
     </div>
