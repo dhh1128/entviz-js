@@ -1,6 +1,6 @@
 {
   "name": "@entviz/react",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "React component for entviz — render a comparable SVG fingerprint of any high-entropy value.",
   "type": "module",
   "main": "src/Entviz.ts",
@@ -20,7 +20,7 @@
     "react": ">=17"
   },
   "dependencies": {
-    "@entviz/core": "0.10.0"
+    "@entviz/core": "0.11.0"
   },
   "devDependencies": {
     "react": "^19.0.0",

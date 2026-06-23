@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   parse,
   classifyInput,
+  fingerprintCore,
+  render,
   sanitizeNote,
   roundHalfEven,
   HEX,
@@ -78,6 +80,104 @@ test("sanitizeNote: too-long, control, and non-ASCII notes are rejected", () => 
   assert.throws(() => sanitizeNote("café")); // non-ASCII (é = U+00E9)
   assert.throws(() => sanitizeNote("a\u202Eb")); // bidi override (RLO)
   assert.throws(() => sanitizeNote("a\u200Bb")); // zero-width space
+});
+
+// --- v11: DID parsing ----------------------------------------------------
+test("parse: did:web basic -> no type, semantic prefix, core verbatim", () => {
+  const p = parse("did:web:example.com")!;
+  assert.equal(p.type, "");
+  assert.equal(p.prefix, "did:web:");
+  assert.equal(p.core, "example.com");
+  assert.equal(p.alphabet, BASE64URL);
+  assert.equal(p.prefixSemantic, true);
+  assert.equal(p.suffix, null);
+});
+
+test("parse: did method-specific-id keeps internal ':' segments", () => {
+  const p = parse("did:web:example.com%3A3000:user:alice")!;
+  assert.equal(p.prefix, "did:web:");
+  assert.equal(p.core, "example.com%3A3000:user:alice");
+  assert.equal(p.prefixSemantic, true);
+});
+
+test("parse: DID-URL tail (/path?q#frag) is dropped; core == bare msid", () => {
+  const bare = parse("did:web:example.com:user:alice")!;
+  const tailed = parse("did:web:example.com:user:alice/did.json?versionId=1#key-0")!;
+  assert.equal(tailed.core, bare.core);
+  assert.equal(tailed.prefix, "did:web:");
+  assert.equal(tailed.core, "example.com:user:alice");
+});
+
+test("parse: did:key fragment dropped, core is the multibase value", () => {
+  const p = parse("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK#z6Mkh")!;
+  assert.equal(p.prefix, "did:key:");
+  assert.equal(p.core, "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK");
+  assert.equal(p.type, "");
+  assert.equal(p.prefixSemantic, true);
+});
+
+test("parse: did method is lowercase alnum; uppercase method is not a DID", () => {
+  // method `[a-z0-9]+` — an uppercase method letter fails the DID regex.
+  assert.equal(parse("did:WEB:example.com"), null);
+});
+
+// --- v11: URN parsing ----------------------------------------------------
+test("parse: urn:isbn basic -> no type, semantic prefix, NSS core", () => {
+  const p = parse("urn:isbn:0451450523")!;
+  assert.equal(p.type, "");
+  assert.equal(p.prefix, "urn:isbn:");
+  assert.equal(p.core, "0451450523");
+  assert.equal(p.alphabet, BASE64URL);
+  assert.equal(p.prefixSemantic, true);
+  assert.equal(p.suffix, null);
+});
+
+test("parse: URN scheme+NID lowercased, NSS case PRESERVED", () => {
+  const p = parse("URN:ISBN:Abc-XYZ")!;
+  assert.equal(p.prefix, "urn:isbn:");
+  assert.equal(p.core, "Abc-XYZ"); // NSS case preserved
+  assert.equal(p.prefixSemantic, true);
+});
+
+test("parse: urn NSS keeps '/' (only '?'/'#' terminate it)", () => {
+  const p = parse("urn:example:a/b/c")!;
+  assert.equal(p.prefix, "urn:example:");
+  assert.equal(p.core, "a/b/c");
+});
+
+test("parse: urn r-/q-/f-components are dropped", () => {
+  const bare = parse("urn:example:weather")!;
+  const comp = parse("urn:example:weather?=op=map&lat=39#section")!;
+  assert.equal(comp.core, bare.core);
+  assert.equal(comp.core, "weather");
+  assert.equal(comp.prefix, "urn:example:");
+});
+
+// --- v11: prefix-fold fingerprint binding --------------------------------
+test("classifyInput: DID surfaces semantic prefix (prefix-fold input)", () => {
+  const c = classifyInput("did:web:example.com");
+  assert.equal(c.typeName, "");
+  assert.equal(c.prefix, "did:web:");
+  assert.equal(c.prefixSemantic, true);
+  assert.equal(c.alphabet, BASE64URL);
+});
+
+test("fingerprintCore: folds prefix only when semantic", () => {
+  // semantic prefix -> prefix ‖ core
+  assert.equal(fingerprintCore("example.com", "did:web:", true), "did:web:example.com");
+  // signal prefix (or unset) -> bare core unchanged (hex/UUID/ETH keying intact)
+  assert.equal(fingerprintCore("deadbeef", "0x", false), "deadbeef");
+  assert.equal(fingerprintCore("deadbeef", null, undefined), "deadbeef");
+});
+
+test("render: did:web:X and did:key:X fingerprint differently (no collision)", () => {
+  // Pre-v11 the method was stripped & unbound, so these collided. The folded
+  // prefix now avalanches them apart — assert the digest-keyed clip ids differ.
+  const a = render("did:web:example");
+  const b = render("did:key:example");
+  const idA = a.match(/grid-clip-([0-9a-f]+)-/)![1];
+  const idB = b.match(/grid-clip-([0-9a-f]+)-/)![1];
+  assert.notEqual(idA, idB);
 });
 
 test("roundHalfEven: below/above .5 and ties toward even", () => {
