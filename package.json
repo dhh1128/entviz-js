@@ -4,7 +4,8 @@
   "description": "entviz TypeScript core + React component (npm workspace)",
   "workspaces": [
     "packages/core",
-    "packages/react"
+    "packages/react",
+    "apps/*"
   ],
   "license": "Apache-2.0",
   "repository": {
