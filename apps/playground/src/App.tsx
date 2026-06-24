@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Entviz, EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
+import { Entviz, EntvizPill, EntvizCompare, SUPPORTED_LOCALES } from "@entviz/react";
 import { render as renderEntviz } from "@entviz/core";
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
@@ -182,6 +182,16 @@ export function App() {
           </div>
           <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
             Type only (the note stays inside the entviz, never on the pill). Copy menu: value vs. comparison text vs. image vs. SVG.
+          </p>
+
+          <label style={{ ...labelStyle, marginTop: 16 }}>
+            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— paste a reference value to check it against yours (machine path · M1a)</span>
+          </label>
+          <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe" }}>
+            <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
+          </div>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
+            Paste the same value to see <code style={{ fontFamily: mono }}>=</code>, a different one for <code style={{ fontFamily: mono }}>≠</code>. Pasting an SVG/image or anything ambiguous fails closed (no false “differ”). SVG/image/URL engines + the guided walk come in later milestones.
           </p>
         </section>
       </div>
