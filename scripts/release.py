@@ -42,9 +42,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 CORE_PKG = REPO_ROOT / "packages" / "core" / "package.json"
 REACT_PKG = REPO_ROOT / "packages" / "react" / "package.json"
+# The private playground app pins both workspace packages exactly; its pins must
+# move in lockstep with a release or `npm install --package-lock-only` cannot
+# resolve the just-bumped version (it is not on the registry). Its OWN version
+# stays put (private, 0.0.0) — only its @entviz/* dependency pins are rewritten.
+PLAYGROUND_PKG = REPO_ROOT / "apps" / "playground" / "package.json"
 CORE_SRC = REPO_ROOT / "packages" / "core" / "src" / "entviz.ts"
 ENTVIZ_REF = REPO_ROOT.parent / "entviz"
 CORE_NAME = "@entviz/core"
+REACT_NAME = "@entviz/react"
 
 
 def run(cmd, *, capture=False, check=True):
@@ -62,18 +68,38 @@ def current_version():
     return v
 
 
+def _pin_internal_deps(data, new_version):
+    """Rewrite any @entviz/core or @entviz/react entry in `data.dependencies`
+    to the exact new version (in place). No-op when neither is depended on."""
+    deps = data.get("dependencies")
+    if isinstance(deps, dict):
+        for name in (CORE_NAME, REACT_NAME):
+            if name in deps:
+                deps[name] = new_version
+
+
 def set_version(new_version):
-    """Bump BOTH packages in lockstep and keep @entviz/react's pin on
-    @entviz/core exact. json round-trips preserve key order and the 2-space
-    format the manifests already use."""
+    """Bump the two published packages in lockstep, keep every internal
+    @entviz/* pin exact, and move the private playground app's pins too.
+
+    @entviz/core and @entviz/react get the new version as their OWN version and
+    have their internal pins rewritten. The playground (apps/playground) is
+    private at a fixed 0.0.0, so its version is left alone, but its exact pins on
+    @entviz/core/@entviz/react MUST be bumped or `npm install --package-lock-only`
+    fails to resolve the just-bumped version (it is not published). json
+    round-trips preserve key order and the 2-space manifest format.
+
+    ensure_ascii=False keeps the em-dashes in descriptions literal (as
+    npm/JSON.stringify wrote them), so the release diff stays version-only."""
     for path in (CORE_PKG, REACT_PKG):
         data = json.loads(path.read_text())
         data["version"] = new_version
-        deps = data.get("dependencies")
-        if isinstance(deps, dict) and CORE_NAME in deps:
-            deps[CORE_NAME] = new_version
-        # ensure_ascii=False keeps the em-dashes in descriptions literal (as
-        # npm/JSON.stringify wrote them), so the release diff stays version-only.
+        _pin_internal_deps(data, new_version)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    # Private workspace consumers: pins only, version untouched.
+    for path in (PLAYGROUND_PKG,):
+        data = json.loads(path.read_text())
+        _pin_internal_deps(data, new_version)
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -226,7 +252,8 @@ def main():
     run(["npm", "install", "--package-lock-only", "--no-audit", "--no-fund"])
 
     run(["git", "add",
-         "packages/core/package.json", "packages/react/package.json", "package-lock.json"])
+         "packages/core/package.json", "packages/react/package.json",
+         "apps/playground/package.json", "package-lock.json"])
     run(["git", "commit", "-s", "-m", f"Release {tag}: {message}"])
     run(["git", "push", "origin", "main"])
     run(["git", "tag", "-a", tag, "-m", f"Release {tag}: {message}"])
