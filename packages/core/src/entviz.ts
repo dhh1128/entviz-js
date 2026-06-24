@@ -1927,3 +1927,6 @@ export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gri
 // the same render model, re-exported so they ship from the single @entviz/core
 // entry point alongside render().
 export * from "./describe.ts";
+
+// Machine-comparison engines (compareValues, detectMedium, …) for <EntvizCompare>.
+export * from "./compare.ts";
