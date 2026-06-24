@@ -77,67 +77,108 @@ jobs:
         run: npm audit --audit-level=high
 
   conformance:
-    name: spec-sync + Tier-A conformance
+    name: Tier-A conformance (full)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
 
-      # The entviz reference repo carries the algorithm spec, SPEC_VERSION, and
-      # the golden conformance corpus this package is certified against.
-      - name: Check out the entviz reference (spec + corpus)
+      # The entviz reference repo carries the algorithm spec, SPEC_VERSION, the
+      # golden conformance corpus, and the single authoritative Python runner
+      # this package is certified against. PINNED to tag v0.11.1: that tag carries
+      # the enhanced runner (--skip-file, external-impl invariant pairs, and the
+      # spec-version-match assertion). NOTE: bumping this package's SPEC_VERSION
+      # later REQUIRES bumping this pin in lockstep — the runner asserts the
+      # corpus spec_version equals the impl's data-entviz-version and fails loudly
+      # on a mismatch. Sparse-checkout only `compliance` (corpus + runner) and
+      # `src` (the entviz package the runner imports for model extraction).
+      - name: Check out the entviz reference (spec + corpus + runner)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: dhh1128/entviz
+          ref: v0.11.1
           path: entviz-ref
+          sparse-checkout: |
+            compliance
+            src
           persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: 24
 
-      # The conformance CLI (cli.ts -> entviz.ts) now imports @entviz/core's one
-      # runtime dependency (@noble/hashes), so node_modules must be installed —
-      # before the isomorphic change core was zero-dep and this step wasn't needed.
+      # setup-python@v6.0.0 runs on the node24 runtime (verified: action.yml
+      # `using: node24`).
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6.0.0
+        with:
+          python-version: '3.x'
+
+      # The conformance CLI (cli.ts -> entviz.ts) imports @entviz/core's one
+      # runtime dependency (@noble/hashes), so node_modules must be installed.
       - name: Install (workspace, reproducible)
         run: npm ci
 
       - name: Install the Tier-A harness (lxml only; no rasterizer needed)
-        run: |
-          set -euo pipefail
-          python3 -m venv /tmp/harness
-          /tmp/harness/bin/pip install --quiet --upgrade pip
-          /tmp/harness/bin/pip install --quiet lxml
+        run: pip install lxml
 
-      # @entviz/core ports a SUBSET of the corpus (the parsers listed in
-      # CERTIFICATION.md); the unported formats are tracked there. We certify
-      # exactly that subset at Tier A (render model) + the error-rejection
-      # vectors. No untrusted GitHub event data is interpolated (only trusted
-      # workspace paths).
-      - name: Spec-version sync check + Tier-A conformance
+      # @entviz/core is now FULL conformance: every corpus vector must pass at
+      # Tier A (render model) + error-rejection + invariant pairs. No --skip-file
+      # and no --only subset. The runner's own spec-version-match assertion guards
+      # corpus/impl agreement (replacing the former manual spec-drift wrapper).
+      # Only trusted workspace paths are interpolated.
+      - name: Tier-A conformance (full corpus, hard gate)
         run: |
           set -euo pipefail
-          subset='hex-64,hex-128,hex-256,hex-512,uuid-dashed,uuid-undashed,uuid-nil,uuid-max,avalanche-a,avalanche-b,ar-1x1,ar-2x1,ar-1x2,fs-6,fs-12,fs-24,text-hello,text-lorem,note-git,note-space,note-punct,eth-lower,eth-checksummed,err-eip55-bad-checksum,err-note-too-long,err-note-control,err-note-nonascii,err-fontsize-low,err-fontsize-high'
-          ours=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' packages/core/src/entviz.ts)
-          ref=$(grep -oP 'SPEC_VERSION = "\Kv[0-9]+' entviz-ref/src/entviz/__init__.py)
-          echo "entviz-js targets spec ${ours}; reference impl/spec is ${ref}"
-          run_conformance() {
-            ( cd entviz-ref \
-              && PYTHONPATH=src:. /tmp/harness/bin/python -m compliance.runner \
-                   --impl-cmd "node ${GITHUB_WORKSPACE}/packages/core/src/cli.ts" \
-                   --tiers A --only "${subset}" )
-          }
-          if [ "${ours}" = "${ref}" ]; then
-            echo "Spec versions match - conformance is a hard gate."
-            run_conformance
-          else
-            echo "::warning title=Spec drift::reference impl/spec is ${ref} but entviz-js targets ${ours} - an upgrade is needed"
-            if [ "${ref#v}" -gt "${ours#v}" ]; then
-              echo "Reference is AHEAD; the corpus run is informational while this package catches up."
-              run_conformance || echo "::warning title=Conformance::failed against the newer reference corpus (expected while behind)"
-            else
-              echo "This package is ahead of the reference - hard gate."
-              run_conformance
-            fi
-          fi
+          cd entviz-ref
+          PYTHONPATH=src:. python -m compliance.runner \
+            --impl-cmd "node ${GITHUB_WORKSPACE}/packages/core/src/cli.ts" --tiers A
+
+  conformance-tier-b:
+    name: Tier-B conformance (raster, full)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Same pinned reference as the Tier-A job (see that job's note): tag
+      # v0.11.1 carries the enhanced runner, and the pin must move with this
+      # package's SPEC_VERSION.
+      - name: Check out the entviz reference (spec + corpus + runner)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          repository: dhh1128/entviz
+          ref: v0.11.1
+          path: entviz-ref
+          sparse-checkout: |
+            compliance
+            src
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6.0.0
+        with:
+          python-version: '3.x'
+
+      - name: Install (workspace, reproducible)
+        run: npm ci
+
+      # Tier B rasterizes the SVG and compares against the golden PNG, so the
+      # harness additionally needs cairosvg + pillow (and the system Cairo lib).
+      - name: Install the Tier-B harness (lxml + cairosvg + pillow)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2
+          pip install lxml "cairosvg==2.9.0" pillow numpy
+
+      - name: Tier-B conformance (full corpus, hard gate)
+        run: |
+          set -euo pipefail
+          cd entviz-ref
+          PYTHONPATH=src:. python -m compliance.runner \
+            --impl-cmd "node ${GITHUB_WORKSPACE}/packages/core/src/cli.ts" --tiers B
