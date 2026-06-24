@@ -33,6 +33,28 @@ jobs:
       - name: Test
         run: npm test --workspaces --if-present
 
+  playground:
+    name: playground builds (browser bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Install (workspace, reproducible)
+        run: npm ci
+
+      # Bundling the playground exercises @entviz/core + @entviz/react through a
+      # real browser build (Vite). This is the teeth behind the isomorphic
+      # guarantee — if a Node-only primitive ever creeps back into core, this
+      # job fails, not just the static isomorphic.test.ts tripwire.
+      - name: Build the playground
+        run: npm run build -w @entviz/playground
+
   audit:
     name: npm audit
     runs-on: ubuntu-latest

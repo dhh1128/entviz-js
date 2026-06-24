@@ -17,6 +17,9 @@ React component. An npm workspace:
   [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
   Keccak-256).
 - **`packages/react`** (`@entviz/react`) — a thin React component over the core.
+- **`apps/playground`** (`@entviz/playground`, not published) — a local Vite dev
+  app to render and experiment with the `<Entviz/>` component: `npm run dev -w
+  @entviz/playground`. See [its README](apps/playground/README.md).
 
 ## Status
 
