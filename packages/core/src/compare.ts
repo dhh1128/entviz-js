@@ -121,17 +121,21 @@ const CLOSED_PROFILE_TAGS = new Set([
  * (it fails closed): a false reject only routes the reference to the human walk.
  */
 export function validateClosedProfile(svg: string): boolean {
-  // Comments + CDATA are non-rendering; strip them so their text can't trip the
-  // element scan (and can't smuggle anything either — they don't render).
-  const s = svg.replace(/<!--[\s\S]*?-->/g, "").replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
-  for (const m of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g)) {
+  // Scan the RAW markup with only linear (non-backtracking) patterns — this runs
+  // on attacker-controlled input. A conformant entviz contains no comments/CDATA,
+  // so we REJECT them outright rather than strip-then-rescan (which is both
+  // ReDoS-prone and a classic incomplete-sanitization footgun: a comment can split
+  // a forbidden element). Every element tag must be in the whitelist; reject
+  // anything that could repaint the diagram or alter glyph rendering.
+  if (svg.includes("<!--") || svg.includes("<![CDATA[")) return false;
+  for (const m of svg.matchAll(/<\/?([a-zA-Z][\w:-]*)/g)) {
     if (!CLOSED_PROFILE_TAGS.has(m[1])) return false;
   }
-  if (/\son[a-z]+\s*=/i.test(s)) return false; // event handlers (onload=, …)
-  if (/\sstyle\s*=/i.test(s)) return false; // inline CSS (entviz never uses it)
-  if (/@font-face|@import/i.test(s)) return false;
-  if (/(?:xlink:)?href\s*=\s*["'](?!#)/i.test(s)) return false; // href to anything but a local #fragment
-  if (/url\(\s*(?!["']?#)/i.test(s)) return false; // url() to anything but a local #fragment
+  if (/\son[a-z]+\s*=/i.test(svg)) return false; // event handlers (onload=, …)
+  if (/\sstyle\s*=/i.test(svg)) return false; // inline CSS (entviz never uses it)
+  if (/@font-face|@import/i.test(svg)) return false;
+  if (/(?:xlink:)?href\s*=\s*["'](?!#)/i.test(svg)) return false; // href to anything but a local #fragment
+  if (/url\(\s*(?!["']?#)/i.test(svg)) return false; // url() to anything but a local #fragment
   return true;
 }
 
@@ -140,6 +144,17 @@ interface ParsedSvg {
   /** Filled cells in cell-index (= token) reading order. */
   filled: { text: string; surroundBits: number }[];
   colorBarLetters: string[];
+}
+
+// Linear extraction of a cell's token text: the central-baseline <text>'s content
+// (no backtracking regex — this parses untrusted input). Returns null if absent.
+function cellText(body: string): string | null {
+  const marker = body.indexOf('dominant-baseline="central"');
+  if (marker < 0) return null;
+  const tagEnd = body.indexOf(">", marker);
+  if (tagEnd < 0) return null;
+  const textEnd = body.indexOf("<", tagEnd + 1);
+  return textEnd < 0 ? null : body.slice(tagEnd + 1, textEnd);
 }
 
 // Extract the declared text + surround + colour-bar channels from a (validated)
@@ -155,11 +170,10 @@ function parseEntvizSvg(svg: string): ParsedSvg | null {
     const idx = tag.match(/data-cell-index="(\d+)"/);
     const blank = /data-cell-blank="true"/.test(tag);
     const surround = tag.match(/data-surround-bits="0x([0-9a-f]+)"/);
-    const textM = body.match(/<text[^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/);
     return {
       index: idx ? Number(idx[1]) : -1,
       blank,
-      text: textM ? textM[1] : null,
+      text: cellText(body),
       surroundBits: surround ? parseInt(surround[1], 16) : 0,
     };
   });
@@ -182,7 +196,14 @@ function parseEntvizSvg(svg: string): ParsedSvg | null {
  * lossless text channel AND the recomputed gestalt (surround bits + colour-bar
  * letters) both agree.
  */
+// Any real entviz SVG is a few KB (a >512-bit one well under this); a larger
+// paste is pathological, so cap it (anti-DoS on untrusted input) → unknown.
+const MAX_SVG_CHARS = 1_000_000;
+
 export function compareSvg(referenceSvg: string, value: string, opts: RenderOptions = {}): Verdict {
+  if (referenceSvg.length > MAX_SVG_CHARS) {
+    return { state: "unknown", reason: "the reference is too large to read safely" };
+  }
   if (!validateClosedProfile(referenceSvg)) {
     return { state: "unknown", reason: "the reference is not a closed-profile entviz" };
   }

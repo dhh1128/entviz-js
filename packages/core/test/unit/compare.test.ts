@@ -88,6 +88,9 @@ test("validateClosedProfile: accepts a real entviz, rejects anything that could 
   assert.equal(validateClosedProfile(base.replace("<rect", '<rect style="fill:url(http://e/x)"')), false);
   assert.equal(validateClosedProfile(base.replace("</svg>", "<image href='http://e/x.png'/></svg>")), false);
   assert.equal(validateClosedProfile(base.replace("</defs>", "<style>@font-face{}</style></defs>")), false);
+  // comments/CDATA aren't in a conformant entviz → fail closed (no strip-and-rescan)
+  assert.equal(validateClosedProfile(base.replace("<rect", "<!-- hi --><rect")), false);
+  assert.equal(validateClosedProfile(base.replace("<rect", "<![CDATA[x]]><rect")), false);
   // a local url(#fragment) clip is fine (and is what the entviz itself uses)
   assert.ok(/url\(#/.test(base));
 });
@@ -96,6 +99,12 @@ test("validateClosedProfile: accepts a real entviz, rejects anything that could 
 
 test("compareSvg: a faithful entviz of the same value is `identical`", () => {
   assert.deepEqual(compareSvg(render(UUID), UUID), { state: "identical" });
+  // a value whose grid has blank cells (exercises blank-cell parsing)
+  assert.deepEqual(compareSvg(render("012345"), "012345"), { state: "identical" });
+});
+
+test("compareSvg: an oversized reference is `unknown` (anti-DoS)", () => {
+  assert.equal(compareSvg("<svg>" + " ".repeat(1_000_001) + "</svg>", UUID).state, "unknown");
 });
 
 test("compareSvg: identity is geometry-independent (different ar/font still identical)", () => {
