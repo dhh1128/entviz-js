@@ -6,6 +6,8 @@ import {
   compareSvg,
   validateClosedProfile,
   detectMedium,
+  rasterFidelityProbe,
+  rasterDisprove,
 } from "../../src/compare.ts";
 import { comparisonText } from "../../src/describe.ts";
 import { render } from "../../src/entviz.ts";
@@ -136,4 +138,49 @@ test("compareSvg: text matches but a forged gestalt is `unknown`, not identical"
   // same text + surround, but tamper a colour-bar band letter → still unknown
   const forgedBar = render(UUID).replace(/data-color-bar-band="(\w)"/, (_m, l) => `data-color-bar-band="${l === "W" ? "K" : "W"}"`);
   assert.equal(compareSvg(forgedBar, UUID).state, "unknown");
+});
+
+// --- raster engine --------------------------------------------------------
+
+// Build a synthetic raster: an outer ring of `edge`, interior of `fill` (RGB).
+function raster(w: number, h: number, edge: [number, number, number], fill: [number, number, number]) {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const onEdge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+      const [r, g, b] = onEdge ? edge : fill;
+      rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = 255;
+    }
+  }
+  return { rgba, w, h };
+}
+
+const GRAY: [number, number, number] = [0x80, 0x80, 0x80];
+const WHITE: [number, number, number] = [0xff, 0xff, 0xff];
+const RED: [number, number, number] = [0xff, 0, 0];
+const BLACK: [number, number, number] = [0, 0, 0];
+
+test("rasterFidelityProbe: a clean #808080/#ffffff frame passes; a coloured edge fails", () => {
+  assert.equal(rasterFidelityProbe(raster(20, 20, GRAY, WHITE).rgba, 20, 20), true);
+  assert.equal(rasterFidelityProbe(raster(20, 20, WHITE, RED).rgba, 20, 20), true); // white margin
+  assert.equal(rasterFidelityProbe(raster(20, 20, RED, WHITE).rgba, 20, 20), false); // photo-ish edge
+  assert.equal(rasterFidelityProbe(new Uint8ClampedArray(4), 1, 1), false); // too small
+});
+
+test("rasterDisprove: never identical — different on a clear pixel difference", () => {
+  const ref = raster(20, 20, GRAY, WHITE);
+  const ours = raster(20, 20, GRAY, BLACK); // interiors differ everywhere
+  assert.deepEqual(rasterDisprove(ref, ours), { state: "different" });
+});
+
+test("rasterDisprove: a look-alike is unknown (an image cannot authenticate)", () => {
+  const a = raster(20, 20, GRAY, WHITE);
+  const b = raster(20, 20, GRAY, WHITE);
+  assert.equal(rasterDisprove(a, b).state, "unknown");
+});
+
+test("rasterDisprove: a size mismatch or a degraded image is unknown", () => {
+  assert.equal(rasterDisprove(raster(20, 20, GRAY, WHITE), raster(24, 24, GRAY, WHITE)).state, "unknown");
+  assert.equal(rasterDisprove(raster(20, 20, RED, WHITE), raster(20, 20, GRAY, WHITE)).state, "unknown");
 });
