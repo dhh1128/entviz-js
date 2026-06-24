@@ -42,9 +42,10 @@ const svg2 = render("0123456789abcdef0123456789abcdef", {
 ```
 
 The returned string is a self-contained `<svg>` with a `viewBox` (so it scales
-responsively) and `data-*` attributes describing every channel. Invalid input —
-a bad note, an out-of-range font size or aspect ratio, or (for now) a
->512-bit value — throws.
+responsively) and `data-*` attributes describing every channel. Inputs over
+512 bits take the large-input path (head + fingerprint-middle + tail). Invalid
+input — a bad note, an out-of-range font size or aspect ratio, or an input past
+the 64 KiB anti-DoS cap — throws.
 
 Using React? See [`@entviz/react`](https://www.npmjs.com/package/@entviz/react)
 for a thin `<Entviz value="…" />` wrapper.
@@ -62,10 +63,10 @@ guarantees are defined in the [spec](https://github.com/dhh1128/entviz/blob/main
 
 `SPEC_VERSION` is stamped on every render (`data-entviz-version`). Ported
 parsers: hex, UUID (dashed/undashed), and the UTF-8→base64url fallback, plus the
-note / font-size error handling. The blockchain / CESR / SSH / SWHID / gitoid /
-LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55
-parsers and the >512-bit large-input branch are mechanical follow-ons; the
-shared core is complete and corpus-proven. See
+note / font-size error handling and the **>512-bit large-input branch** (head +
+Crockford-base32 fingerprint-middle + tail). The blockchain / CESR / SSH / SWHID /
+gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55
+parsers are mechanical follow-ons; the shared core is complete and corpus-proven. See
 [`CERTIFICATION.md`](https://github.com/dhh1128/entviz-js/blob/main/CERTIFICATION.md).
 
 ## License

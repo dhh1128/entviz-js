@@ -27,10 +27,10 @@ The core is **certified** against the shared entviz conformance corpus at
 **Tier A (render model) + Tier B (canonical raster)** for every vector whose
 parser is ported:
 
-| Ported | hex, UUID (dashed/undashed), UTF-8→base64url fallback; note + font-size error handling |
+| Ported | hex, UUID (dashed/undashed), UTF-8→base64url fallback; note + font-size error handling; the **>512-bit large-input branch** (head + Crockford-base32 fingerprint-middle + tail) |
 |---|---|
-| Certified | 24/24 supported corpus vectors (19 render + 5 error) — Tier A + Tier B |
-| Not yet ported | the blockchain / CESR / SSH / SWHID / gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55 parsers, and the >512-bit large-input branch (incl. the v9 Crockford-base32 middle cells) |
+| Certified | 24/24 supported corpus vectors (19 render + 5 error) — Tier A + Tier B; plus `hex-1024` (large input) model/raster-matched bar the v10/v11 version stamp |
+| Not yet ported | the blockchain / CESR / SSH / SWHID / gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55 parsers |
 
 The unported parsers are mechanical follow-ons; the shared core (fingerprint,
 tokenization, quant extension, ftok median/quartile, grid + blank-shift, Oklab

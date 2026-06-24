@@ -18,19 +18,6 @@ export function utf8ByteLength(s: string): number {
   return UTF8.encode(s).length;
 }
 
-/**
- * True iff `s` exceeds `cap` UTF-8 bytes. A JS string's UTF-8 length is always
- * >= its UTF-16 code-unit count (every code unit costs >= 1 byte; a surrogate
- * pair costs 4 bytes for 2 units), so a string longer than `cap` code units
- * already exceeds the cap — we can reject it via the cheap `.length` check
- * WITHOUT materializing the encoding. This guards the large-input rejection
- * against allocating a multi-megabyte buffer just to measure it (SEC-F1).
- */
-export function exceedsUtf8ByteCap(s: string, cap: number): boolean {
-  if (s.length > cap) return true;
-  return utf8ByteLength(s) > cap;
-}
-
 const HEX_CHARS = "0123456789abcdef";
 
 /** Lowercase hex of a byte array (matches Buffer.toString("hex")). */

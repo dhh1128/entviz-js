@@ -1,0 +1,44 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { render, MAX_INPUT_CHARS } from "../../src/entviz.ts";
+
+const BIG_HEX = "0123456789abcdef".repeat(16); // 256 hex chars = 1024 bits
+
+test("render: a >512-bit input no longer throws; it takes the large-input path", () => {
+  const svg = render(BIG_HEX);
+  assert.match(svg, /<svg/);
+  assert.match(svg, /data-truncated="true"/);
+});
+
+test("render: large input shows the loud 'fingerprint of' marker + byte-length type", () => {
+  const svg = render(BIG_HEX);
+  assert.match(svg, /fingerprint of /);
+  assert.match(svg, /hex\(256\):/); // type parenthetical carries the size
+  assert.match(svg, /fill="#a00000"/); // bold dark-red marker
+});
+
+test("render: exactly 4 fingerprint-middle cells, flagged + Crockford readout", () => {
+  const svg = render(BIG_HEX);
+  const flags = svg.match(/data-cell-fingerprint="true"/g) ?? [];
+  assert.equal(flags.length, 4);
+});
+
+test("render: a short input is NOT truncated (data-truncated omitted)", () => {
+  const svg = render("0123456789abcdef0123456789abcdef");
+  assert.doesNotMatch(svg, /data-truncated/);
+  assert.doesNotMatch(svg, /fingerprint of/);
+});
+
+test("render: 512-bit input (boundary) stays the lossless short path", () => {
+  const svg = render("ab".repeat(64)); // 128 hex chars = 512 bits, exactly
+  assert.doesNotMatch(svg, /data-truncated/);
+});
+
+test("render: input past the anti-DoS cap is rejected", () => {
+  assert.throws(() => render("a".repeat(MAX_INPUT_CHARS + 1)), /too large/);
+});
+
+test("render: a large UTF-8 fallback input also renders (truncated)", () => {
+  const svg = render("The quick brown fox ".repeat(20)); // 400 chars -> base64url core
+  assert.match(svg, /data-truncated="true"/);
+});
