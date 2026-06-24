@@ -21,7 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, detectMedium, type RenderOptions, type Verdict } from "@entviz/core";
+import { compareSvg, compareValues, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
@@ -83,6 +83,40 @@ export function readFileAsReference(file: File): Promise<string> {
     if (/^image\//i.test(file.type) && !/svg/i.test(file.type)) fr.readAsDataURL(file);
     else fr.readAsText(file);
   });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image decode failed"));
+    img.src = src;
+  });
+}
+
+function imageToRaster(img: HTMLImageElement, w: number, h: number): Raster {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no 2d context");
+  ctx.drawImage(img, 0, 0, w, h);
+  return { rgba: ctx.getImageData(0, 0, w, h).data, w, h };
+}
+
+const svgDataUrl = (svg: string): string => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+
+/**
+ * Raster path: decode the reference image, render OUR value at the same pixel
+ * size, and disprove-or-bail. Never `identical` (comparison-design.md §6.3).
+ */
+export async function compareRaster(refSrc: string, value: string, opts: RenderOptions = {}): Promise<Verdict> {
+  const refImg = await loadImage(refSrc);
+  const w = refImg.naturalWidth || 1;
+  const h = refImg.naturalHeight || 1;
+  const reference = imageToRaster(refImg, w, h);
+  const ours = imageToRaster(await loadImage(svgDataUrl(render(value, opts))), w, h);
+  return rasterDisprove(reference, ours);
 }
 
 const originOf = (url: string): string => {
@@ -149,14 +183,31 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const eff = provided ?? ref;
   const refContent = eff?.content ?? "";
 
-  const result = useMemo(() => classifyResult(value, refContent, opts), [value, refContent, opts]);
+  const medium = refContent.trim() ? detectMedium(refContent) : null;
+  const baseResult = useMemo(() => classifyResult(value, refContent, opts), [value, refContent, opts]);
+
+  // Raster comparison is async (decode the image, render ours, disprove); the
+  // sync classifier marks it `deferred` and this effect fills in the verdict.
+  const [rasterV, setRasterV] = useState<Verdict | null>(null);
+  useEffect(() => {
+    if (medium !== "raster") { setRasterV(null); return; }
+    let alive = true;
+    setRasterV(null);
+    compareRaster(refContent, value, opts).then(
+      (v) => { if (alive) setRasterV(v); },
+      () => { if (alive) setRasterV({ state: "unknown", reason: "could not read the reference image" }); },
+    );
+    return () => { alive = false; };
+  }, [medium, refContent, value, opts]);
+
+  const result: CompareResult =
+    baseResult.kind === "deferred" && rasterV ? { kind: "verdict", verdict: rasterV } : baseResult;
   useEffect(() => {
     if (result.kind === "verdict") onVerdict?.(result.verdict);
   }, [result, onVerdict]);
 
   const secret = looksLikeSecret(value) || looksLikeSecret(refContent);
   const chip = chipFor(result, m);
-  const medium = refContent.trim() ? detectMedium(refContent) : null;
 
   // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG
   // is never embedded): for a text reference, the pasted value; for an SVG

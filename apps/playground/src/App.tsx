@@ -185,13 +185,13 @@ export function App() {
           </p>
 
           <label style={{ ...labelStyle, marginTop: 16 }}>
-            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— check a reference value or entviz SVG against yours (machine path · M1b)</span>
+            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— check a reference value, entviz SVG, or image against yours (machine path · M1c)</span>
           </label>
           <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe" }}>
             <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
           </div>
           <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
-            Paste/drop/pick/link the same value or its entviz SVG to see <code style={{ fontFamily: mono }}>=</code>, a different one for <code style={{ fontFamily: mono }}>≠</code>. A tampered or non-closed-profile SVG, a &gt;512-bit one, an image, or anything ambiguous fails closed (no false “differ”). The image engine + the guided walk come in later milestones.
+            Paste/drop/pick/link the same value or its entviz SVG to see <code style={{ fontFamily: mono }}>=</code>, a different one for <code style={{ fontFamily: mono }}>≠</code>. A tampered or non-closed-profile SVG, a &gt;512-bit one, or anything ambiguous fails closed (no false “differ”). An image is disprove-only — it can show <code style={{ fontFamily: mono }}>≠</code> or “unknown”, never <code style={{ fontFamily: mono }}>=</code> (no OCR). The guided human walk + two-party live ceremony come next (gated on the §10 params).
           </p>
         </section>
       </div>
