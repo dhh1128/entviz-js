@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 TypeScript implementation of [entviz](https://github.com/dhh1128/entviz) (spec
-**v10**) — visualize high-entropy values as comparable SVG diagrams — plus a
+**v11**) — visualize high-entropy values as comparable SVG diagrams — plus a
 React component. An npm workspace:
 
 - **`packages/core`** (`@entviz/core`) — the renderer. Pure TypeScript, runs
@@ -27,10 +27,10 @@ The core is **certified** against the shared entviz conformance corpus at
 **Tier A (render model) + Tier B (canonical raster)** for every vector whose
 parser is ported:
 
-| Ported | hex, UUID (dashed/undashed), UTF-8→base64url fallback; note + font-size error handling; the **>512-bit large-input branch** (head + Crockford-base32 fingerprint-middle + tail) |
+| Ported | hex, UUID (dashed/undashed), Ethereum (EIP-55), **DID** (W3C DID Core, v11 prefix-fold), **URN** (RFC 8141), UTF-8→base64url fallback; note + font-size error handling; the **>512-bit large-input branch** (head + Crockford-base32 fingerprint-middle + tail) |
 |---|---|
-| Certified | 24/24 supported corpus vectors (19 render + 5 error) — Tier A + Tier B; plus `hex-1024` (large input) model/raster-matched bar the v10/v11 version stamp |
-| Not yet ported | the blockchain / CESR / SSH / SWHID / gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55 parsers |
+| Certified | 52/76 corpus vectors — Tier A + Tier B; every ported-parser vector passes, including `hex-1024`, `did-jwk-large`, and `did-peer-2` (large-input path) and `hex-1024` model/raster-identical with no version-stamp drift (port and reference both on v11) |
+| Not yet ported | the blockchain / CESR / SSH / SWHID / gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 parsers |
 
 The unported parsers are mechanical follow-ons; the shared core (fingerprint,
 tokenization, quant extension, ftok median/quartile, grid + blank-shift, Oklab
@@ -75,7 +75,7 @@ PYTHONPATH=src:. python -m compliance.runner \
 ## Spec version & drift
 
 Each rendered SVG stamps the entviz spec revision it targets
-(`SPEC_VERSION` in `packages/core/src/entviz.ts`, currently **v10**). The spec
+(`SPEC_VERSION` in `packages/core/src/entviz.ts`, currently **v11**). The spec
 and its reference Python impl live in the [entviz](https://github.com/dhh1128/entviz)
 repo and move independently; this port can lag. CI's `conformance` job checks
 out the reference, compares `SPEC_VERSION` against ours, and:
@@ -86,12 +86,12 @@ out the reference, compares `SPEC_VERSION` against ours, and:
   runs the corpus informationally — so spec drift is always visible without
   blocking unrelated work.
 
-As of this writing this port targets **v10**, matching the reference: the full
-v8–v10 render model (deterministic blank-map `row,col` markers + plus-shaped max
+As of this writing this port targets **v11**, matching the reference: the full
+v8–v11 render model (deterministic blank-map `row,col` markers + plus-shaped max
 marker, decoupled color-bar band order + the two fixed-slot bar markers,
-fingerprint-edge cell colours, and the hybrid fingerprint blank fills) is
-implemented for the ported subset. The remaining unported parsers are tracked in
-[`CERTIFICATION.md`](CERTIFICATION.md).
+fingerprint-edge cell colours, the hybrid fingerprint blank fills, and the v11
+DID/URN **prefix-fold**) is implemented for the ported subset. The remaining
+unported parsers are tracked in [`CERTIFICATION.md`](CERTIFICATION.md).
 
 ## Releasing
 

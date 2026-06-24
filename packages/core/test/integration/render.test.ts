@@ -10,7 +10,7 @@ test("render is deterministic and stamps the spec version + viewBox", () => {
   const a = render("0123456789abcdef0123456789abcdef");
   const b = render("0123456789abcdef0123456789abcdef");
   assert.equal(a, b);
-  assert.equal(SPEC_VERSION, "v10");
+  assert.equal(SPEC_VERSION, "v11");
   assert.match(a, new RegExp(`data-entviz-version="${SPEC_VERSION}"`));
   assert.match(a, /viewBox="0 0 /);
   assert.match(a, /data-cols="\d+"/);

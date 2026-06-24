@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 TypeScript implementation of [**entviz**](https://github.com/dhh1128/entviz)
-(spec **v10**) — turn a high-entropy value (cryptographic key, hash, signature,
+(spec **v11**) — turn a high-entropy value (cryptographic key, hash, signature,
 UUID, blockchain address, post-quantum key, …) into a comparable SVG diagram so
 a human can decide *at a glance* whether two values are the same or different.
 
@@ -62,11 +62,12 @@ guarantees are defined in the [spec](https://github.com/dhh1128/entviz/blob/main
 ## Conformance & scope
 
 `SPEC_VERSION` is stamped on every render (`data-entviz-version`). Ported
-parsers: hex, UUID (dashed/undashed), and the UTF-8→base64url fallback, plus the
+parsers: hex, UUID (dashed/undashed), Ethereum (EIP-55), **DID** (W3C DID Core —
+v11 prefix-fold), **URN** (RFC 8141), and the UTF-8→base64url fallback, plus the
 note / font-size error handling and the **>512-bit large-input branch** (head +
 Crockford-base32 fingerprint-middle + tail). The blockchain / CESR / SSH / SWHID /
-gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55
-parsers are mechanical follow-ons; the shared core is complete and corpus-proven. See
+gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 parsers are
+mechanical follow-ons; the shared core is complete and corpus-proven. See
 [`CERTIFICATION.md`](https://github.com/dhh1128/entviz-js/blob/main/CERTIFICATION.md).
 
 ## License

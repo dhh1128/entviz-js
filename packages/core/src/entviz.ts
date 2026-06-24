@@ -1,11 +1,11 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v10) for the
- * short-input path. Certified against the shared conformance corpus
+ * A faithful port of the Python reference (docs/spec.md, v11), including the
+ * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). Parsers ported so far: hex,
- * UUID, and the UTF-8→base64url fallback; the blockchain / CESR / SSH /
- * large-input parsers are tracked follow-ons.
+ * UUID, Ethereum (EIP-55), DID, URN, and the UTF-8→base64url fallback; the
+ * remaining blockchain / CESR / SSH parsers are tracked follow-ons.
  *
  * Runs under Node's native TypeScript type-stripping (Node >= 22.6); no
  * build step required. Isomorphic: hashing/encoding go through @noble/hashes +
@@ -22,7 +22,7 @@ import {
 } from "./bytes.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v10";
+export const SPEC_VERSION = "v11";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -108,6 +108,23 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // that silently re-keys every pre-existing entviz.
 export function computeFingerprint(core: string): Uint8Array {
   return sha512(utf8Bytes(core));
+}
+
+// PREFIX-FOLD (v11): a SEMANTIC prefix (an identity-bearing scheme/method/NID —
+// did:web:, urn:isbn:, …) is folded into the FINGERPRINT input so that two
+// values differing ONLY in their semantic prefix avalanche apart across every
+// fingerprint-driven channel. `prefix ‖ core` is exactly the original primitive
+// string for these inputs, so no information is invented. A SIGNAL prefix (0x,
+// prefixSemantic falsy) is NOT folded: the fingerprint stays over the bare core,
+// preserving the pre-existing keying of hex/UUID/ETH. NOTE the fingerprint-MIDDLE
+// digest (color-bar markers) deliberately stays over the bare `core`, mirroring
+// the Python reference — only the PRIMARY fingerprint folds the prefix.
+export function fingerprintCore(
+  core: string,
+  prefix: string | null,
+  prefixSemantic: boolean | undefined,
+): string {
+  return prefix && prefixSemantic ? prefix + core : core;
 }
 
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
@@ -380,6 +397,63 @@ export interface Parsed {
   alphabet: Alphabet;
   prefix: string | null;
   suffix: string | null;
+  // `prefixSemantic` marks a prefix as IDENTITY-bearing — it must BIND the
+  // fingerprint (the pipeline fingerprints `prefix ‖ core`) rather than being a
+  // mere display signal. Defaults to false so every existing Parsed object
+  // literal (hex/UUID/ETH) keeps the old signal-prefix behavior, where the
+  // fingerprint stays over the bare core. See docs/spec.md (the "swap test").
+  prefixSemantic?: boolean;
+}
+
+// DID (W3C DID Core), v11. `did:<method>:<method-specific-id>` optionally
+// followed by a DID-URL tail (path `/…`, query `?…`, fragment `#…`). The msid
+// MAY contain `:` as a segment separator, so the body ends only at the first
+// `/`, `?`, or `#` — the tail is a FREE annotation and is DROPPED. method is
+// lowercase alnum per the ABNF. The `.` in the msid char class is literal; the
+// trailing `-` in `[A-Za-z0-9._%:-]` is a literal hyphen.
+const DID_RE = /^did:([a-z0-9]+):([A-Za-z0-9._%:-]+)(?:[/?#].*)?$/;
+// URN (RFC 8141): `urn:<NID>:<NSS>` optionally followed by r-/q-/f-components
+// (`?+` / `?=` / `#`), which are NOT part of URN equivalence and are dropped.
+// The `urn` scheme and the NID are case-INSENSITIVE (the `i` flag; the prefix
+// is lowercased below); the NSS is case-sensitive and kept VERBATIM. `/` is a
+// legal NSS char, so the NSS ends only at the first `?` or `#`.
+const URN_RE = /^urn:([A-Za-z0-9][A-Za-z0-9-]{0,31}):([^?#]+)(?:[?#].*)?$/i;
+
+// Parse a W3C DID / DID-URL. method is IDENTITY (same body under a different
+// method is a different DID), so `did:<method>:` is kept as the prefix and
+// bound by PREFIX-FOLD (prefixSemantic=true). The method-specific-id is the
+// core, kept verbatim (NOT case-folded — DIDs are case-sensitive), tokenized as
+// base64url. No type label: the prefix is self-describing. See docs/spec.md
+// *Decentralized Identifiers*.
+function parseDid(text: string): Parsed | null {
+  const m = text.match(DID_RE);
+  if (m === null) return null;
+  return {
+    type: "",
+    core: m[2],
+    alphabet: BASE64URL,
+    prefix: `did:${m[1]}:`,
+    suffix: null,
+    prefixSemantic: true,
+  };
+}
+
+// Parse a URN (RFC 8141). Same shape as a DID: the NID is IDENTITY, bound by
+// PREFIX-FOLD; the NSS is the core, kept verbatim, base64url. Two differences
+// from a DID: the NSS keeps `/` (ends only at `?`/`#`), and the scheme+NID are
+// case-INSENSITIVE so the `urn:<nid>:` prefix is LOWERCASED while the NSS case
+// is PRESERVED. See docs/spec.md *Uniform Resource Names*.
+function parseUrn(text: string): Parsed | null {
+  const m = text.match(URN_RE);
+  if (m === null) return null;
+  return {
+    type: "",
+    core: m[2],
+    alphabet: BASE64URL,
+    prefix: `urn:${m[1].toLowerCase()}:`,
+    suffix: null,
+    prefixSemantic: true,
+  };
 }
 
 const HEX_RE = /^[0-9a-fA-F]+$/;
@@ -446,6 +520,12 @@ export function parse(raw: string): Parsed | null {
   if (HEX_RE.test(raw)) {
     return { type: "hex", core: raw.toLowerCase(), alphabet: HEX, prefix: null, suffix: null };
   }
+  // v11: DID / URN — checked before the UTF-8 fallback so a structured DID/URN
+  // binds its semantic prefix (prefix-fold) instead of being base64url'd whole.
+  const did = parseDid(raw);
+  if (did !== null) return did;
+  const urn = parseUrn(raw);
+  if (urn !== null) return urn;
   return null; // caller applies UTF-8 → base64url fallback
 }
 
@@ -569,6 +649,7 @@ export interface ClassifiedInput {
   alphabet: Alphabet;
   prefix: string | null;
   suffix: string | null;
+  prefixSemantic: boolean;
 }
 
 // Map a trimmed raw input to its (core, type label, alphabet, prefix, suffix)
@@ -590,6 +671,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
       alphabet: BASE64URL,
       prefix: null,
       suffix: null,
+      prefixSemantic: false,
     };
   }
   const typeName = parsed.type === "hex" ? `hex(${parsed.core.length})` : parsed.type;
@@ -599,6 +681,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
     alphabet: parsed.alphabet,
     prefix: parsed.prefix,
     suffix: parsed.suffix,
+    prefixSemantic: parsed.prefixSemantic ?? false,
   };
 }
 
@@ -813,7 +896,11 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   if (rawInput.length > MAX_INPUT_CHARS) {
     throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
   }
-  const { core, typeName, alphabet, prefix, suffix } = classifyInput(rawInput);
+  const { core, typeName, alphabet, prefix, suffix, prefixSemantic } = classifyInput(rawInput);
+  // v11 PREFIX-FOLD: the PRIMARY fingerprint hashes `prefix ‖ core` for a
+  // semantic prefix (DID method / URN NID), else the bare core. The
+  // fingerprint-MIDDLE digest (color-bar markers) stays over the bare `core`.
+  const fpCore = fingerprintCore(core, prefix, prefixSemantic);
 
   // >512-bit inputs take the large-input path: the text channel shows head
   // (8 tokens) + fingerprint-middle (4 tokens) + tail (8 tokens) and sets
@@ -822,7 +909,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   if (!tokens.length) throw new Error("No tokens produced from input entropy.");
   const tokenCount = tokens.length;
 
-  const usedFtoks = tokenizeFingerprint(computeFingerprint(core)).slice(0, tokenCount);
+  const usedFtoks = tokenizeFingerprint(computeFingerprint(fpCore)).slice(0, tokenCount);
   // Large inputs always size the grid for the full token cap (22 → 4x6 = 24
   // cells at AR 1.0), so the 20 tokens always leave a few spare cells for the
   // fingerprint-driven blank shift — matching the reference (choose_grid(22)).
@@ -857,7 +944,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   } = geom;
   const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
 
-  const digest = computeFingerprint(core);
+  const digest = computeFingerprint(fpCore);
   const digestHex = bytesToHex(digest);
   const clipId = `grid-clip-${digestHex.slice(0, 16)}-${grid.cols}x${grid.rows}`;
 
