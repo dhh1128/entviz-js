@@ -51,7 +51,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   // PSY-JS-F3: fold the note into the default accessible label so a screen
   // reader conveys the caption a sighted user sees in the bottom strip. An
   // explicit `title` still wins.
-  const defaultLabel = note ? `entviz fingerprint, note ${note}` : "entviz fingerprint";
+  // An entviz is a *visualization*, never a "fingerprint" (pill design §1;
+  // paper terminology) — the label reflects that.
+  const defaultLabel = note ? `entviz visualization, note ${note}` : "entviz visualization";
 
   if (svg === null) {
     return React.createElement("span", {

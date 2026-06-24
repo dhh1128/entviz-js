@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
-import { Entviz } from "@entviz/react";
+import { Entviz, EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
 import { render as renderEntviz } from "@entviz/core";
-import { EntvizPill } from "./EntvizPill.tsx";
-import { SUPPORTED_LOCALES } from "./pill-messages.ts";
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
 const PRESETS: { label: string; value: string }[] = [
