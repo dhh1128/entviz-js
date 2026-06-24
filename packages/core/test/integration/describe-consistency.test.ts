@@ -19,12 +19,14 @@ function svgCells(svg: string) {
     const blank = /data-cell-blank="true"/.test(tag);
     const fingerprint = /data-cell-fingerprint="true"/.test(tag);
     const quartile = tag.match(/data-cell-quartile="(\d+)"/);
+    const surround = tag.match(/data-surround-bits="0x([0-9a-f]+)"/);
     const textM = body.match(/<text[^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/);
     return {
       index,
       blank,
       fingerprint,
       quartileRank: quartile ? Number(quartile[1]) : null,
+      surroundBits: surround ? parseInt(surround[1], 16) : 0,
       text: textM ? textM[1] : null,
     };
   });
@@ -52,12 +54,13 @@ for (const [name, value, opts] of CASES) {
     assert.equal(d.rows, Number(attr(svg, "data-rows")));
     assert.equal(d.cells.length, cells.length);
 
-    // per-cell text / blank / fingerprint flags
+    // per-cell text / blank / fingerprint flags / surround bits
     for (const sc of cells) {
       const dc = d.cells[sc.index];
       assert.equal(dc.blank, sc.blank, `cell ${sc.index} blank`);
       assert.equal(dc.fingerprint, sc.fingerprint, `cell ${sc.index} fingerprint`);
       assert.equal(dc.text, sc.text, `cell ${sc.index} text`);
+      assert.equal(dc.surroundBits, sc.surroundBits, `cell ${sc.index} surround bits`);
     }
 
     // comparisonText = filled text in order, blanks as ·

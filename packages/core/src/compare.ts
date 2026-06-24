@@ -13,7 +13,7 @@
  * spun into a false "they differ" (§6.3). A single mismatch is `different` with
  * certainty.
  */
-import { classifyInput } from "./entviz.ts";
+import { classifyInput, type RenderOptions } from "./entviz.ts";
 import { describeChannels } from "./describe.ts";
 
 export type Verdict =
@@ -91,4 +91,124 @@ export function detectMedium(data: string): Medium {
   if (/^https?:\/\//i.test(s)) return "ambiguous"; // a URL: fetch or treat-as-value is the user's call
   if (/^data:/i.test(s)) return "ambiguous"; // some other data URL
   return "text";
+}
+
+// ---------------------------------------------------------------------------
+// SVG engine (§6.2): a pasted SVG is attacker-authorable and there is no golden
+// raster, so trusting its declared <text>/data-* is unsafe. We (1) reject any SVG
+// that is not a strict closed-profile entviz — which is what makes its declared
+// cell text trustworthy (no <style>/@font-face/foreignObject/event handlers/
+// external refs can repaint the glyphs), then (2) compare at the value level via
+// the lossless ≤512-bit text channel, and (3) require the reference's
+// fingerprint-driven gestalt (per-token surround bits + colour-bar letters,
+// recomputed with describeChannels — declared data-* is NOT trusted) to be
+// self-consistent with that value. A >512-bit reference, or any inconsistency,
+// is `unknown` (route to the human walk), never `identical`.
+// ---------------------------------------------------------------------------
+
+// The ONLY element types a conformant entviz may contain (spec.md "Closed
+// profile"); non-rendering metadata is also allowed. Anything else ⇒ reject.
+const CLOSED_PROFILE_TAGS = new Set([
+  "svg", "defs", "clipPath", "g", "rect", "path", "text", "tspan",
+  "polygon", "circle", "ellipse", "line", "title", "desc", "metadata",
+]);
+
+/**
+ * Strict closed-profile validation (spec.md:185). Returns false on any element
+ * outside the entviz vocabulary, any event handler, inline `style=`, `@font-face`/
+ * `@import`, or any `href`/`url()` that isn't a local `#fragment` — i.e. anything
+ * that could repaint the diagram or alter glyph rendering. Conservative by design
+ * (it fails closed): a false reject only routes the reference to the human walk.
+ */
+export function validateClosedProfile(svg: string): boolean {
+  // Comments + CDATA are non-rendering; strip them so their text can't trip the
+  // element scan (and can't smuggle anything either — they don't render).
+  const s = svg.replace(/<!--[\s\S]*?-->/g, "").replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
+  for (const m of s.matchAll(/<\/?([a-zA-Z][\w:-]*)/g)) {
+    if (!CLOSED_PROFILE_TAGS.has(m[1])) return false;
+  }
+  if (/\son[a-z]+\s*=/i.test(s)) return false; // event handlers (onload=, …)
+  if (/\sstyle\s*=/i.test(s)) return false; // inline CSS (entviz never uses it)
+  if (/@font-face|@import/i.test(s)) return false;
+  if (/(?:xlink:)?href\s*=\s*["'](?!#)/i.test(s)) return false; // href to anything but a local #fragment
+  if (/url\(\s*(?!["']?#)/i.test(s)) return false; // url() to anything but a local #fragment
+  return true;
+}
+
+interface ParsedSvg {
+  truncated: boolean;
+  /** Filled cells in cell-index (= token) reading order. */
+  filled: { text: string; surroundBits: number }[];
+  colorBarLetters: string[];
+}
+
+// Extract the declared text + surround + colour-bar channels from a (validated)
+// entviz SVG. Returns null if it has no entviz cells. Mirrors the extraction in
+// describe-consistency.test.ts; fed only post-validation, and any extraction slip
+// is caught by the gestalt self-consistency check below (it would not match).
+function parseEntvizSvg(svg: string): ParsedSvg | null {
+  const chunks = svg.split('<g data-channel="cell"');
+  if (chunks.length < 2) return null;
+  const cells = chunks.slice(1).map((chunk) => {
+    const body = chunk.split("data-channel=")[0];
+    const tag = body.slice(0, body.indexOf(">"));
+    const idx = tag.match(/data-cell-index="(\d+)"/);
+    const blank = /data-cell-blank="true"/.test(tag);
+    const surround = tag.match(/data-surround-bits="0x([0-9a-f]+)"/);
+    const textM = body.match(/<text[^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/);
+    return {
+      index: idx ? Number(idx[1]) : -1,
+      blank,
+      text: textM ? textM[1] : null,
+      surroundBits: surround ? parseInt(surround[1], 16) : 0,
+    };
+  });
+  if (cells.some((c) => c.index < 0)) return null;
+  const filled = cells
+    .filter((c) => !c.blank && c.text !== null)
+    .sort((a, b) => a.index - b.index)
+    .map((c) => ({ text: c.text as string, surroundBits: c.surroundBits }));
+  if (!filled.length) return null;
+  const colorBarLetters = [...svg.matchAll(/data-color-bar-band="([WGRBK])"/g)].map((m) =>
+    m[1].toLowerCase(),
+  );
+  return { truncated: /data-truncated="true"/.test(svg), filled, colorBarLetters };
+}
+
+/**
+ * SVG engine: compare a pasted reference entviz against the user's `value`.
+ * `unknown` if the reference isn't a closed-profile entviz, is unreadable, or is
+ * >512-bit; `different` on any text-channel mismatch; `identical` only when the
+ * lossless text channel AND the recomputed gestalt (surround bits + colour-bar
+ * letters) both agree.
+ */
+export function compareSvg(referenceSvg: string, value: string, opts: RenderOptions = {}): Verdict {
+  if (!validateClosedProfile(referenceSvg)) {
+    return { state: "unknown", reason: "the reference is not a closed-profile entviz" };
+  }
+  const ref = parseEntvizSvg(referenceSvg);
+  if (!ref) return { state: "unknown", reason: "could not read the reference entviz" };
+
+  const me = describeChannels(value, opts);
+  const myFilled = me.cells.filter((c) => !c.blank);
+
+  const refText = ref.filled.map((f) => f.text).join(" ");
+  const myText = myFilled.map((c) => c.text as string).join(" ");
+  if (refText !== myText) return { state: "different" };
+
+  // The text channels agree. It is only lossless ≤512 bits, so a >512-bit input
+  // (either side) cannot be machine-certified identical from text — route to walk.
+  if (ref.truncated || me.truncated) {
+    return { state: "unknown", reason: ">512-bit input: the text channel is not lossless" };
+  }
+
+  // Same value ⇒ same fingerprint-driven gestalt. Recompute it (don't trust the
+  // SVG's data-*) and require the geometry-independent channels to match.
+  const surroundOk =
+    ref.filled.length === myFilled.length &&
+    ref.filled.every((f, i) => f.surroundBits === myFilled[i].surroundBits);
+  const barsOk = ref.colorBarLetters.join("") === me.colorBarLetters.join("");
+  return surroundOk && barsOk
+    ? { state: "identical" }
+    : { state: "unknown", reason: "the reference's pattern is inconsistent with its text" };
 }
