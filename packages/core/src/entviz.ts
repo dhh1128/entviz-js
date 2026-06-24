@@ -194,9 +194,9 @@ export function tokenizeFingerprint(digest: Uint8Array): Token[] {
 // Mirrors the reference (docs/spec.md "Large-input handling"); the construction
 // is frozen at v6.
 // ---------------------------------------------------------------------------
-const MAX_TOKENS = 22;
-const HEAD_TOKENS = 8;
-const MIDDLE_TOKENS = 4;
+export const MAX_TOKENS = 22;
+export const HEAD_TOKENS = 8;
+export const MIDDLE_TOKENS = 4;
 const TAIL_TOKENS = 8;
 // Anti-DoS cap: entviz visualizes identifiers; the largest plausible one is a
 // few KB, so 64 KiB is ~16x headroom. Past it, render() rejects outright.
@@ -1178,7 +1178,7 @@ const FONT_FAMILY =
   '"JetBrains Mono", "Menlo", "Consolas", "DejaVu Sans Mono", ' +
   '"Liberation Mono", "Roboto Mono", "Noto Sans Mono", monospace';
 
-const BAND_LETTER: Record<string, string> = {
+export const BAND_LETTER: Record<string, string> = {
   "#ffffff": "W",
   "#e7be00": "G",
   "#ff3f2f": "R",
@@ -1922,3 +1922,8 @@ export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gri
     .set("fill", fill).set("stroke", fill)
     .set("fill-opacity", fillOp).set("stroke-opacity", edgeOp).set("stroke-width", strokeW);
 }
+
+// Structured channel readouts (comparisonText, describeChannels) — derived from
+// the same render model, re-exported so they ship from the single @entviz/core
+// entry point alongside render().
+export * from "./describe.ts";

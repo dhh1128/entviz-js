@@ -1,0 +1,108 @@
+// Localization catalog for the <EntvizPill> chrome.
+//
+// IMPORTANT (security): only CHROME is localized here — never the copied value
+// or comparison text, and never via locale-aware case operations. See
+// packages/react/docs/pill-design.md §8.
+//
+// Non-English strings are MACHINE-DRAFTED and NEED NATIVE REVIEW. Placeholders
+// in `desc` ({type} {cells} {bars} {quartiles} {bmin} {bmax} {bleft} {bright}
+// {bslots}) and elsewhere ({type} {n} {unit}) must be preserved verbatim.
+
+export interface Messages {
+  view: string; // tooltip / "View visualization" menu item
+  ariaView: string; // accessible label for the pill ("...{type}")
+  truncated: string; // >512-bit marker shown before the type ("fingerprint of")
+  actions: string; // kebab button aria-label
+  copyValue: string;
+  copyComparison: string;
+  copyImage: string;
+  copySvg: string;
+  copiedValue: string; // "...{n} {unit}"
+  copiedComparison: string; // "...{n} cells"
+  copiedImage: string;
+  copiedSvg: string;
+  copyFailed: string;
+  desc: string; // accessible per-channel description of the expanded entviz (§9)
+}
+
+const en: Messages = {
+  view: "View visualization",
+  ariaView: "view visualization, {type}",
+  truncated: "fingerprint of",
+  actions: "Actions",
+  copyValue: "Copy value",
+  copyComparison: "Copy comparison text",
+  copyImage: "Copy image",
+  copySvg: "Copy SVG",
+  copiedValue: "Copied value · {n} {unit}",
+  copiedComparison: "Copied comparison text · {n} cells",
+  copiedImage: "Copied image",
+  copiedSvg: "Copied SVG",
+  copyFailed: "Copy failed",
+  desc: "Visualization channels — type {type}; cells {cells}; color bar {bars}; quartile cells {quartiles}; blank map {bmin} to {bmax}; bar markers {bleft} and {bright} of {bslots}.",
+};
+
+// Full target set (incl. RTL ar/he and Simplified/Traditional Chinese).
+// NOT reviewed by native speakers — demo quality.
+const CATALOG: Record<string, Messages> = {
+  en,
+  es: { view: "Ver visualización", ariaView: "ver visualización, {type}", truncated: "huella de", actions: "Acciones", copyValue: "Copiar valor", copyComparison: "Copiar texto de comparación", copyImage: "Copiar imagen", copySvg: "Copiar SVG", copiedValue: "Valor copiado · {n} {unit}", copiedComparison: "Texto de comparación copiado · {n} celdas", copiedImage: "Imagen copiada", copiedSvg: "SVG copiado", copyFailed: "Error al copiar", desc: "Canales de la visualización — tipo {type}; celdas {cells}; barra de color {bars}; celdas de cuartil {quartiles}; mapa de vacíos {bmin} a {bmax}; marcadores de barra {bleft} y {bright} de {bslots}." },
+  fr: { view: "Voir la visualisation", ariaView: "voir la visualisation, {type}", truncated: "empreinte de", actions: "Actions", copyValue: "Copier la valeur", copyComparison: "Copier le texte de comparaison", copyImage: "Copier l’image", copySvg: "Copier le SVG", copiedValue: "Valeur copiée · {n} {unit}", copiedComparison: "Texte de comparaison copié · {n} cellules", copiedImage: "Image copiée", copiedSvg: "SVG copié", copyFailed: "Échec de la copie", desc: "Canaux de la visualisation — type {type} ; cellules {cells} ; barre de couleur {bars} ; cellules de quartile {quartiles} ; carte des vides {bmin} à {bmax} ; marqueurs de barre {bleft} et {bright} sur {bslots}." },
+  de: { view: "Visualisierung anzeigen", ariaView: "Visualisierung anzeigen, {type}", truncated: "Fingerabdruck von", actions: "Aktionen", copyValue: "Wert kopieren", copyComparison: "Vergleichstext kopieren", copyImage: "Bild kopieren", copySvg: "SVG kopieren", copiedValue: "Wert kopiert · {n} {unit}", copiedComparison: "Vergleichstext kopiert · {n} Zellen", copiedImage: "Bild kopiert", copiedSvg: "SVG kopiert", copyFailed: "Kopieren fehlgeschlagen", desc: "Visualisierungskanäle — Typ {type}; Zellen {cells}; Farbleiste {bars}; Quartilzellen {quartiles}; Leerkarte {bmin} bis {bmax}; Leistenmarken {bleft} und {bright} von {bslots}." },
+  it: { view: "Mostra visualizzazione", ariaView: "mostra visualizzazione, {type}", truncated: "impronta di", actions: "Azioni", copyValue: "Copia valore", copyComparison: "Copia testo di confronto", copyImage: "Copia immagine", copySvg: "Copia SVG", copiedValue: "Valore copiato · {n} {unit}", copiedComparison: "Testo di confronto copiato · {n} celle", copiedImage: "Immagine copiata", copiedSvg: "SVG copiato", copyFailed: "Copia non riuscita", desc: "Canali della visualizzazione — tipo {type}; celle {cells}; barra dei colori {bars}; celle di quartile {quartiles}; mappa dei vuoti da {bmin} a {bmax}; marcatori barra {bleft} e {bright} di {bslots}." },
+  pt: { view: "Ver visualização", ariaView: "ver visualização, {type}", truncated: "impressão de", actions: "Ações", copyValue: "Copiar valor", copyComparison: "Copiar texto de comparação", copyImage: "Copiar imagem", copySvg: "Copiar SVG", copiedValue: "Valor copiado · {n} {unit}", copiedComparison: "Texto de comparação copiado · {n} células", copiedImage: "Imagem copiada", copiedSvg: "SVG copiado", copyFailed: "Falha ao copiar", desc: "Canais da visualização — tipo {type}; células {cells}; barra de cores {bars}; células de quartil {quartiles}; mapa de vazios {bmin} a {bmax}; marcadores de barra {bleft} e {bright} de {bslots}." },
+  ru: { view: "Показать визуализацию", ariaView: "показать визуализацию, {type}", truncated: "отпечаток", actions: "Действия", copyValue: "Копировать значение", copyComparison: "Копировать текст сравнения", copyImage: "Копировать изображение", copySvg: "Копировать SVG", copiedValue: "Значение скопировано · {n} {unit}", copiedComparison: "Текст сравнения скопирован · {n} ячеек", copiedImage: "Изображение скопировано", copiedSvg: "SVG скопирован", copyFailed: "Не удалось скопировать", desc: "Каналы визуализации — тип {type}; ячейки {cells}; цветовая полоса {bars}; ячейки квартилей {quartiles}; карта пустот от {bmin} до {bmax}; маркеры полосы {bleft} и {bright} из {bslots}." },
+  el: { view: "Προβολή οπτικοποίησης", ariaView: "προβολή οπτικοποίησης, {type}", truncated: "αποτύπωμα του", actions: "Ενέργειες", copyValue: "Αντιγραφή τιμής", copyComparison: "Αντιγραφή κειμένου σύγκρισης", copyImage: "Αντιγραφή εικόνας", copySvg: "Αντιγραφή SVG", copiedValue: "Η τιμή αντιγράφηκε · {n} {unit}", copiedComparison: "Το κείμενο σύγκρισης αντιγράφηκε · {n} κελιά", copiedImage: "Η εικόνα αντιγράφηκε", copiedSvg: "Το SVG αντιγράφηκε", copyFailed: "Η αντιγραφή απέτυχε", desc: "Κανάλια οπτικοποίησης — τύπος {type}· κελιά {cells}· μπάρα χρώματος {bars}· κελιά τεταρτημορίων {quartiles}· χάρτης κενών {bmin} έως {bmax}· δείκτες μπάρας {bleft} και {bright} από {bslots}." },
+  "zh-Hans": { view: "查看可视化", ariaView: "查看可视化，{type}", truncated: "指纹", actions: "操作", copyValue: "复制值", copyComparison: "复制比较文本", copyImage: "复制图片", copySvg: "复制 SVG", copiedValue: "已复制值 · {n} {unit}", copiedComparison: "已复制比较文本 · {n} 个单元格", copiedImage: "已复制图片", copiedSvg: "已复制 SVG", copyFailed: "复制失败", desc: "可视化通道 — 类型 {type}；单元格 {cells}；颜色条 {bars}；四分位单元格 {quartiles}；空白图 {bmin} 至 {bmax}；色条标记 {bleft} 和 {bright}，共 {bslots}。" },
+  "zh-Hant": { view: "檢視視覺化", ariaView: "檢視視覺化，{type}", truncated: "指紋", actions: "動作", copyValue: "複製值", copyComparison: "複製比較文字", copyImage: "複製圖片", copySvg: "複製 SVG", copiedValue: "已複製值 · {n} {unit}", copiedComparison: "已複製比較文字 · {n} 個儲存格", copiedImage: "已複製圖片", copiedSvg: "已複製 SVG", copyFailed: "複製失敗", desc: "視覺化通道 — 類型 {type}；儲存格 {cells}；色帶 {bars}；四分位儲存格 {quartiles}；空白圖 {bmin} 至 {bmax}；色帶標記 {bleft} 和 {bright}，共 {bslots}。" },
+  ja: { view: "可視化を表示", ariaView: "可視化を表示、{type}", truncated: "フィンガープリント", actions: "操作", copyValue: "値をコピー", copyComparison: "比較テキストをコピー", copyImage: "画像をコピー", copySvg: "SVG をコピー", copiedValue: "値をコピーしました · {n} {unit}", copiedComparison: "比較テキストをコピーしました · {n} セル", copiedImage: "画像をコピーしました", copiedSvg: "SVG をコピーしました", copyFailed: "コピーに失敗しました", desc: "可視化チャンネル — 種類 {type}、セル {cells}、カラーバー {bars}、四分位セル {quartiles}、空白マップ {bmin} から {bmax}、バーマーカー {bleft} と {bright}（全 {bslots}）。" },
+  ko: { view: "시각화 보기", ariaView: "시각화 보기, {type}", truncated: "지문", actions: "작업", copyValue: "값 복사", copyComparison: "비교 텍스트 복사", copyImage: "이미지 복사", copySvg: "SVG 복사", copiedValue: "값 복사됨 · {n} {unit}", copiedComparison: "비교 텍스트 복사됨 · {n}개 셀", copiedImage: "이미지 복사됨", copiedSvg: "SVG 복사됨", copyFailed: "복사 실패", desc: "시각화 채널 — 유형 {type}; 셀 {cells}; 색상 막대 {bars}; 사분위 셀 {quartiles}; 빈칸 맵 {bmin}에서 {bmax}; 막대 표식 {bleft} 및 {bright} / {bslots}." },
+  hi: { view: "विज़ुअलाइज़ेशन देखें", ariaView: "विज़ुअलाइज़ेशन देखें, {type}", truncated: "फ़िंगरप्रिंट", actions: "क्रियाएँ", copyValue: "मान कॉपी करें", copyComparison: "तुलना पाठ कॉपी करें", copyImage: "छवि कॉपी करें", copySvg: "SVG कॉपी करें", copiedValue: "मान कॉपी किया गया · {n} {unit}", copiedComparison: "तुलना पाठ कॉपी किया गया · {n} सेल", copiedImage: "छवि कॉपी की गई", copiedSvg: "SVG कॉपी किया गया", copyFailed: "कॉपी विफल", desc: "विज़ुअलाइज़ेशन चैनल — प्रकार {type}; सेल {cells}; रंग पट्टी {bars}; चतुर्थक सेल {quartiles}; रिक्त मानचित्र {bmin} से {bmax}; पट्टी चिह्न {bleft} और {bright}, कुल {bslots}।" },
+  id: { view: "Lihat visualisasi", ariaView: "lihat visualisasi, {type}", truncated: "sidik jari dari", actions: "Tindakan", copyValue: "Salin nilai", copyComparison: "Salin teks perbandingan", copyImage: "Salin gambar", copySvg: "Salin SVG", copiedValue: "Nilai disalin · {n} {unit}", copiedComparison: "Teks perbandingan disalin · {n} sel", copiedImage: "Gambar disalin", copiedSvg: "SVG disalin", copyFailed: "Gagal menyalin", desc: "Saluran visualisasi — tipe {type}; sel {cells}; bilah warna {bars}; sel kuartil {quartiles}; peta kosong {bmin} hingga {bmax}; penanda bilah {bleft} dan {bright} dari {bslots}." },
+  tr: { view: "Görselleştirmeyi gör", ariaView: "görselleştirmeyi gör, {type}", truncated: "parmak izi", actions: "Eylemler", copyValue: "Değeri kopyala", copyComparison: "Karşılaştırma metnini kopyala", copyImage: "Görseli kopyala", copySvg: "SVG kopyala", copiedValue: "Değer kopyalandı · {n} {unit}", copiedComparison: "Karşılaştırma metni kopyalandı · {n} hücre", copiedImage: "Görsel kopyalandı", copiedSvg: "SVG kopyalandı", copyFailed: "Kopyalama başarısız", desc: "Görselleştirme kanalları — tür {type}; hücreler {cells}; renk çubuğu {bars}; çeyrek hücreleri {quartiles}; boşluk haritası {bmin} – {bmax}; çubuk işaretleri {bleft} ve {bright} / {bslots}." },
+  vi: { view: "Xem trực quan hóa", ariaView: "xem trực quan hóa, {type}", truncated: "dấu vân của", actions: "Tác vụ", copyValue: "Sao chép giá trị", copyComparison: "Sao chép văn bản so sánh", copyImage: "Sao chép hình ảnh", copySvg: "Sao chép SVG", copiedValue: "Đã sao chép giá trị · {n} {unit}", copiedComparison: "Đã sao chép văn bản so sánh · {n} ô", copiedImage: "Đã sao chép hình ảnh", copiedSvg: "Đã sao chép SVG", copyFailed: "Sao chép thất bại", desc: "Các kênh trực quan hóa — loại {type}; ô {cells}; thanh màu {bars}; ô tứ phân vị {quartiles}; bản đồ trống {bmin} đến {bmax}; điểm đánh dấu thanh {bleft} và {bright} trên {bslots}." },
+  ar: { view: "عرض التمثيل المرئي", ariaView: "عرض التمثيل المرئي، {type}", truncated: "بصمة لـ", actions: "إجراءات", copyValue: "نسخ القيمة", copyComparison: "نسخ نص المقارنة", copyImage: "نسخ الصورة", copySvg: "نسخ SVG", copiedValue: "تم نسخ القيمة · {n} {unit}", copiedComparison: "تم نسخ نص المقارنة · {n} خلية", copiedImage: "تم نسخ الصورة", copiedSvg: "تم نسخ SVG", copyFailed: "فشل النسخ", desc: "قنوات التمثيل المرئي — النوع {type}؛ الخلايا {cells}؛ شريط الألوان {bars}؛ خلايا الربيع {quartiles}؛ خريطة الفراغات من {bmin} إلى {bmax}؛ علامات الشريط {bleft} و{bright} من {bslots}." },
+  he: { view: "הצג המחשה", ariaView: "הצג המחשה, {type}", truncated: "טביעה של", actions: "פעולות", copyValue: "העתק ערך", copyComparison: "העתק טקסט השוואה", copyImage: "העתק תמונה", copySvg: "העתק SVG", copiedValue: "הערך הועתק · {n} {unit}", copiedComparison: "טקסט ההשוואה הועתק · {n} תאים", copiedImage: "התמונה הועתקה", copiedSvg: "‏SVG הועתק", copyFailed: "ההעתקה נכשלה", desc: "ערוצי ההמחשה — סוג {type}; תאים {cells}; פס צבע {bars}; תאי רבעון {quartiles}; מפת ריקים מ-{bmin} עד {bmax}; סימוני פס {bleft} ו-{bright} מתוך {bslots}." },
+};
+
+const RTL = new Set(["ar", "he", "fa", "ur"]);
+
+/** True if the (primary subtag of the) locale is an RTL script. */
+export function isRtlLocale(locale: string): boolean {
+  return RTL.has(locale.toLowerCase().split("-")[0]);
+}
+
+// Map a BCP-47 tag to a catalog key: exact match, then Chinese script/region
+// resolution (zh-TW/HK/MO/Hant → Traditional, else Simplified), then primary
+// subtag.
+function pickKey(tag: string): string | null {
+  const t = tag.toLowerCase();
+  for (const k of Object.keys(CATALOG)) if (k.toLowerCase() === t) return k;
+  if (t.startsWith("zh")) return /hant|\b(tw|hk|mo)\b|-(tw|hk|mo)/.test(t) ? "zh-Hant" : "zh-Hans";
+  const primary = t.split("-")[0];
+  for (const k of Object.keys(CATALOG)) if (k.toLowerCase() === primary) return k;
+  return null;
+}
+
+/**
+ * Resolve a Messages bundle for a locale tag, falling back to English. Pass
+ * `undefined` to auto-detect from the browser (navigator.languages).
+ */
+export function resolveMessages(locale?: string): { locale: string; messages: Messages } {
+  const tags = locale
+    ? [locale]
+    : typeof navigator !== "undefined"
+      ? [...(navigator.languages ?? [navigator.language])]
+      : ["en"];
+  for (const tag of tags) {
+    const key = pickKey(tag);
+    if (key) return { locale: key, messages: CATALOG[key] };
+  }
+  return { locale: "en", messages: en };
+}
+
+export const SUPPORTED_LOCALES = Object.keys(CATALOG);
+
+export function fmt(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? `{${k}}`));
+}

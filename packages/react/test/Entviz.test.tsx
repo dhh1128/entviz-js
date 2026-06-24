@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
-import { Entviz } from "../src/Entviz.ts";
+import { Entviz } from "../src/index.ts";
 
 // Migrated from node:test + react-dom/server to Vitest + Testing Library + jsdom:
 // the component now mounts into a real (simulated) DOM, so we assert on actual
@@ -19,7 +19,7 @@ describe("Entviz", () => {
     const { container } = render(<Entviz value={HEX} />);
     const span = img(container);
     expect(span).toBeTruthy();
-    expect(span.getAttribute("aria-label")).toBe("entviz fingerprint");
+    expect(span.getAttribute("aria-label")).toBe("entviz visualization");
     const svg = container.querySelector("svg");
     expect(svg).toBeTruthy();
     expect(svg!.getAttribute("data-entviz-version")).toBe("v11");
@@ -37,7 +37,7 @@ describe("Entviz", () => {
 
   test("the default aria-label folds in the user note (PSY-JS-F3)", () => {
     const { container } = render(<Entviz value={HEX} note="git" />);
-    expect(img(container).getAttribute("aria-label")).toBe("entviz fingerprint, note git");
+    expect(img(container).getAttribute("aria-label")).toBe("entviz visualization, note git");
   });
 
   test("a render error calls onError and renders the fallback span (no svg)", () => {

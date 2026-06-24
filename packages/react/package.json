@@ -1,12 +1,12 @@
 {
   "name": "@entviz/react",
   "version": "0.11.0",
-  "description": "React component for entviz — render a comparable SVG fingerprint of any high-entropy value.",
+  "description": "React components for entviz — render and compare high-entropy values as SVG visualizations.",
   "type": "module",
-  "main": "src/Entviz.ts",
-  "types": "src/Entviz.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "exports": {
-    ".": "./src/Entviz.ts"
+    ".": "./src/index.ts"
   },
   "files": [
     "src",
