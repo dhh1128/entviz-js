@@ -129,8 +129,10 @@ test("render: out-of-range font size and aspect ratio are rejected", () => {
   assert.throws(() => render("a1b2c3d4", { targetAr: 200 }), /target_ar/);
 });
 
-test("render: a >512-bit input rejects (large-input path not yet ported)", () => {
-  assert.throws(() => render("a".repeat(130)), /large-input/); // 65 bytes
+// >512-bit large-input handling now renders (head+middle+tail, truncated) — see
+// test/{unit,integration}/large-input.test.ts for the full coverage.
+test("render: a >512-bit input renders via the large-input path (truncated)", () => {
+  assert.match(render("a".repeat(130)), /data-truncated="true"/); // 65 bytes
 });
 
 // Numeric serialization (spec): coordinates are compact plain decimals — no
@@ -158,11 +160,11 @@ test("render: whitespace-only input produces no tokens and is rejected", () => {
   assert.throws(() => render("\t\n "), /No tokens/);
 });
 
-test("render: the fallback byte-length boundary is exactly 64 bytes", () => {
-  // 'z' is non-hex, so these take the UTF-8 -> base64url fallback. 64 bytes is
-  // the largest short-path input; 65 must reject (SEC-F1 guards this cheaply).
-  assert.match(render("z".repeat(64)), /^<svg/);
-  assert.throws(() => render("z".repeat(65)), /large-input/);
+test("render: the fallback byte-length boundary — 64 bytes lossless, 65 bytes truncated", () => {
+  // 'z' is non-hex, so these take the UTF-8 -> base64url fallback. <=512 bits is
+  // the lossless short path; >512 bits takes the large-input (truncated) path.
+  assert.doesNotMatch(render("z".repeat(64)), /data-truncated/);
+  assert.match(render("z".repeat(65)), /data-truncated="true"/);
 });
 
 // SEC-F2: SVG/HTML-hostile entropy must never reach the output unescaped. Raw

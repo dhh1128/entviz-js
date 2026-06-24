@@ -1,29 +1,34 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v11) for the
- * short-input path. Certified against the shared conformance corpus
+ * A faithful port of the Python reference (docs/spec.md, v11), including the
+ * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). Parsers ported so far: hex,
  * UUID, Ethereum (EIP-55), DID, URN, and the UTF-8→base64url fallback; the
- * remaining blockchain / CESR / SSH / large-input parsers are tracked
- * follow-ons.
+ * remaining blockchain / CESR / SSH parsers are tracked follow-ons.
  *
  * Runs under Node's native TypeScript type-stripping (Node >= 22.6); no
- * build step required.
+ * build step required. Isomorphic: hashing/encoding go through @noble/hashes +
+ * the browser-safe helpers in bytes.ts (no node:crypto/node:fs/Buffer), so the
+ * renderer bundles cleanly for the browser too — see isomorphic.test.ts.
  */
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { keccak256Hex } from "./keccak.ts";
+import { sha512 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import {
+  utf8Bytes,
+  utf8ByteLength,
+  bytesToHex,
+  bytesToBase64url,
+} from "./bytes.ts";
+import pkg from "../package.json" with { type: "json" };
 
 export const SPEC_VERSION = "v11";
-// Read the published version straight from package.json so the data-entviz-lib
+// Read the published version straight from package.json (via a JSON import, so
+// the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
 // duplicating the version as a literal here would silently go stale on every
 // release (the value would lie about which build produced an SVG).
-const PKG = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-) as { version: string };
-export const LIB_VERSION = PKG.version;
+export const LIB_VERSION = (pkg as { version: string }).version;
 const DPI = 96;
 
 // ---------------------------------------------------------------------------
@@ -101,8 +106,8 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // and its byte-equal-but-differently-cased twin fingerprint the same after the
 // parser has normalized case. Do NOT "optimize" this to hash decoded bytes —
 // that silently re-keys every pre-existing entviz.
-export function computeFingerprint(core: string): Buffer {
-  return createHash("sha512").update(core, "utf8").digest();
+export function computeFingerprint(core: string): Uint8Array {
+  return sha512(utf8Bytes(core));
 }
 
 // PREFIX-FOLD (v11): a SEMANTIC prefix (an identity-bearing scheme/method/NID —
@@ -124,27 +129,91 @@ export function fingerprintCore(
 
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
 // EVERY input (v9): it drives the two color-bar markers on all inputs (and,
-// on >512-bit inputs, the 4 fingerprint-middle cells — not yet ported here).
+// on >512-bit inputs, the 4 fingerprint-middle cells — see fingerprintMiddleTokens).
 // The DOMAIN_TAG keeps it independent of the primary fingerprint; its "v6" is a
 // fixed construction version, NOT the spec version. It is FROZEN: changing it
 // re-keys the fingerprint-middle digest of every input, so it MUST NOT be
 // bumped when the spec version changes. The normative definition lives in the
 // entviz reference repo's docs/spec.md (this is a port; there is no this.i
 // here).
-const MIDDLE_DOMAIN_TAG = Buffer.from("entviz/fingerprint-middle/v6\0", "latin1");
-export function fingerprintMiddleDigest(core: string): Buffer {
-  return createHash("sha512")
-    .update(MIDDLE_DOMAIN_TAG)
-    .update(core, "utf8")
-    .digest();
+// The tag is pure ASCII (incl. the trailing NUL), so its UTF-8 bytes equal the
+// latin1 bytes the reference uses — the digest is unchanged by encoding it here.
+const MIDDLE_DOMAIN_TAG = utf8Bytes("entviz/fingerprint-middle/v6\0");
+export function fingerprintMiddleDigest(core: string): Uint8Array {
+  return sha512.create().update(MIDDLE_DOMAIN_TAG).update(utf8Bytes(core)).digest();
 }
 
-export function tokenizeFingerprint(digest: Buffer): Token[] {
+export function tokenizeFingerprint(digest: Uint8Array): Token[] {
   if (digest.length !== 64) throw new Error("fingerprint must be 64 bytes");
-  const b64 = digest.toString("base64url"); // unpadded
+  const b64 = bytesToBase64url(digest); // unpadded
   const toks = tokenize(b64, BASE64URL);
   if (toks.length !== 22) throw new Error(`expected 22 ftoks, got ${toks.length}`);
   return toks;
+}
+
+// ---------------------------------------------------------------------------
+// Large-input handling (>512-bit). The text channel can't be lossless past 512
+// bits, so it shows head (first 8 tokens) + middle (4 fingerprint tokens) + tail
+// (last 8 tokens); the whole input is still bound via the primary fingerprint.
+// Mirrors the reference (docs/spec.md "Large-input handling"); the construction
+// is frozen at v6.
+// ---------------------------------------------------------------------------
+const MAX_TOKENS = 22;
+const HEAD_TOKENS = 8;
+const MIDDLE_TOKENS = 4;
+const TAIL_TOKENS = 8;
+// Anti-DoS cap: entviz visualizes identifiers; the largest plausible one is a
+// few KB, so 64 KiB is ~16x headroom. Past it, render() rejects outright.
+export const MAX_INPUT_CHARS = 65536;
+
+// Crockford base32 (excludes I/L/O/U). Used only for the fingerprint-middle
+// cells, so each carries a full 24 bits and the readout is homoglyph-clean and
+// single-case (no read-aloud "cap" cue).
+const CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+export function crockford5(value: number): string {
+  let v = value >>> 0;
+  let out = "";
+  for (let k = 0; k < 5; k++) {
+    out = CROCKFORD32[v & 0x1f] + out;
+    v >>>= 5;
+  }
+  return out.toLowerCase();
+}
+
+// The 4 middle tokens: token i renders second[3i..3i+2] (24-bit big-endian) as
+// 5 lowercase Crockford base32 chars. Crockford regardless of the input
+// alphabet, so the readout is injective (32^5 = 2^25 >= 2^24) and avalanches on
+// any input change; the domain tag keeps it independent of the primary
+// fingerprint. Token indices here are 0..3; the caller renumbers into 0..19.
+export function fingerprintMiddleTokens(core: string): Token[] {
+  const second = fingerprintMiddleDigest(core);
+  const out: Token[] = [];
+  for (let i = 0; i < MIDDLE_TOKENS; i++) {
+    const quant = (second[3 * i] << 16) | (second[3 * i + 1] << 8) | second[3 * i + 2];
+    out.push({ text: crockford5(quant), index: i, quant });
+  }
+  return out;
+}
+
+// Tokenize for rendering: the short path for <=512-bit inputs, else the
+// head/middle/tail large-input path (20 tokens renumbered 0..19, truncated=true).
+// The >22-token guard also bounds a sub-512-bit edge case (e.g. a 23-token
+// bech32 fragment) onto the large path, matching the reference.
+export function tokenizeEntropy(
+  core: string,
+  alphabet: Alphabet,
+): { tokens: Token[]; truncated: boolean } {
+  const tokenLen = Math.floor(24 / alphabet.bitsPerChar);
+  const tokenCount = Math.ceil(core.length / tokenLen);
+  const nBytes = decodedByteLength(core, alphabet);
+  if (tokenCount <= MAX_TOKENS && nBytes <= 64) {
+    return { tokens: tokenize(core, alphabet), truncated: false };
+  }
+  const head = tokenize(core.slice(0, HEAD_TOKENS * tokenLen), alphabet);
+  const tail = tokenize(core.slice(core.length - TAIL_TOKENS * tokenLen), alphabet);
+  const combined = [...head, ...fingerprintMiddleTokens(core), ...tail];
+  const tokens = combined.map((t, i) => ({ text: t.text, index: i, quant: t.quant }));
+  return { tokens, truncated: true };
 }
 
 // ASCII (bytewise) string comparison — base64url chars are all ASCII, so
@@ -399,7 +468,7 @@ const ETHEREUM_RE = /^(0[xX])?([0-9a-fA-F]{40})$/;
 // (EIP-55) case validation"): a corrupted address must fail closed, not render
 // a plausible-but-wrong entviz that looks like a different valid address.
 function validateEip55(body: string): void {
-  const digestHex = keccak256Hex(Buffer.from(body.toLowerCase(), "ascii"));
+  const digestHex = bytesToHex(keccak_256(utf8Bytes(body.toLowerCase())));
   for (let i = 0; i < body.length; i++) {
     const c = body[i];
     if (!/[a-zA-Z]/.test(c)) continue;
@@ -589,16 +658,15 @@ export interface ClassifiedInput {
 export function classifyInput(rawInput: string): ClassifiedInput {
   const parsed = parse(rawInput);
   if (parsed === null) {
-    // SEC-F1: cap on the cheap BYTE LENGTH before allocating the base64url
-    // encoding. Anything over 64 bytes is the not-yet-ported >512-bit path and
-    // is rejected anyway; converting first would let a multi-megabyte input
-    // allocate a ~1.33× base64 string before that rejection — an avoidable DoS
-    // amplifier. Buffer.byteLength measures without materializing the encoding.
-    if (Buffer.byteLength(rawInput, "utf8") > 64) {
-      throw new Error("large-input (>512-bit) path not yet ported in entviz-js");
+    // SEC-F1: the >512-bit path IS supported (large-input handling); only
+    // inputs past the anti-DoS cap are rejected. Cap on the cheap code-unit
+    // length before allocating the base64url encoding, so a multi-megabyte
+    // input can't materialize a ~1.33x base64 string first (a DoS amplifier).
+    if (rawInput.length > MAX_INPUT_CHARS) {
+      throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
     }
     return {
-      core: Buffer.from(rawInput, "utf8").toString("base64url"),
+      core: bytesToBase64url(utf8Bytes(rawInput)),
       typeName: `txt(${rawInput.length})->b64url`,
       alphabet: BASE64URL,
       prefix: null,
@@ -707,7 +775,7 @@ export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): numb
 export function blankFillColors(
   blankIndices: number[],
   mapCellIdx: number | null,
-  digest: Buffer,
+  digest: Uint8Array,
   edgeColors: string[],
 ): Map<number, string> {
   const soleBlank = blankIndices.length === 1;
@@ -825,29 +893,47 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   }
 
   const rawInput = entropy.trim();
+  if (rawInput.length > MAX_INPUT_CHARS) {
+    throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
+  }
   const { core, typeName, alphabet, prefix, suffix, prefixSemantic } = classifyInput(rawInput);
   // v11 PREFIX-FOLD: the PRIMARY fingerprint hashes `prefix ‖ core` for a
   // semantic prefix (DID method / URN NID), else the bare core. The
   // fingerprint-MIDDLE digest (color-bar markers) stays over the bare `core`.
   const fpCore = fingerprintCore(core, prefix, prefixSemantic);
 
-  // Short-input path only (this port does not yet implement the >512-bit
-  // truncation branch).
-  const byteLen = decodedByteLength(core, alphabet);
-  if (byteLen > 64) {
-    throw new Error("large-input (>512-bit) path not yet ported in entviz-js");
-  }
-
-  const tokens = tokenize(core, alphabet);
+  // >512-bit inputs take the large-input path: the text channel shows head
+  // (8 tokens) + fingerprint-middle (4 tokens) + tail (8 tokens) and sets
+  // `truncated`; the whole input stays bound through the primary fingerprint.
+  const { tokens, truncated } = tokenizeEntropy(core, alphabet);
   if (!tokens.length) throw new Error("No tokens produced from input entropy.");
   const tokenCount = tokens.length;
 
   const usedFtoks = tokenizeFingerprint(computeFingerprint(fpCore)).slice(0, tokenCount);
-  const grid = chooseGrid(tokenCount, targetAr);
+  // Large inputs always size the grid for the full token cap (22 → 4x6 = 24
+  // cells at AR 1.0), so the 20 tokens always leave a few spare cells for the
+  // fingerprint-driven blank shift — matching the reference (choose_grid(22)).
+  const grid = chooseGrid(truncated ? MAX_TOKENS : tokenCount, targetAr);
   const medFtok = medianToken(usedFtoks) as Token;
   const quartFtoks = quartileTokens(usedFtoks);
   const style = selectVisualStyle(medFtok);
   const cellIndices = assignCellIndices(tokens, grid, medFtok, usedFtoks);
+
+  // v6: on a truncated (>512-bit) input the 4 middle cells (token indices
+  // 8..11) carry no input entropy — they render a Crockford readout of the
+  // second fingerprint. Their nucleus is neutralised to the entviz background
+  // and 1-px framed (gold on a white-bg entviz, else white), their text is
+  // slightly larger (0.80x), and the cell is flagged data-cell-fingerprint.
+  // Their surround stays primary-fingerprint-driven (still avalanches).
+  const fpMiddleCells = new Set<number>();
+  if (truncated) {
+    for (let ti = HEAD_TOKENS; ti < HEAD_TOKENS + MIDDLE_TOKENS; ti++) {
+      const ci = cellIndices.get(ti);
+      if (ci !== undefined) fpMiddleCells.add(ci);
+    }
+  }
+  const fpBorderColor = style.bgColor === "#ffffff" ? "#e7be00" : "#ffffff";
+  const fpMiddleTextPx = (roundHalfEven(fontSizePt * 0.8) * DPI) / 72;
 
   // Geometry
   const hasBottom = Boolean(suffix) || Boolean(note);
@@ -859,7 +945,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
 
   const digest = computeFingerprint(fpCore);
-  const digestHex = digest.toString("hex");
+  const digestHex = bytesToHex(digest);
   const clipId = `grid-clip-${digestHex.slice(0, 16)}-${grid.cols}x${grid.rows}`;
 
   // Root
@@ -876,9 +962,11 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     .set("font-family", FONT_FAMILY)
     .set("data-entviz-version", SPEC_VERSION)
     .set("data-entviz-lib", LIB_VERSION)
-    .set("data-input-bytes", String(Buffer.byteLength(rawInput, "utf8")))
+    .set("data-input-bytes", String(utf8ByteLength(rawInput)))
     .set("data-cols", grid.cols)
     .set("data-rows", grid.rows);
+  // OMITTED when false (matches the render model: truncated defaults to false).
+  if (truncated) svg.set("data-truncated", "true");
 
   // defs + clipPath (grid rect)
   const defs = svg.child("defs");
@@ -910,7 +998,9 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     const cellY = gridTop + row * cellHeight;
     const nx = cellX + boxWidth;
     const ny = cellY + boxHeight;
-    const [nucleusBg] = nucleusColors(token.quant);
+    // Middle cells are neutralised to the entviz bg; this nucleusBg feeds BOTH
+    // the nucleus fill and the surround edge-colour pick (mirrors the reference).
+    const nucleusBg = fpMiddleCells.has(ci) ? style.bgColor : nucleusColors(token.quant)[0];
     tokenCells.push({ token, ftok: usedFtoks[token.index], ci, nx, ny, nucleusBg });
   }
 
@@ -966,6 +1056,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
       .set("data-cell-row", row)
       .set("data-cell-col", col);
     if (!usedCellIndices.has(ci)) g.set("data-cell-blank", "true");
+    if (fpMiddleCells.has(ci)) g.set("data-cell-fingerprint", "true");
     // v10: a filled cell declares its surround channel here (hex bit pattern +
     // edge color); the boxes themselves were drawn as a path in the surround
     // layer above. data-edge-color is omitted when no box is set (edge color is
@@ -981,14 +1072,30 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   // nuclei + text
   for (const tc of tokenCells) {
     const g = cellGroups.get(tc.ci) as El;
-    const [bg, fg] = nucleusColors(tc.token.quant);
+    const isMid = fpMiddleCells.has(tc.ci);
+    // Middle cells take the neutral entviz-bg + a contrast fg derived from it
+    // (same Oklab rule, applied to the bg colour); entropy cells use the token.
+    const [bg, fg] = isMid
+      ? nucleusColors(
+          parseInt(tc.nucleusBg.slice(1, 3), 16) |
+            (parseInt(tc.nucleusBg.slice(3, 5), 16) << 8) |
+            (parseInt(tc.nucleusBg.slice(5, 7), 16) << 16),
+        )
+      : nucleusColors(tc.token.quant);
     g.child("rect").set("x", tc.nx).set("y", tc.ny)
       .set("width", nucleusWidth).set("height", nucleusHeight).set("fill", bg);
+    if (isMid) {
+      // 1-px stroke flush with the nucleus boundary (gold on a white-bg entviz,
+      // else white), painted between the nucleus fill and the text.
+      g.child("rect").set("x", tc.nx + 0.5).set("y", tc.ny + 0.5)
+        .set("width", nucleusWidth - 1).set("height", nucleusHeight - 1)
+        .set("fill", "none").set("stroke", fpBorderColor).set("stroke-width", "1");
+    }
     const t = g.child("text")
       .set("x", tc.nx + nucleusWidth / 2)
       .set("y", tc.ny + nucleusHeight / 2)
       .set("fill", fg)
-      .set("font-size", cellTextPx)
+      .set("font-size", isMid ? fpMiddleTextPx : cellTextPx)
       .set("text-anchor", "middle")
       .set("dominant-baseline", "central");
     t.text = tc.token.text;
@@ -1028,7 +1135,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   drawColorBar(svg, digest, style.edgeColors, barWidth, boundingH, cellTextPx, fingerprintMiddleDigest(core));
 
   // Layer 5b: labels
-  drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, typeName, prefix, suffix, labelTextPx, note);
+  drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, typeName, prefix, suffix, labelTextPx, note, truncated);
 
   // Borders
   borderLine(svg, 0, 0.5, boundingW, 0.5);
@@ -1068,7 +1175,7 @@ export function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nu
   g.child("polygon").set("points", pts.map(([x, y]) => `${n(x)},${n(y)}`).join(" ")).set("fill", fg);
 }
 
-export function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, number> {
+export function twoBitUsage(digest: Uint8Array, edgeColors: string[]): Map<string, number> {
   const counts = [0, 0, 0, 0];
   for (const byte of digest) for (const shift of [0, 2, 4, 6]) counts[(byte >> shift) & 0x03]++;
   const m = new Map<string, number>();
@@ -1080,7 +1187,7 @@ export function twoBitUsage(digest: Buffer, edgeColors: string[]): Map<string, n
 // disjoint slices of the digest (tie-break by pattern value). Decouples the
 // color-bar band *order* from the count^4 band *heights* — through v8 the order
 // was descending count, carrying no information beyond the heights.
-export function twoBitFirstAppearance(digest: Buffer, edgeColors: string[]): string[] {
+export function twoBitFirstAppearance(digest: Uint8Array, edgeColors: string[]): string[] {
   const first = new Map<number, number>();
   let idx = 0;
   for (const byte of digest) {
@@ -1096,7 +1203,7 @@ export function twoBitFirstAppearance(digest: Buffer, edgeColors: string[]): str
   return order.map((p) => edgeColors[p]);
 }
 
-export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Buffer) {
+export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Uint8Array) {
   const usage = twoBitUsage(digest, edgeColors);
   const paletteOrder = new Map<string, number>();
   edgeColors.forEach((c, i) => paletteOrder.set(c, i));
@@ -1167,7 +1274,7 @@ export function drawColorBar(svg: El, digest: Buffer, edgeColors: string[], barW
   }
 }
 
-export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null) {
+export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null, truncated: boolean) {
   // font-family is inherited from the root <svg>; each label <text> carries
   // only a compact font-size presentation attribute.
   const topG = svg.child("g").set("data-channel", "label-top");
@@ -1176,7 +1283,15 @@ export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTo
   else restText = prefix ? `${prefix}...` : "";
   const topCy = gridTop - nucleusHeight / 2;
   const el = topG.child("text").set("x", gridLeft).set("y", topCy).set("fill", "#666666").set("font-size", textPx).set("dominant-baseline", "central");
-  el.text = restText;
+  if (truncated) {
+    // A >512-bit input's text channel is no longer lossless: a loud bold
+    // dark-red "fingerprint of" marker precedes the standard #666 label. The
+    // byte length is carried by the type parenthetical (e.g. hex(256)).
+    el.child("tspan").set("fill", "#a00000").set("font-weight", "bold").text = "fingerprint of ";
+    el.child("tspan").text = restText;
+  } else {
+    el.text = restText;
+  }
   if (suffix || note) {
     const bottomG = svg.child("g").set("data-channel", "label-bottom");
     const bottomCy = gridBottom + nucleusHeight / 2;
@@ -1210,7 +1325,7 @@ export function enumerateExternalCorners(cols: number, rows: number, cw: number,
   return pts;
 }
 
-export function drawEllipse(gridG: El, digest: Buffer, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
+export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
   const cols = grid.cols, rows = grid.rows;
   const interior = (cols - 1) * (rows - 1);
   const pts = interior >= 6

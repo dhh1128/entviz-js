@@ -14,7 +14,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "test": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=90 'test/*.test.ts'"
+    "test": "vitest run --coverage"
   },
   "peerDependencies": {
     "react": ">=17"
@@ -23,8 +23,15 @@
     "@entviz/core": "0.11.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "jsdom": "^29.1.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "vitest": "^4.1.9"
   },
   "engines": {
     "node": ">=22.6"

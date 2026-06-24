@@ -1,0 +1,383 @@
+# `<EntvizCompare>` — comparison feature (design)
+
+**Status:** design, pre-implementation. **Audience:** implementers of `@entviz/react`.
+**Depends on:** the entviz spec (`../entviz/docs/spec.md`), paper (`entviz-paper.md`), and
+threat model (`threat-model.md`) in the sister repo; and the sibling
+[`<EntvizPill>` design](./pill-design.md) (recognition ≠ verification; closed profile;
+comparison-text definition; terminology — an entviz is a *visualization*, not a
+"fingerprint").
+
+This doc designs the feature that helps a human decide whether *their* entviz matches a
+*reference*. Its security-bearing decisions were **stress-tested adversarially** before being
+written down; every load-bearing claim links to the supporting review below
+([§13 Provenance](#13-provenance--how-this-design-was-validated)). Where this doc states a
+security property, it states it **conditionally** — naming the assumptions — because the
+review process showed that unconditional phrasing was the main source of error.
+
+---
+
+## 1. Terminology (precise; used consistently)
+
+Operational definitions, adopted from the adjudications because the analyses repeatedly
+conflated distinct notions:
+
+- **exact cell match** — two entvizes' cell *i* have identical canonical token text.
+- **forge a cell** — produce a *distinct, usable* candidate value whose cell exactly matches a
+  cell of a target the attacker **does not control** (for a public key, the attacker must
+  retain a usable private key — A "witness").
+- **steer the order** — a live participant chooses their seed contribution *after* learning the
+  other's, biasing which checks come up early.
+- **verified** — the workflow reaches an affirmative verdict. This is split into two:
+  **IDENTICAL** (the machine compared both sides in full) and **NO DIFFERENCE** (a human walk
+  found no difference across the checks performed — probabilistic, never the machine's `=`).
+- **soundness** — P(affirmative verdict │ the values differ) ≤ the advertised bound, under
+  stated assumptions.
+- **unmatchable** — computationally expensive to forge under a stated work factor; never
+  literally impossible.
+- **authenticated channel** — the comparison/out-of-band channel (voice/video) has integrity
+  and is bound to the intended peer (you recognize them). *Confidentiality is not required.*
+- **substitution** — the attacker fixed a different candidate value **before** the ceremony and
+  is **not** a live participant. **relay** — an active intermediary observes/modifies ceremony
+  messages in real time. **endpoint compromise** — the attacker controls a party's own
+  rendering/comparison tool.
+- **equality-soundness** vs **reference-authenticity** — proving `A = B` is distinct from
+  proving the reference is the value you *should* trust. This feature does the former, never
+  the latter.
+
+---
+
+## 2. First principles
+
+1. **Recognition ≠ verification** (paper §2.3, §5.1; [pill design](./pill-design.md) §2). A
+   glance recognizes; only a deliberate check verifies. The walk forces deliberate checks.
+
+2. **Proof is asymmetric.** A single mismatch proves inequality with certainty. "Identical" is
+   machine-provable only when the machine sees **both** sides in full (text/SVG engines), or a
+   tool-driven **complete** read; a raster or a partial human walk yields only *"no difference
+   found across what was checked."* (Adjudicated; see
+   [synthesis](../../../reviews/comparison-redteam/findings-04-synthesis.md) Ruling 3.)
+
+3. **The text channel is the primary soundness anchor — for *constrained* high-entropy values.**
+   For a value whose token bytes the attacker cannot freely choose (a key whose private key
+   must remain usable), forging a checked cell is a **partial preimage** costing ≈2^(bits in
+   that cell) — see the per-format table in [§7.3](#73-the-confidence-meter). Across the
+   spec's alphabets this is **2²⁰–2²⁴ per cell**, never zero. Both independent adjudications
+   confirmed this and refuted the panel's "matched for 0 bits" headline for the canonical case
+   ([local](../../../reviews/comparison-redteam/findings-05-adjudication.md) Q1;
+   [foreign](../../../reviews/comparison-redteam/findings-06-independent-adjudication.md) Q1).
+   **Crucial caveat:** for **programmable / attacker-authored** values (arbitrary-text
+   fallback, vanity values, a UUID whose bits the attacker fills) the per-cell cost is ~0. So
+   *"high entropy"* is **not** the qualifying property; **constrained generation** is. The
+   meter credits a cell its real min-entropy, and **0 for any value not locally generated** in
+   adversarial mode.
+
+4. **Equality-soundness ≠ reference-authenticity.** A green verdict means "your value equals
+   *this reference*," never "this reference is trustworthy." An attacker-supplied reference
+   (pasted, dropped, or URL-fetched) makes a correct equality verdict meaningless. Surface
+   provenance as first-class, not a footnote.
+
+5. **Endpoint trust is irreducible** (decision-F limit; Signal-safety-number parity). A
+   compromised counterparty tool can show *its own user* a fabricated entviz; no comparison
+   protocol proves a remote device's state. We state this limit; we do not pretend to solve it.
+
+---
+
+## 3. Verdict state machine (four states)
+
+| state | look | meaning | reachable by |
+|---|---|---|---|
+| **DIFFERENT** | red `≠` | a mismatch was found — **certain** | every engine; one mismatch |
+| **PENDING** | gray `?` | not enough checked | initial / mid-walk |
+| **NO DIFFERENCE · coverage** | a **coverage** meter (checks completed of the target), **not** a `1-in-2^N` thermometer | probabilistic; "no difference found in the checks performed" | the human walk, raster fallback |
+| **IDENTICAL** | solid green `=` | machine compared both sides in full | text engine; SVG engine (≤512-bit, self-consistent) |
+
+Rules: **a human-driven comparison never reaches IDENTICAL** (the machine cannot certify the
+human's eyes). The affirmative human state shows **coverage**, not a nominal `2^-N` (the bits
+are correlated and human-eroded; a probability would mis-state them — paper §4.3.9, adjudicated
+[synthesis](../../../reviews/comparison-redteam/findings-04-synthesis.md) S6/S13). Reserve any
+green/`=` treatment for machine-IDENTICAL.
+
+---
+
+## 4. User surface — two situational choices + one knob
+
+The naive user picks based on situation, never on a security mode:
+
+1. **"I have something to check it against"** — paste a value, or drop/link an entviz (file,
+   image, URL). The engine **auto-detects** the medium (§5–6) and does as much by machine as it
+   can.
+2. **"I'm comparing live with another person"** — the guided two-party ceremony (§8).
+
+The only exposed security knob is a confidence target: **Quick / Strong / Paranoid**, mapping
+to concrete check counts and seed-entropy floors (§7.3, §8). No commitment / entropy-method /
+nonce-length choice is ever surfaced; all are derived (and, per §8, commitment is **on by
+default**, not a user choice).
+
+---
+
+## 5. Reference acquisition
+
+The medium (text / SVG / raster) is orthogonal to how it arrives: **paste**, **drop**,
+**file-pick** (browser file picker / drag-drop; a typed path only in a desktop host), or
+**URL-fetch** (`fetch`, then route by type). Caveats baked into the UI:
+
+- **Auto-detect must fail closed.** On ambiguity (polyglots; a value-shaped string that's also
+  a URL; an image that is actually an SVG), **reject and ask**, or route to the **least
+  authoritative** engine (raster, which can never bless). Sniffing must never *upgrade* an
+  artifact onto the IDENTICAL path. (Adjudicated S12.)
+- **URL fetch** carries CORS limits, a privacy/referrer leak (surface the origin *before*
+  fetch), and the attacker-chosen-reference problem (§2.4). Never present a URL-fetched
+  reference with the authority of a locally-held known-good copy.
+- **Secret-input warning.** "Paste your value" invites pasting private keys / seed phrases;
+  confidentiality is out of scope per the threat model, so the UI must warn on known
+  secret-material formats rather than lull (S21).
+
+---
+
+## 6. Per-medium engines
+
+### 6.1 Text → value-level compare (definitive)
+Normalize both sides (case/punctuation per the spec's per-alphabet rules) and compare normalized
+cores (or normalized comparison-texts). Distinguish **reference entropy** (compare values) from
+**reference comparison-text** (compare the text channel). Definitive `IDENTICAL`/`DIFFERENT`.
+
+### 6.2 SVG → recompute, re-render, self-consistency (the hardened path)
+A pasted SVG is **attacker-authorable** and the feature has **no golden raster**, so the
+conformance checker's "trust the declared `<text>`/`data-*`" stance is unsafe here: Tier-B
+excludes glyph pixels, so an SVG whose `<text>` says X while its ink shows Y could otherwise
+reach IDENTICAL **with no preimage** (adjudicated S3 — a *requirement* for the unwritten engine,
+not a demonstrated bug). The engine MUST:
+
+1. run **strict closed-profile + self-containment validation first** (reject `<foreignObject>`,
+   `<style>`, `<image>`, external `href`/`url()`, `@font-face`, `transform` on text, media
+   queries, extra per-cell instances) — before extracting any value;
+2. recover the normalized core **only at ≤512 bits** (>512-bit cores are unrecoverable from the
+   cells; **never IDENTICAL** there);
+3. **recompute** all fingerprint-derived fields from the recovered core (do not trust declared
+   `data-*`), **re-render** through the tool's own pinned font, and require **self-consistency**
+   (gestalt = SHA-512 of its own cells; glyphs = `<text>`);
+4. reject any inconsistency → route to the human walk, never IDENTICAL.
+
+### 6.3 Raster → disprove-only, fidelity-probed
+A raster **can never reach EQUAL** — color and text are unbound in an attacker-authored image,
+and we do not OCR. It may only **DIFFERENT** or **UNKNOWN**. A **fidelity self-probe** (sample
+the input-independent constants: bounding fill `#ffffff`, borders `#808080`, color-bar bands =
+exact palette entries) decides whether sampling is trustworthy enough to **disprove** on
+mismatch; if degraded/lossy/screen-shared, exclude the nucleus channel and bail to the human.
+**A passed probe credits zero comparison evidence** — it licenses disproof, not authentication;
+an UNKNOWN resets any subsequent human walk to **zero** credited bits (adjudicated S10). Surface
+"couldn't read the reference" distinctly from "DIFFERENT" to deny the false-DIFFERENT social
+lever (S18).
+
+---
+
+## 7. The guided walk (human path: raster-fallback and live)
+
+### 7.1 Interaction
+One feature at a time; the human reports **[Matches] / [Differs]**; one **Differs** → certain
+DIFFERENT. The target feature is indicated by an **ephemeral focus ring drawn *around* (never
+over) it**, in a **tool-controlled container** (iframe/shadow-DOM at a fixed integer scale the
+host cannot transform), anchored in the entviz's own coordinate system by re-measuring the
+live-laid-out cell geometry — so a host CSS `transform` can't shift the ring to the wrong cell
+(S14). The closed profile is preserved (the ring is never baked into the entviz SVG).
+
+### 7.2 Hard exact-text floor
+**No affirmative verdict is reached until a fixed floor of *forced, case-confirmed, read-back*
+text checks pass.** Gestalt channels (colour bar, ellipse, blank map, quartile, nucleus colour)
+may only **fail-fast to DIFFERENT**; they never independently fill the affirmative meter. This
+makes the soundness claim true *by construction* rather than by hoped-for ordering, and it
+neutralises order-steering (a steered order cannot avoid the required text checks). (Converged
+fix; [synthesis](../../../reviews/comparison-redteam/findings-04-synthesis.md) Ruling 2.)
+
+### 7.3 The confidence meter
+Shows **coverage**, not `1-in-2^N`. Credits **effective min-entropy**, and only genuinely
+**independent** bits:
+
+- **Independence is per-derivation, not per-channel.** Disjoint slices of the one SHA-512 digest
+  *are* independent and may be summed; **overlapping derivations of the same bits must not be**
+  (e.g. a cell's edge-singleton, surround, and quartile all ride the same ftok-quant — credit
+  the quant once). (Foreign adjudication refinement of S6.)
+- **Per-cell text cost is type- and position-specific** — credit a cell its real bits, **not a
+  flat 24**:
+
+  | format / position | exact-match cost (constrained generation) |
+  |---|---|
+  | full hex / base64url token | 24 bits |
+  | UUIDv4 cells | ≈24, 24, 18, 24, 24, 8 (six version/variant bits in one token) |
+  | CESR first / final token | ≈18 / ≈22 variable bits |
+  | 4 base58 chars | ≤ 23.4 bits |
+  | 4 base36 chars | ≤ 20.7 bits |
+  | 4 chars, 5-bit alphabet (bech32/base32/Crockford) | 20 bits (bit-extension adds none) |
+  | 6 decimal chars | ≤ 19.9 bits |
+  | Ethereum | six 24-bit cells + one 16-bit final; EIP-55 case adds no identity bits |
+  | large-input fingerprint-middle | 24 bits/cell, 96 for all four — **under an honest renderer** |
+  | programmable / arbitrary-text / vanity | **~0** (credit 0 for any non-locally-generated value) |
+
+  (Both adjudications; [local](../../../reviews/comparison-redteam/findings-05-adjudication.md) /
+  [foreign](../../../reviews/comparison-redteam/findings-06-independent-adjudication.md) Q1.)
+- **Viewer-relative (a11y == security, paper §5.4)** but **computed locally and conservatively**
+  — never accept discriminability signals from the counterparty; gate a discrete check's credit
+  on its *measured rendered size* (don't credit a quartile orientation or plus/dot shape blurred
+  below discriminability at the actual scale) (S20/R-F9).
+
+### 7.4 Anti-habituation
+Forced one-at-a-time clicks **relocate** rather than defeat rubber-stamping (S9). Mitigations:
+**attention probes** (occasionally an item that must be reported `Differs`, scored), and
+**active-recall read-back** (the human types/reads a credited cell, not merely clicks
+`Matches`). "Quick" must **not** reach an affirmative verdict — cap it at PENDING with
+"insufficient checks" language.
+
+### 7.5 Homoglyph hardening
+The text anchor is byte-exact but the human reads **glyphs over a noisy channel**; confusables
+(`0/O`, `1/l/I`, `5/S`, `8/B`, `-/_`) and dropped case erode effective bits by a bounded,
+alphabet-dependent amount (S2 — hardening, not a break). Render the comparison text in a
+**pinned, embedded, high-disambiguation font** in the comparison chrome (the spec's
+font-embedding "out of scope" applies to the conformant artifact, not a verification tool), and
+require an **explicit case + NATO-style readout** (`zero`/`cap-oh`, `one`/`ell`/`cap-eye`) for
+credited cells. Lean on the **Crockford-middle** cells for large inputs — single-case and
+homoglyph-clean by construction.
+
+---
+
+## 8. The two-party live ceremony
+
+**Threat posture (adjudicated).** Assume the counterparty's **software is hostile** (decision
+F). The irreducible requirement is an **authenticated comparison channel** (you recognize the
+person on voice/video); confidentiality is *not* required. The compared values are **locked
+before the seed** (you don't change your key mid-ceremony) — so observation of the seed is
+harmless; the only live threat is a **last-mover steering** the seeded check-order.
+
+**Commitment is the default, not an upsell.** Because a hostile last-moving peer who reveals
+their nonce after seeing yours can steer the order (paper §5.2), and the design assumes hostile
+counterparty software, the ceremony uses **commit-and-reveal with a high-entropy randomizer**
+(binding + hiding; not a bare hash of a short nonce) by default. It removes the
+**≈log₂C(K,L)-bit steering discount** (≈14 bits at K=20,L=5; both adjudications quantified
+this). Commitment may be **dropped only** when the channel is authenticated, both endpoints
+honest, and the seed provably unobserved — a narrow case we do not make the default. *Why this
+reverses the pill-era "drop commitment" instinct:* not because text is weak (it isn't — §2.3),
+but because the live UX admits a steering peer; see
+[local](../../../reviews/comparison-redteam/findings-05-adjudication.md) Q3 and
+[foreign](../../../reviews/comparison-redteam/findings-06-independent-adjudication.md) Q3.
+
+**Seed.** Entropy is **scaled to the preset**: require `H_min(seed) ≥ log₂C(K, L_preset)`
+(define real K, L, presets — a fixed "14 bits" is right only for Quick). The
+**click-harvest** idea is **reconsidered**: human-sourced click entropy does *not* defend
+against a malicious local tool (it can falsify the gesture), and an honest tool should use a
+platform CSPRNG; harvest the seed from the CSPRNG and reserve any human contribution for the
+commitment exchange (foreign adjudication Q3). A short Crockford code is read aloud for the
+commit and reveal.
+
+**Local-only evidence.** The verdict, meter, and focus highlights are trusted **only on the
+verifying user's own endpoint**; a counterparty's shared screen/meter is *not* evidence (S /
+N-4). Over a screen-share, force commitment (or off-screen seed transfer).
+
+**Honest scope.** This ceremony detects a **MITM on the primary (key-exchange) channel** by
+comparing over the authenticated OOB channel — the standard SAS guarantee; *contra* an earlier
+rebuttal claim, SAS **does** survive a relayed primary channel when the comparison channel is
+authenticated. It does **not** defend a compromised endpoint, nor a relay of the comparison
+channel itself with no peer authentication.
+
+---
+
+## 9. Property split & API sketch
+
+Mirrors the [pill](./pill-design.md) split: **deterministic entviz render inputs** vs.
+**contextual comparison chrome**. A new component composes the existing renderer:
+
+```ts
+// <EntvizCompare> — drives a comparison; renders pristine <Entviz> artifacts as panels.
+interface EntvizCompareProps {
+  // the user's own value (entviz render inputs are deterministic/context-free)
+  value: string;
+  targetAr?: number; fontSizePt?: number; note?: string | null;
+  // reference acquisition (mutually exclusive with `live`)
+  reference?: { kind: "text" | "svg" | "raster"; data: string | Blob } | { url: string };
+  live?: boolean;                          // the two-party ceremony
+  confidence?: "quick" | "strong" | "paranoid";
+  // chrome (contextual; localized; a11y) — see pill design §5, §8, §9
+  locale?: string; messages?: Partial<Messages>;
+  onVerdict?: (v: Verdict) => void;        // { state, coverageBits?, provenance }
+  className?: string; style?: React.CSSProperties;
+}
+type Verdict =
+  | { state: "different" }
+  | { state: "pending" }
+  | { state: "no-difference"; coverageBits: number; complete: boolean }
+  | { state: "identical" };
+```
+
+Localization, RTL (chrome mirrors, the entviz never does), and a11y follow the
+[pill design](./pill-design.md) §8–9, with the same two non-negotiables: never localize/transform
+the value or comparison text; never use locale-aware casing on the value.
+
+---
+
+## 10. What must be pinned before implementation (the adjudicators' "unspecified")
+
+Both adjudications stressed that *product severity* is uncertain because these are unspecified.
+They are prerequisites, not afterthoughts:
+
+1. **Concrete K (checklist size), L per preset, and the bit thresholds** Quick/Strong/Paranoid
+   map to — and the seed `H_min` each requires.
+2. **The channel-authentication model** the live ceremony assumes (what makes the OOB channel
+   "authenticated" in the UX).
+3. **The full verdict state machine** (transitions, what credits/resets the meter).
+4. **Measured per-format keygen/output distributions** for the supported typed values (to
+   confirm the §7.3 table against real key formats).
+5. **Human-factors studies** the paper itself flags as unmeasured (§6.3): habituated walk
+   completion; case/homoglyph error rates. Until measured, treat S2 as *necessary* hardening and
+   do not advertise nominal bits.
+
+---
+
+## 11. Security rationale index (decision → supporting finding)
+
+| decision | grounding |
+|---|---|
+| Text is the primary anchor (constrained high-entropy) | adjudications Q1; paper §5.1/§5.3 |
+| Credit per-format bits; 0 for programmable/non-local | S16; both adjudications Q1 |
+| Coverage meter, not `1-in-2^N`; independent bits only | S6/S13; paper §4.3.9 |
+| Hard text floor; gestalt fail-fast only | Ruling 2; S2/S5/S7 |
+| Commitment is the live default (steering, not weak text) | Ruling 1 corrected; both adjudications Q3; paper §5.2 |
+| Seed scaled to preset; reconsider click-harvest | foreign Q3; S5/S8 |
+| SVG: recompute+re-render+self-consistency; no >512 IDENTICAL | S3 (requirement) |
+| Raster: disprove-only; UNKNOWN = zero evidence | S10 |
+| Auto-detect fail-closed | S12 |
+| Anti-habituation (probes, read-back) | S9 |
+| Local-only evidence; provenance first-class | S17; endpoint-trust limit |
+| Equality-soundness ≠ reference-authenticity | foreign Q2/Q5 |
+
+---
+
+## 12. Deferred / out of scope
+
+- The **adversarial seeded-walk protocol's** full formal specification (the §10 items).
+- **Desktop-host** typed-path file references and OS clipboard integration.
+- Anything the [pill design](./pill-design.md) §11 defers.
+
+---
+
+## 13. Provenance — how this design was validated
+
+This design's security decisions were adversarially stress-tested through a five-stage chain
+(all archived under `reviews/comparison-redteam/`):
+
+1. **Adversarial panel** — three independent single-lens red-teams:
+   [cryptography](../../../reviews/comparison-redteam/findings-01-cryptography.md),
+   [usable-security](../../../reviews/comparison-redteam/findings-02-usable-security.md),
+   [rendering/forensics](../../../reviews/comparison-redteam/findings-03-rendering-forensics.md).
+2. **Synthesis** — [consolidated panel verdict](../../../reviews/comparison-redteam/findings-04-synthesis.md)
+   (findings **S1–S22**, seams **SEAM-1..6**).
+3. **Rebuttal** — a [first-principles counter-analysis](../../../reviews/comparison-redteam/rebuttal-01-orchestrator.md)
+   challenging the panel's headline.
+4. **Adjudication (local)** — an [independent third derivation](../../../reviews/comparison-redteam/findings-05-adjudication.md)
+   under mandatory rigor rules.
+5. **Adjudication (foreign)** — a [second independent adjudication by a different model](../../../reviews/comparison-redteam/findings-06-independent-adjudication.md).
+
+**Net, two-model-converged outcome:** the panel's dramatic headline ("text-anchoring doesn't
+survive → reinstate commitment because text is matched for 0 bits") is **false for the canonical
+constrained-high-entropy substitution case** — forging text is a real 2²⁰–2²⁴-bit-per-cell
+partial preimage. The genuine, philosophy-independent requirements are the machine-path and
+meter fixes (S3, S6, S10, S12) plus human hardening (S2, S9). And commitment **does** belong in
+the live default — not because text is weak, but because the live ceremony admits a last-mover
+who could steer the check-order. This doc encodes that corrected, adjudicated position.

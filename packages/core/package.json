@@ -35,5 +35,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dhh1128/entviz-js.git"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0"
   }
 }

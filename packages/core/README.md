@@ -6,14 +6,19 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 TypeScript implementation of [**entviz**](https://github.com/dhh1128/entviz)
-(spec **v10**) — turn a high-entropy value (cryptographic key, hash, signature,
+(spec **v11**) — turn a high-entropy value (cryptographic key, hash, signature,
 UUID, blockchain address, post-quantum key, …) into a comparable SVG diagram so
 a human can decide *at a glance* whether two values are the same or different.
 
-Pure TypeScript, **zero runtime dependencies** beyond `node:crypto`. Runs under
-Node's native type-stripping (Node ≥ 22.6) — the package ships source, no build
-step. Certified against the shared entviz conformance corpus (Tier A render
-model + Tier B canonical raster) for every input whose parser is ported.
+Pure TypeScript and **isomorphic** — runs in Node **and** the browser. Its only
+runtime dependency is the audited, zero-transitive-dependency
+[`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
+Keccak-256); no `node:crypto`/`node:fs`/`Buffer`, so it bundles cleanly for the
+web (this is what backs [`@entviz/react`](https://www.npmjs.com/package/@entviz/react)).
+Runs under Node's native type-stripping (Node ≥ 22.6) — the package ships
+source, no build step. Certified against the shared entviz conformance corpus
+(Tier A render model + Tier B canonical raster) for every input whose parser is
+ported.
 
 ## Install
 
@@ -37,9 +42,10 @@ const svg2 = render("0123456789abcdef0123456789abcdef", {
 ```
 
 The returned string is a self-contained `<svg>` with a `viewBox` (so it scales
-responsively) and `data-*` attributes describing every channel. Invalid input —
-a bad note, an out-of-range font size or aspect ratio, or (for now) a
->512-bit value — throws.
+responsively) and `data-*` attributes describing every channel. Inputs over
+512 bits take the large-input path (head + fingerprint-middle + tail). Invalid
+input — a bad note, an out-of-range font size or aspect ratio, or an input past
+the 64 KiB anti-DoS cap — throws.
 
 Using React? See [`@entviz/react`](https://www.npmjs.com/package/@entviz/react)
 for a thin `<Entviz value="…" />` wrapper.
@@ -56,11 +62,12 @@ guarantees are defined in the [spec](https://github.com/dhh1128/entviz/blob/main
 ## Conformance & scope
 
 `SPEC_VERSION` is stamped on every render (`data-entviz-version`). Ported
-parsers: hex, UUID (dashed/undashed), and the UTF-8→base64url fallback, plus the
-note / font-size error handling. The blockchain / CESR / SSH / SWHID / gitoid /
-LEI / snowflake / CID / ULID / base32 / bech32 / base58 / Ethereum-EIP-55
-parsers and the >512-bit large-input branch are mechanical follow-ons; the
-shared core is complete and corpus-proven. See
+parsers: hex, UUID (dashed/undashed), Ethereum (EIP-55), **DID** (W3C DID Core —
+v11 prefix-fold), **URN** (RFC 8141), and the UTF-8→base64url fallback, plus the
+note / font-size error handling and the **>512-bit large-input branch** (head +
+Crockford-base32 fingerprint-middle + tail). The blockchain / CESR / SSH / SWHID /
+gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 parsers are
+mechanical follow-ons; the shared core is complete and corpus-proven. See
 [`CERTIFICATION.md`](https://github.com/dhh1128/entviz-js/blob/main/CERTIFICATION.md).
 
 ## License
