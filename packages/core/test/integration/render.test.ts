@@ -161,10 +161,16 @@ test("render: whitespace-only input produces no tokens and is rejected", () => {
 });
 
 test("render: the fallback byte-length boundary — 64 bytes lossless, 65 bytes truncated", () => {
-  // 'z' is non-hex, so these take the UTF-8 -> base64url fallback. <=512 bits is
-  // the lossless short path; >512 bits takes the large-input (truncated) path.
-  assert.doesNotMatch(render("z".repeat(64)), /data-truncated/);
-  assert.match(render("z".repeat(65)), /data-truncated="true"/);
+  // An interior space puts the input in NO known alphabet (disproof declines)
+  // and survives the leading/trailing trim, so it takes the UTF-8 -> base64url
+  // fallback. The fallback core represents N bytes; truncation triggers once the
+  // decoded core exceeds 64 bytes (>512 bits), i.e. once the original input
+  // passes 64 bytes. (A bare 'z'*64 is now claimed by disproof as base32 — the
+  // port is faithful to the reference's full dispatch — so it no longer hits
+  // this path.)
+  const withSpace = (extra: number) => "z".repeat(32) + " " + "z".repeat(extra);
+  assert.doesNotMatch(render(withSpace(31)), /data-truncated/); // 64 bytes
+  assert.match(render(withSpace(32)), /data-truncated="true"/); // 65 bytes
 });
 
 // SEC-F2: SVG/HTML-hostile entropy must never reach the output unescaped. Raw

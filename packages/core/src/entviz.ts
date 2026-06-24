@@ -3,9 +3,12 @@
  *
  * A faithful port of the Python reference (docs/spec.md, v11), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
- * (see the entviz repo's compliance/ suite). Parsers ported so far: hex,
- * UUID, Ethereum (EIP-55), DID, URN, and the UTF-8→base64url fallback; the
- * remaining blockchain / CESR / SSH parsers are tracked follow-ons.
+ * (see the entviz repo's compliance/ suite). The full identifier-parser
+ * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/
+ * Bitcoin-Cash/Cardano/Stellar addresses, UUID, ULID, snowflake, LEI, DID, URN,
+ * SWHID, gitoid, generic bech32, IPFS CID, hex, EOS — followed by disproof-based
+ * alphabet detection and the UTF-8→base64url fallback. Order is semantics (see
+ * `PARSE_FUNCS`), matching the reference's `parse_funcs` list exactly.
  *
  * Runs under Node's native TypeScript type-stripping (Node >= 22.6); no
  * build step required. Isomorphic: hashing/encoding go through @noble/hashes +
@@ -40,9 +43,42 @@ export interface Alphabet {
   bitsPerChar: number;
 }
 const HEX_ALPHABET = "0123456789ABCDEF";
+const BASE58_ALPHABET =
+  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const BASE64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// Base32 (RFC 4648) and its either-case input variant (the address regexes
+// accept upper- or lower-case base32). Stellar / IPFS CIDv1 use base32.
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const BASE32_ALPHABET_EITHER_CASE =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+// Bech32 (BIP-173): 32 chars, intentionally excludes 1/b/i/o.
+const BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const BECH32_ALPHABET_EITHER_CASE =
+  BECH32_ALPHABET + BECH32_ALPHABET.toUpperCase();
+// Crockford base32 (excludes I/L/O/U). Used by ULID. (The fingerprint-middle
+// readout uses its own lowercase string constant, CROCKFORD32, further down.)
+const CROCKFORD32_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+// Base36: digits + uppercase letters. Used by GLEIF LEI (ISO 17442).
+const BASE36_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// Decimal: snowflake IDs only.
+const DECIMAL_ALPHABET = "0123456789";
 const BASE64URL_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 export const HEX: Alphabet = { name: "hex", chars: HEX_ALPHABET, bitsPerChar: 4 };
+export const BASE58: Alphabet = { name: "base58", chars: BASE58_ALPHABET, bitsPerChar: 6 };
+export const BASE64: Alphabet = { name: "base64", chars: BASE64_ALPHABET, bitsPerChar: 6 };
+export const BASE32: Alphabet = { name: "base32", chars: BASE32_ALPHABET, bitsPerChar: 5 };
+export const BECH32: Alphabet = { name: "bech32", chars: BECH32_ALPHABET, bitsPerChar: 5 };
+// ULID core alphabet (Crockford base32). Named CROCKFORD32_AB to avoid a clash
+// with the lowercase CROCKFORD32 string used by the fingerprint-middle readout.
+export const CROCKFORD32_AB: Alphabet = {
+  name: "crockford32",
+  chars: CROCKFORD32_ALPHABET,
+  bitsPerChar: 5,
+};
+export const BASE36: Alphabet = { name: "base36", chars: BASE36_ALPHABET, bitsPerChar: 6 };
+export const DECIMAL: Alphabet = { name: "decimal", chars: DECIMAL_ALPHABET, bitsPerChar: 4 };
 export const BASE64URL: Alphabet = {
   name: "base64url",
   chars: BASE64URL_ALPHABET,
@@ -457,9 +493,8 @@ function parseUrn(text: string): Parsed | null {
 }
 
 const HEX_RE = /^[0-9a-fA-F]+$/;
-const UUID_DASHED_RE =
-  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const UUID_PLAIN_RE = /^[0-9a-fA-F]{32}$/;
+const UUID_RE =
+  /^\{?[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}\}?$/;
 const ETHEREUM_RE = /^(0[xX])?([0-9a-fA-F]{40})$/;
 
 // EIP-55: throw if `body` (40 hex chars, mixed case) disagrees with the
@@ -502,30 +537,549 @@ function parseEthereum(raw: string): Parsed | null {
   return { type: "ETH", core: body.toLowerCase(), alphabet: HEX, prefix: "0x", suffix: null };
 }
 
+// ---------------------------------------------------------------------------
+// Multihash / multicodec tables + varint reader (CID labeling). Browser-safe:
+// pure JS over numbers, no Buffer/node:crypto.
+// ---------------------------------------------------------------------------
+const MULTIHASH_HASH_FUNCS: Record<number, string> = {
+  0x11: "sha1", 0x12: "sha2-256", 0x13: "sha2-512", 0x14: "sha3-224",
+  0x15: "sha3-256", 0x16: "sha3-384", 0x17: "sha3-512", 0x18: "shake-128",
+  0x19: "shake-256", 0x1a: "keccak-224", 0x1b: "keccak-256", 0x1c: "keccak-384",
+  0x1d: "keccak-512", 0x22: "blake2b-8", 0x23: "blake2b-16", 0x24: "blake2b-24",
+  0x25: "blake2b-32", 0x26: "blake2b-40", 0x27: "blake2b-48", 0x28: "blake2b-56",
+  0x29: "blake2b-64", 0x2a: "blake2b-72", 0x2b: "blake2b-80", 0x2c: "blake2b-88",
+  0x2d: "blake2b-96", 0x2e: "blake2b-104", 0x2f: "blake2b-112", 0x30: "blake2b-120",
+  0x31: "blake2b-128", 0x32: "blake2b-136", 0x33: "blake2b-144", 0x34: "blake2b-152",
+  0x35: "blake2b-160", 0x36: "blake2b-168", 0x37: "blake2b-176", 0x38: "blake2b-184",
+  0x39: "blake2b-192", 0x3a: "blake2b-200", 0x3b: "blake2b-208", 0x3c: "blake2b-216",
+  0x3d: "blake2b-224", 0x3e: "blake2b-232", 0x3f: "blake2b-240", 0x40: "blake2b-248",
+  0x41: "blake2b-256", 0xb201: "dbl-sha2-256", 0xb202: "murmur3-128", 0xb203: "murmur3-32",
+};
+const MULTICODEC_CONTENT: Record<number, string> = {
+  0x00: "identity", 0x51: "cbor", 0x55: "raw", 0x60: "rlp", 0x70: "dag-pb",
+  0x71: "dag-cbor", 0x72: "libp2p-key", 0x78: "git-raw", 0x90: "eth-block",
+  0x97: "eth-tx", 0x0129: "dag-json", 0x0202: "car",
+};
+
+// Read an unsigned LEB128 varint from `data` at `pos`. Returns null if the
+// buffer ends mid-varint. (CID prefixes use only small values, so number math
+// is exact.)
+function readUvarint(data: Uint8Array, pos: number): { value: number; pos: number } | null {
+  let result = 0;
+  let shift = 0;
+  while (pos < data.length) {
+    const b = data[pos];
+    pos += 1;
+    result |= (b & 0x7f) << shift;
+    if (!(b & 0x80)) return { value: result >>> 0, pos };
+    shift += 7;
+  }
+  return null;
+}
+
+// RFC 4648 base32 decode of an upper/lower body (no padding required). Streams
+// 5-bit groups MSB-first and emits whole bytes, dropping the final partial bits
+// (matches Python's b32decode on a properly-padded multiple-of-8 body for the
+// leading bytes the varint reader consumes). Returns null on a non-base32 char.
+function b32NoPadDecode(s: string): Uint8Array | null {
+  const up = s.toUpperCase();
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const c of up) {
+    const idx = BASE32_ALPHABET.indexOf(c);
+    if (idx < 0) return null;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((value >> bits) & 0xff);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+// hex string -> bytes; null on odd length or a non-hex char.
+function hexToBytes(s: string): Uint8Array | null {
+  if (s.length % 2 !== 0) return null;
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < s.length; i += 2) {
+    const byte = parseInt(s.slice(i, i + 2), 16);
+    if (Number.isNaN(byte)) return null;
+    out[i / 2] = byte;
+  }
+  return out;
+}
+
+// Decode the leading varints of a binary CIDv1 into (content codec, hash) names,
+// or null if the bytes do not describe a recognized version-1 codec/hash.
+function decodeMulticodec(cidBytes: Uint8Array): [string, string] | null {
+  const v = readUvarint(cidBytes, 0);
+  if (!v || v.value !== 1) return null;
+  const codec = readUvarint(cidBytes, v.pos);
+  if (!codec) return null;
+  const hashFn = readUvarint(cidBytes, codec.pos);
+  if (!hashFn) return null;
+  const codecName = MULTICODEC_CONTENT[codec.value];
+  const hashName = MULTIHASH_HASH_FUNCS[hashFn.value];
+  if (codecName === undefined || hashName === undefined) return null;
+  return [codecName, hashName];
+}
+
+// Parse `bytes` as a binary multihash: byte 0 = hash-func code, byte 1 = digest
+// length, then `length` digest bytes (and nothing more). Returns prefix (2
+// bytes) + body (digest) + decoded label, or null.
+function parseMultihash(bytes: Uint8Array): { label: string; prefix: Uint8Array; core: Uint8Array } | null {
+  if (bytes.length >= 3) {
+    const hashFunc = MULTIHASH_HASH_FUNCS[bytes[0]];
+    if (hashFunc) {
+      const hashLength = bytes[1];
+      if (bytes.length === hashLength + 2) {
+        const label = hashFunc === "sha2-256" ? "multihash" : `multihash ${hashFunc}`;
+        return { label, prefix: bytes.slice(0, 2), core: bytes.slice(2) };
+      }
+    }
+  }
+  return null;
+}
+
+// Parse text as a hex-encoded multihash. The body must be even-length all-hex
+// (an odd-length hex string falls through to parse_hex, which checks parity).
+function parseHexMultihash(text: string): Parsed | null {
+  if (!text || text.length < 6) return null;
+  if (text.length % 2 !== 0) return null;
+  if (!HEX_RE.test(text)) return null;
+  const bytes = hexToBytes(text);
+  if (!bytes) return null;
+  const mh = parseMultihash(bytes);
+  if (!mh) return null;
+  return {
+    type: `hex ${mh.label}`,
+    core: bytesToHex(mh.core).toLowerCase(),
+    alphabet: HEX,
+    prefix: bytesToHex(mh.prefix).toLowerCase(),
+    suffix: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CESR (Composable Event Streaming Representation) derivation codes.
+// ---------------------------------------------------------------------------
+const CESR_1_BYTE_CODES: [string, string, number][] = [
+  ["A", "Ed25519 seed", 44], ["B", "Ed25519 nt pubkey", 44], ["C", "X25519 pub enckey", 44],
+  ["D", "Ed25519 pubkey", 44], ["E", "Blake3-256", 44], ["F", "Blake2b-256", 44],
+  ["G", "Blake2s-256", 44], ["H", "SHA3-256", 44], ["I", "SHA2-256", 44],
+  ["J", "secp256k1 seed", 44], ["K", "Ed448 seed", 76], ["L", "X448 pub enckey", 76],
+  ["O", "X25519 priv deckey", 44], ["P", "X25519 124 cipher 44 seed", 124], ["Q", "secp256r1 seed", 44],
+  ["a", "blinding factor", 44], ["c", "FN-DSA-512 seed", 44], ["d", "FN-DSA-1024 seed", 44],
+  ["e", "FN-DSA-1024 sig", 1708], ["b", "FN-DSA-1024 pubkey", 2392],
+];
+const CESR_1_BYTE_LENGTHS = new Set(CESR_1_BYTE_CODES.map((x) => x[2]));
+const CESR_2_BYTE_CODES: [string, string, number][] = [
+  ["0A", "random 128-bit number", 24], ["0B", "Ed25519 sig", 88], ["0C", "secp256k1 sig", 88],
+  ["0D", "Blake3-512", 88], ["0E", "Blake2b-512", 88], ["0F", "SHA3-512", 88],
+  ["0G", "SHA2-512", 88], ["0I", "secp256r1 sig", 88],
+];
+const CESR_2_BYTE_LENGTHS = new Set(CESR_2_BYTE_CODES.map((x) => x[2]));
+const CESR_4_BYTE_CODES: [string, string, number][] = [
+  ["1AAA", "secp256k1 nt pubkey", 48], ["1AAB", "secp256k1 pub/enc key", 48],
+  ["1AAC", "Ed448 nt pubkey", 80], ["1AAD", "Ed448 pubkey", 80], ["1AAE", "Ed448 sig", 156],
+  ["1AAH", "X25519 100 cipher 24 salt", 100], ["1AAI", "secp256r1 nt pubkey", 48],
+  ["1AAJ", "secp256r1 pub/enc key", 48], ["1AAR", "FN-DSA-512 sig", 892], ["1AAQ", "FN-DSA-512 pubkey", 1200],
+];
+const CESR_4_BYTE_LENGTHS = new Set(CESR_4_BYTE_CODES.map((x) => x[2]));
+const BASE64URL_NO_PAD_RE = /^[A-Za-z0-9\-_]+$/;
+
+// The derivation code is IDENTITY (it stays IN the core — rendered AND
+// fingerprinted), not a stripped prefix. Decoded type goes in the label.
+function parseCesr(text: string): Parsed | null {
+  if (!text) return null;
+  const lenText = text.length;
+  const code = text[0];
+  let items: [string, string, number][] | null = null;
+  if (code === "0") {
+    if (CESR_2_BYTE_LENGTHS.has(lenText)) items = CESR_2_BYTE_CODES;
+  } else if (code === "1") {
+    if (CESR_4_BYTE_LENGTHS.has(lenText)) items = CESR_4_BYTE_CODES;
+  } else if (CESR_1_BYTE_LENGTHS.has(lenText)) {
+    items = CESR_1_BYTE_CODES;
+  }
+  if (!items) return null;
+  for (const [prefix, label, length] of items) {
+    if (text.startsWith(prefix) && lenText === length) {
+      if (BASE64URL_NO_PAD_RE.test(text)) {
+        return { type: `CESR ${label}`, core: text, alphabet: BASE64URL, prefix: null, suffix: null };
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// SSH public keys.
+// ---------------------------------------------------------------------------
+// (short_name, match_str, prefix_length). Order matters: longer/more-specific
+// prefixes first so they aren't shadowed by shorter substrings.
+const SSH_KEY_TYPES: [string, string, number][] = [
+  ["ecdsa-nistp256", "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABB", 52],
+  ["ecdsa-nistp384", "AAAAE2VjZHNhLXNoYTItbmlzdHAzODQAAAAIbmlzdHAzODQAAABh", 52],
+  ["ecdsa-nistp521", "AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAAIbmlzdHA1MjEAAACF", 52],
+  ["rsa", "AAAAB3NzaC1yc2EAAAADAQAB", 28],
+  ["ed25519", "AAAAC3NzaC1lZDI1NTE5AAAA", 24],
+  ["dss", "AAAAB3NzaC1kc3M", 15],
+];
+const SSH_KEY_RE = /^(AAAA)([0-9A-Za-z+/]+={0,3})$/;
+const SSH_LINE_RE =
+  /^(?:(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp(?:256|384|521))\s+)?(AAAA[0-9A-Za-z+/]+={0,3})(?:\s+(\S[\s\S]*))?$/;
+
+function parseSshKey(text: string): Parsed | null {
+  const m = text.match(SSH_LINE_RE);
+  if (!m) {
+    const km = text.match(SSH_KEY_RE);
+    if (km) return { type: "SSH key", core: km[2], alphabet: BASE64, prefix: km[1], suffix: null };
+    return null;
+  }
+  const payload = m[1];
+  // m[2] is the trailing comment — a free annotation, dropped.
+  for (const [shortName, matchStr, prefixLength] of SSH_KEY_TYPES) {
+    if (payload.startsWith(matchStr) && payload.length >= prefixLength) {
+      return {
+        type: `SSH ${shortName}`,
+        core: payload.slice(prefixLength),
+        alphabet: BASE64,
+        prefix: payload.slice(0, prefixLength),
+        suffix: null,
+      };
+    }
+  }
+  // SSH_LINE_RE guaranteed the payload is `AAAA<b64+><=*0-3>`, which SSH_KEY_RE
+  // matches by construction, so this legacy fallback always succeeds here (the
+  // reference's trailing `return None` is unreachable on this branch and is
+  // omitted to keep the line reachable/testable). The non-NULL assertion is
+  // safe for that reason.
+  const legacy = payload.match(SSH_KEY_RE)!;
+  return { type: "SSH key", core: legacy[2], alphabet: BASE64, prefix: legacy[1], suffix: null };
+}
+
+// ---------------------------------------------------------------------------
+// Blockchain address regexes + parsers.
+// ---------------------------------------------------------------------------
+const B58 = BASE58_ALPHABET;
+const B58C = `[${B58}]`;
+const BECH32E = `[${BECH32_ALPHABET_EITHER_CASE}]`;
+const BASE32E = `[${BASE32_ALPHABET_EITHER_CASE}]`;
+const BITCOIN_LEGACY_RE = new RegExp(`^([123mn])(${B58C}{21,30})(${B58C}{4})$`);
+const BITCOIN_SEGWIT_RE = new RegExp(`^(bc1|tb1)(${BECH32E}{39,69})$`, "i");
+const RIPPLE_RE = new RegExp(`^(r)(${B58C}{33})$`);
+const LITECOIN_LEGACY_RE = new RegExp(`^(t?L)(${B58C}{33})$`);
+const LITECOIN_RE = new RegExp(`^(ltc1)(${BECH32E}{38,68})$`, "i");
+const BITCOIN_CASH_RE = new RegExp(`^((?:bitcoincash|bchtest):)?([pq]${BECH32E}{41})$`, "i");
+const CARDANO_SHORT_BYRON_RE = new RegExp(`^(Ae2)(${B58C}{50})(${B58C}{6})$`);
+const CARDANO_LONG_BYRON_RE = new RegExp(`^(DdzFF)(${B58C}{65})(${B58C}{6})$`);
+const CARDANO_SHELLEY_RE = new RegExp(`^((?:addr|stake)(?:_test)?1)(${BECH32E}{50,100})(${BECH32E}{6})$`);
+const STELLAR_RE = new RegExp(`^(G|g)(${BASE32E}{55})$`);
+const STELLAR_MUXED_RE = new RegExp(`^(M|m)(${BASE32E}{68})$`);
+const BECH32_GENERIC_RE = new RegExp(`^([a-z]{1,83})1([${BECH32_ALPHABET}]{8,})$`, "i");
+const IPFS_CIDV0_RE = new RegExp(`^(Qm)(${B58C}{44})$`);
+const IPFS_CIDV1_RE = new RegExp(`^(b)(${BASE32E}{58,112})$`);
+const EOS_RE = /(^[a-z1-5.]{1,11}[a-z1-5]$)|(^[a-z1-5.]{12}[a-j1-5]$)/;
+
+function parseBitcoin(text: string): Parsed | null {
+  let m = text.match(BITCOIN_LEGACY_RE);
+  if (m) return { type: "BTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  m = text.match(BITCOIN_SEGWIT_RE);
+  if (m) return { type: "BTC SegWit", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1].toLowerCase(), suffix: null };
+  return null;
+}
+
+function parseRipple(text: string): Parsed | null {
+  const m = text.match(RIPPLE_RE);
+  if (m) return { type: "XRP", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
+  return null;
+}
+
+function parseLitecoin(text: string): Parsed | null {
+  let m = text.match(LITECOIN_LEGACY_RE);
+  if (m) return { type: "LTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
+  m = text.match(LITECOIN_RE);
+  if (m) return { type: "LTC", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1].toLowerCase(), suffix: null };
+  return null;
+}
+
+function parseBitcoinCash(text: string): Parsed | null {
+  const m = text.match(BITCOIN_CASH_RE);
+  // CashAddr uses the bech32 alphabet (not RFC 4648 base32) despite the name.
+  if (m) return { type: "BCH", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1] ?? null, suffix: null };
+  return null;
+}
+
+function parseCardano(text: string): Parsed | null {
+  let m = text.match(CARDANO_SHORT_BYRON_RE);
+  if (m) return { type: "ADA Byron", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  m = text.match(CARDANO_LONG_BYRON_RE);
+  if (m) return { type: "ADA Byron", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  m = text.match(CARDANO_SHELLEY_RE);
+  if (m) return { type: "ADA Shelley", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1], suffix: m[3].toLowerCase() };
+  return null;
+}
+
+function parseStellar(text: string): Parsed | null {
+  let m = text.match(STELLAR_RE);
+  if (m) return { type: "XLM", core: m[2].toUpperCase(), alphabet: BASE32, prefix: m[1].toUpperCase(), suffix: null };
+  m = text.match(STELLAR_MUXED_RE);
+  if (m) return { type: "XLM muxed", core: m[2].toUpperCase(), alphabet: BASE32, prefix: m[1].toUpperCase(), suffix: null };
+  return null;
+}
+
+function parseEos(text: string): Parsed | null {
+  const m = text.match(EOS_RE);
+  if (!m) return null;
+  const whole = m[0];
+  // Don't let EOS claim an all-hex fragment (parse_hex wins for even-length
+  // hex; odd-length all-[a-f1-5] is a hex fragment, not an EOS name).
+  if ([...whole].every((c) => "0123456789abcdef".includes(c))) return null;
+  return { type: "EOS", core: whole, alphabet: BASE64, prefix: null, suffix: null };
+}
+
+// ---------------------------------------------------------------------------
+// UUID / ULID / snowflake / LEI.
+// ---------------------------------------------------------------------------
+function parseUuid(text: string): Parsed | null {
+  const m = text.match(UUID_RE);
+  if (!m) return null;
+  const body = m[0].toLowerCase().replace(/-/g, "").replace(/[{}]/g, "");
+  return { type: "UUID", core: body, alphabet: HEX, prefix: null, suffix: null };
+}
+
+const ULID_RE = /^[0-9A-TV-Za-tv-z]{26}$/;
+// Crockford input-alias translation: I/L -> 1, O -> 0 (either case).
+function crockfordAliases(s: string): string {
+  let out = "";
+  for (const c of s) {
+    if (c === "I" || c === "i" || c === "L" || c === "l") out += "1";
+    else if (c === "O" || c === "o") out += "0";
+    else out += c;
+  }
+  return out;
+}
+function parseUlid(text: string): Parsed | null {
+  if (!ULID_RE.test(text)) return null;
+  const normalized = crockfordAliases(text).toUpperCase();
+  return { type: "ULID", core: normalized, alphabet: CROCKFORD32_AB, prefix: null, suffix: null };
+}
+
+const SNOWFLAKE_RE = /^[0-9]{17,20}$/;
+function parseSnowflake(text: string): Parsed | null {
+  if (!SNOWFLAKE_RE.test(text)) return null;
+  // Sign-bit (bit 63) must be clear: a canonical snowflake is non-negative
+  // signed 64-bit. BigInt because the value can exceed 2^53.
+  if (BigInt(text) >> 63n) return null;
+  return { type: "snowflake", core: text, alphabet: DECIMAL, prefix: null, suffix: null };
+}
+
+const LEI_RE = /^[0-9A-Za-z]{20}$/;
+// ISO/IEC 7064 MOD 97-10: map letters to base36 values (A=10..Z=35), interpret
+// the digit string as a base-10 integer (BigInt — it exceeds 2^53), require ≡ 1
+// (mod 97). LEI_RE only matches [0-9A-Za-z] but case-folds to upper first.
+function leiChecksumOk(lei: string): boolean {
+  // Caller passes the upper-cased candidate, which LEI_RE has already pinned to
+  // [0-9A-Z], so every char is a digit or A-Z here (the reference's defensive
+  // "else return false" is unreachable under that guarantee and is omitted to
+  // keep the line reachable/testable).
+  let digits = "";
+  for (const c of lei) {
+    if (c >= "0" && c <= "9") digits += c;
+    else digits += String(c.charCodeAt(0) - 65 + 10);
+  }
+  return BigInt(digits) % 97n === 1n;
+}
+function parseLei(text: string): Parsed | null {
+  if (!LEI_RE.test(text)) return null;
+  const upper = text.toUpperCase();
+  if (upper.slice(4, 6) !== "00") return null;
+  if (!leiChecksumOk(upper)) return null;
+  return { type: "LEI", core: upper.slice(0, 18), alphabet: BASE36, prefix: null, suffix: upper.slice(18) };
+}
+
+// ---------------------------------------------------------------------------
+// SWHID / gitoid (prefix-semantic: object-type binds the fingerprint).
+// ---------------------------------------------------------------------------
+const SWHID_RE = /^(swh:1:(?:snp|rel|rev|dir|cnt):)([0-9a-fA-F]{40})(?:;([\s\S]+))?$/;
+function parseSwhid(text: string): Parsed | null {
+  const m = text.match(SWHID_RE);
+  if (!m) return null;
+  // The ;<qualifiers> tail (m[3]) is a free annotation, dropped.
+  return {
+    type: "",
+    core: m[2].toLowerCase(),
+    alphabet: HEX,
+    prefix: m[1].toLowerCase(),
+    suffix: null,
+    prefixSemantic: true,
+  };
+}
+
+const GITOID_RE = /^(gitoid:(blob|tree|commit|tag):(sha1|sha256):)([0-9a-fA-F]+)$/i;
+const GITOID_ALGO_LEN: Record<string, number> = { sha1: 40, sha256: 64 };
+function parseGitoid(text: string): Parsed | null {
+  const m = text.match(GITOID_RE);
+  if (!m) return null;
+  const algo = m[3].toLowerCase();
+  const body = m[4].toLowerCase();
+  if (body.length !== GITOID_ALGO_LEN[algo]) return null;
+  return {
+    type: "",
+    core: body,
+    alphabet: HEX,
+    prefix: m[1].toLowerCase(),
+    suffix: null,
+    prefixSemantic: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Generic bech32 (BIP-173 / BIP-350 checksum-validated) + IPFS CID.
+// ---------------------------------------------------------------------------
+function bech32Polymod(values: number[]): number {
+  const gen = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) chk ^= ((top >> i) & 1) ? gen[i] : 0;
+  }
+  return chk >>> 0;
+}
+function bech32HrpExpand(hrp: string): number[] {
+  const out: number[] = [];
+  for (const c of hrp) out.push(c.charCodeAt(0) >> 5);
+  out.push(0);
+  for (const c of hrp) out.push(c.charCodeAt(0) & 31);
+  return out;
+}
+function bech32ChecksumConst(hrp: string, data: string): number {
+  const values: number[] = [];
+  for (const c of data) values.push(BECH32_ALPHABET.indexOf(c));
+  return bech32Polymod([...bech32HrpExpand(hrp), ...values]);
+}
+function parseBech32(text: string): Parsed | null {
+  const m = text.match(BECH32_GENERIC_RE);
+  if (!m) return null;
+  const hrp = m[1].toLowerCase();
+  const data = m[2].toLowerCase();
+  const c = bech32ChecksumConst(hrp, data);
+  if (c !== 1 && c !== 0x2bc830a3) return null;
+  return { type: "bech32", core: data.slice(0, -6), alphabet: BECH32, prefix: `${hrp}1`, suffix: data.slice(-6) };
+}
+
+function parseIpfsCid(text: string): Parsed | null {
+  let m = text.match(IPFS_CIDV0_RE);
+  if (m) return { type: "CIDv0", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
+  m = text.match(IPFS_CIDV1_RE);
+  if (m) {
+    let label = "CIDv1";
+    const bytes = b32NoPadDecode(m[2]);
+    if (bytes) {
+      const described = decodeMulticodec(bytes);
+      if (described) {
+        const [codecName, hashName] = described;
+        label = `CIDv1 ${codecName}`;
+        if (hashName !== "sha2-256") label += `/${hashName}`;
+      }
+    }
+    return { type: label, core: m[2].toUpperCase(), alphabet: BASE32, prefix: m[1], suffix: null };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Plain hex.
+// ---------------------------------------------------------------------------
+function parseHex(text: string): Parsed | null {
+  if (!text) return null;
+  let prefix: string | null = null;
+  let body = text;
+  if ((body.startsWith("0x") || body.startsWith("0X")) && body.length > 2) {
+    prefix = "0x";
+    body = body.slice(2);
+  } else if (body.length % 2 !== 0) {
+    return null;
+  }
+  if (!HEX_RE.test(body)) return null;
+  return { type: "hex", core: body.toLowerCase(), alphabet: HEX, prefix, suffix: null };
+}
+
+// ---------------------------------------------------------------------------
+// Disproof-based alphabet detection (last resort before the UTF-8 fallback).
+// Most-restrictive (smallest char set) first; case-insensitive for hex/base32/
+// bech32, case-sensitive for base58/base64/base64url.
+// ---------------------------------------------------------------------------
+const DISPROOF_ORDER: [Alphabet, Set<string>][] = [
+  [HEX, new Set(HEX_ALPHABET.toLowerCase())],
+  [BASE32, new Set(BASE32_ALPHABET.toLowerCase())],
+  [BECH32, new Set(BECH32_ALPHABET.toLowerCase())],
+  [BASE58, new Set(BASE58_ALPHABET)],
+  [BASE64, new Set(BASE64_ALPHABET)],
+  [BASE64URL, new Set(BASE64URL_ALPHABET)],
+];
+export function detectAlphabetByDisproof(text: string): Alphabet | null {
+  if (!text) return null;
+  const cs = text;
+  const ci = text.toLowerCase();
+  for (const [alphabet, charSet] of DISPROOF_ORDER) {
+    const view = alphabet === BASE58 || alphabet === BASE64 || alphabet === BASE64URL ? cs : ci;
+    if ([...view].every((c) => charSet.has(c))) return alphabet;
+  }
+  return null;
+}
+
+// Parser dispatch order — ORDER IS SEMANTICS (mirrors the reference's
+// parse_funcs). A narrow/checksummed format must precede any broader one that
+// would also accept the same input. parse_hex sits near the end; parseEos runs
+// last (its alphabet is a superset of lowercase hex for short strings).
+const PARSE_FUNCS: ((t: string) => Parsed | null)[] = [
+  parseHexMultihash,
+  parseCesr,
+  parseSshKey,
+  parseBitcoin,
+  parseRipple,
+  parseEthereum,
+  parseLitecoin,
+  parseBitcoinCash,
+  parseCardano,
+  parseStellar,
+  parseUuid,
+  parseUlid,
+  parseSnowflake,
+  parseLei,
+  parseDid,
+  parseUrn,
+  parseSwhid,
+  parseGitoid,
+  parseBech32,
+  parseIpfsCid,
+  parseHex,
+  parseEos,
+];
+
 export function parse(raw: string): Parsed | null {
-  const eth = parseEthereum(raw);
-  if (eth !== null) return eth;
-  if (UUID_DASHED_RE.test(raw)) {
-    return {
-      type: "UUID",
-      core: raw.replace(/-/g, "").toLowerCase(),
-      alphabet: HEX,
-      prefix: null,
-      suffix: null,
-    };
+  const entropy = raw.trim();
+  for (const fn of PARSE_FUNCS) {
+    const answer = fn(entropy);
+    if (answer) return answer;
   }
-  if (UUID_PLAIN_RE.test(raw)) {
-    return { type: "UUID", core: raw.toLowerCase(), alphabet: HEX, prefix: null, suffix: null };
+  // No specific parser claimed it: try disproof-based alphabet detection
+  // before falling back to UTF-8 → base64url.
+  const detected = detectAlphabetByDisproof(entropy);
+  if (detected !== null) {
+    // Canonical case is PER ALPHABET: base32 -> upper (RFC 4648); bech32/hex ->
+    // lower; everything else verbatim.
+    let core: string;
+    if (detected === BASE32) core = entropy.toUpperCase();
+    else if (detected === BECH32 || detected === HEX) core = entropy.toLowerCase();
+    else core = entropy;
+    return { type: detected.name, core, alphabet: detected, prefix: null, suffix: null };
   }
-  if (HEX_RE.test(raw)) {
-    return { type: "hex", core: raw.toLowerCase(), alphabet: HEX, prefix: null, suffix: null };
-  }
-  // v11: DID / URN — checked before the UTF-8 fallback so a structured DID/URN
-  // binds its semantic prefix (prefix-fold) instead of being base64url'd whole.
-  const did = parseDid(raw);
-  if (did !== null) return did;
-  const urn = parseUrn(raw);
-  if (urn !== null) return urn;
   return null; // caller applies UTF-8 → base64url fallback
 }
 
@@ -674,7 +1228,13 @@ export function classifyInput(rawInput: string): ClassifiedInput {
       prefixSemantic: false,
     };
   }
-  const typeName = parsed.type === "hex" ? `hex(${parsed.core.length})` : parsed.type;
+  // Length-bearing labels for the variable-length plain-alphabet types
+  // (hex / base64 / base64url). Rename base64* → b64* for consistency with the
+  // txt->b64url fallback shortening (mirrors the reference pipeline).
+  let typeName = parsed.type;
+  if (typeName === "hex") typeName = `hex(${parsed.core.length})`;
+  else if (typeName === "base64") typeName = `b64(${parsed.core.length})`;
+  else if (typeName === "base64url") typeName = `b64url(${parsed.core.length})`;
   return {
     core: parsed.core,
     typeName,

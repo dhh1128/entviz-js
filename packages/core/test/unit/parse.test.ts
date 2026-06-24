@@ -28,9 +28,11 @@ test("parse: a plain hex string -> hex", () => {
   assert.equal(p.core, "deadbeef");
 });
 
-test("parse: non-hex / non-UUID -> null (caller applies the fallback)", () => {
+test("parse: input no parser claims -> null (caller applies the fallback)", () => {
+  // A space is in no known alphabet, so disproof also declines -> null.
   assert.equal(parse("hello world"), null);
-  assert.equal(parse("xyz"), null);
+  // NOTE: a bare lowercase word like "xyz" is now claimed as EOS (its
+  // [a-z1-5.] alphabet is a superset), matching the reference dispatch.
 });
 
 test("classifyInput: hex gets a length-bearing label", () => {
