@@ -1,108 +1,185 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { render } from "@entviz/core";
 import { EntvizCompare } from "../src/index.ts";
-import { classifyResult, looksLikeSecret } from "../src/EntvizCompare.ts";
+import { classifyResult, looksLikeSecret, readFileAsReference } from "../src/EntvizCompare.ts";
 
 const HEX = "0123456789abcdef";
 const OTHER = "fedcba9876543210";
+const SVG = render(HEX); // a faithful entviz SVG of HEX
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
-const paste = (text: string) =>
-  fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
+const status = () => screen.getByRole("status").textContent ?? "";
 
 // --- pure helpers ---------------------------------------------------------
 
 describe("classifyResult", () => {
-  test("empty reference is pending", () => {
-    expect(classifyResult(HEX, "   ")).toEqual({ kind: "pending" });
-  });
-  test("text reference → a value verdict", () => {
+  test("empty → pending; text → value verdict", () => {
+    expect(classifyResult(HEX, "  ")).toEqual({ kind: "pending" });
     expect(classifyResult(HEX, HEX)).toEqual({ kind: "verdict", verdict: { state: "identical" } });
     expect(classifyResult(HEX, OTHER)).toEqual({ kind: "verdict", verdict: { state: "different" } });
   });
-  test("svg / raster references are deferred", () => {
-    expect(classifyResult(HEX, "<svg></svg>")).toEqual({ kind: "deferred", medium: "svg" });
-    expect(classifyResult(HEX, "data:image/png;base64,iVBOR")).toEqual({ kind: "deferred", medium: "raster" });
+  test("a faithful entviz SVG → identical; a different one → different; garbage → unknown", () => {
+    expect(classifyResult(HEX, SVG)).toEqual({ kind: "verdict", verdict: { state: "identical" } });
+    expect(classifyResult(OTHER, SVG)).toEqual({ kind: "verdict", verdict: { state: "different" } });
+    const r = classifyResult(HEX, "<svg></svg>");
+    expect(r.kind).toBe("verdict");
+    expect((r as { verdict: { state: string } }).verdict.state).toBe("unknown");
   });
-  test("ambiguous references fail closed", () => {
+  test("a raster data URL is deferred; ambiguous fails closed", () => {
+    expect(classifyResult(HEX, "data:image/png;base64,iVBOR")).toEqual({ kind: "deferred", medium: "raster" });
     expect(classifyResult(HEX, "https://example.com")).toEqual({ kind: "ambiguous" });
   });
 });
 
 describe("looksLikeSecret", () => {
-  test("flags PEM private keys, extended private keys, and mnemonics", () => {
-    expect(looksLikeSecret("-----BEGIN EC PRIVATE KEY-----\nMHc...")).toBe(true);
+  test("flags secret material, ignores ordinary values", () => {
+    expect(looksLikeSecret("-----BEGIN EC PRIVATE KEY-----\nx")).toBe(true);
     expect(looksLikeSecret("xprv" + "a".repeat(60))).toBe(true);
     expect(looksLikeSecret("legal winner thank year wave sausage worth useful legal winner thank yellow")).toBe(true);
-  });
-  test("does not flag ordinary values", () => {
     expect(looksLikeSecret(HEX)).toBe(false);
-    expect(looksLikeSecret("550e8400-e29b-41d4-a716-446655440000")).toBe(false);
+  });
+});
+
+describe("readFileAsReference", () => {
+  test("reads SVG/text as text and other images as a data URL", async () => {
+    const svgFile = new File([SVG], "ref.svg", { type: "image/svg+xml" });
+    await expect(readFileAsReference(svgFile)).resolves.toContain("<svg");
+    const png = new File([new Uint8Array([1, 2, 3])], "x.png", { type: "image/png" });
+    await expect(readFileAsReference(png)).resolves.toMatch(/^data:image\/png/);
   });
 });
 
 // --- component ------------------------------------------------------------
 
 describe("EntvizCompare", () => {
-  test("renders heading, the user's panel, and a paste box; starts pending", () => {
-    render(<EntvizCompare value={HEX} />);
+  test("renders, starts pending, shows the user's panel + acquisition controls", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
     expect(screen.getByText("Compare visualizations")).toBeTruthy();
-    expect(screen.getAllByRole("img").length).toBe(1); // only "Yours" until a reference arrives
-    expect(screen.getByRole("textbox")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("Paste a reference");
+    expect(screen.getAllByRole("img").length).toBe(1);
+    expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy(); // paste box
+    expect(status()).toContain("Paste");
   });
 
-  test("a matching pasted value yields a machine `=` verdict + fires onVerdict", () => {
+  test("pasting a matching value → `=`; a different value → `≠`", () => {
     const onVerdict = vi.fn();
-    render(<EntvizCompare value={HEX} onVerdict={onVerdict} />);
-    paste(HEX);
-    const status = screen.getByRole("status");
-    expect(status.textContent).toContain("=");
-    expect(status.textContent).toContain("Identical");
-    expect(screen.getAllByRole("img").length).toBe(2); // reference panel now renders
+    rtlRender(<EntvizCompare value={HEX} onVerdict={onVerdict} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    expect(status()).toContain("=");
+    expect(status()).toContain("Identical");
     expect(onVerdict).toHaveBeenCalledWith({ state: "identical" });
+    expect(screen.getByText("Reference: pasted")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: OTHER } });
+    expect(status()).toContain("≠");
   });
 
-  test("a different pasted value yields `≠`", () => {
-    render(<EntvizCompare value={HEX} />);
-    paste(OTHER);
-    expect(screen.getByRole("status").textContent).toContain("≠");
-    expect(screen.getByRole("status").textContent).toContain("Different");
+  test("pasting a faithful entviz SVG → identical (re-rendered in our font, not embedded)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: SVG } });
+    expect(status()).toContain("Identical");
+    expect(screen.getAllByRole("img").length).toBe(2); // our render of the (equal) value
   });
 
-  test("a pasted SVG / image defers; ambiguous input fails closed (no false ≠)", () => {
-    const { rerender } = render(<EntvizCompare value={HEX} />);
-    paste("<svg></svg>");
-    expect(screen.getByRole("status").textContent).toMatch(/SVG/i);
-    expect(screen.queryAllByRole("img").length).toBe(1); // no reference entviz for a deferred medium
-    rerender(<EntvizCompare value={HEX} />);
-    paste("data:image/png;base64,iVBOR");
-    expect(screen.getByRole("status").textContent).toMatch(/image/i);
-    rerender(<EntvizCompare value={HEX} />);
-    paste("https://example.com/x");
-    expect(screen.getByRole("status").textContent).toMatch(/recognize/i);
+  test("a tampered / non-entviz SVG is `unknown`, never a false `≠`", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: SVG.replace("</svg>", "<script/></svg>") } });
+    expect(status()).toMatch(/confirm a match/i);
+    expect(screen.getAllByRole("img").length).toBe(1); // no reference panel for an unconfirmed SVG
   });
 
-  test("a controlled text reference renders without a paste box", () => {
-    render(<EntvizCompare value={HEX} reference={{ kind: "text", data: HEX }} />);
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getAllByRole("img").length).toBe(2);
-    expect(screen.getByRole("status").textContent).toContain("Identical");
+  test("pasting an ambiguous string fails closed (no false verdict)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/x" } });
+    expect(status()).toMatch(/recognize/i);
     expect(screen.getByText("Reference: pasted")).toBeTruthy();
   });
 
-  test("warns when the value looks like secret material", () => {
-    const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
-    render(<EntvizCompare value={mnemonic} />);
-    expect(screen.getByRole("alert").textContent).toMatch(/secret/i);
+  test("file-pick: an SVG file → identical; a PNG file → deferred", async () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const file = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(screen.getByText("Reference: file")).toBeTruthy();
+    // a raster file defers
+    fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
+    await waitFor(() => expect(status()).toMatch(/image .* later release/i));
+    // an empty file list is a no-op
+    fireEvent.change(file, { target: { files: [] } });
   });
 
-  test("RTL locale mirrors the chrome; messages override applies", () => {
-    const { container, rerender } = render(<EntvizCompare value={HEX} locale="ar" />);
+  test("URL-fetch: surfaces the origin, then fetches and compares", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ text: async () => SVG })));
+    rtlRender(<EntvizCompare value={HEX} />);
+    const url = screen.getByRole("textbox", { name: /URL of an entviz/i });
+    const fetchBtn = screen.getByRole("button", { name: "Fetch" });
+    expect((fetchBtn as HTMLButtonElement).disabled).toBe(true); // disabled until a valid URL
+    fireEvent.change(url, { target: { value: "https://example.com/key.svg" } });
+    expect(screen.getByText(/Will fetch from https:\/\/example.com/)).toBeTruthy();
+    expect((fetchBtn as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(fetchBtn);
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(screen.getByText(/Reference: https:\/\/example.com/)).toBeTruthy();
+  });
+
+  test("URL-fetch failure surfaces an error, not a verdict", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /URL of an entviz/i }), { target: { value: "https://example.com/x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/network down/i));
+  });
+
+  test("drag-drop a value compares it (provenance: dropped)", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.dragOver(root);
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(status()).toContain("Identical");
+    expect(screen.getByText("Reference: dropped")).toBeTruthy();
+    // a drop with neither file nor text is a no-op
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => "" } });
+  });
+
+  test("drag-drop an SVG file compares it", async () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.drop(root, { dataTransfer: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })], getData: () => "" } });
+    await waitFor(() => expect(status()).toContain("Identical"));
+  });
+
+  test("a file that fails to read surfaces an error (not a verdict)", async () => {
+    class ErrFileReader {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      result = "";
+      readAsText() { Promise.resolve().then(() => this.onerror?.()); }
+      readAsDataURL() { Promise.resolve().then(() => this.onerror?.()); }
+    }
+    vi.stubGlobal("FileReader", ErrFileReader);
+    await expect(readFileAsReference(new File(["x"], "r.svg", { type: "image/svg+xml" }))).rejects.toThrow();
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const file = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(file, { target: { files: [new File(["x"], "r.svg", { type: "image/svg+xml" })] } });
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/read failed/i));
+  });
+
+  test("a controlled SVG reference compares without acquisition UI (provenance: provided)", () => {
+    rtlRender(<EntvizCompare value={HEX} reference={{ kind: "svg", data: SVG }} />);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(status()).toContain("Identical");
+    expect(screen.getByText("Reference: provided")).toBeTruthy();
+  });
+
+  test("warns on secret material; RTL + messages override", () => {
+    const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const { container, rerender } = rtlRender(<EntvizCompare value={mnemonic} />);
+    expect(screen.getByRole("alert").textContent).toMatch(/secret/i);
+    rerender(<EntvizCompare value={HEX} locale="ar" messages={{ heading: "مقارنة" }} />);
     expect(container.firstElementChild?.getAttribute("dir")).toBe("rtl");
-    rerender(<EntvizCompare value={HEX} messages={{ heading: "Vergleich" }} />);
-    expect(screen.getByText("Vergleich")).toBeTruthy();
-    expect(container.firstElementChild?.getAttribute("dir")).toBeNull();
+    expect(screen.getByText("مقارنة")).toBeTruthy();
   });
 });

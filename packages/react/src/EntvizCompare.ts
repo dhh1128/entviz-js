@@ -1,16 +1,17 @@
 /**
  * <EntvizCompare /> — helps a human decide whether THEIR value matches a
- * REFERENCE, by comparing entviz visualizations. This is Milestone 1a: the
- * machine "I have something to check against" flow for a pasted **value**
- * reference (the text engine). Dropping/linking an SVG or image, the guided
- * human walk, and the two-party live ceremony come in later milestones.
+ * REFERENCE, by comparing entviz visualizations. Milestone 1b: the machine
+ * "I have something to check against" flow for a **value** or **entviz-SVG**
+ * reference, acquired by paste / file-pick / drag-drop / URL-fetch. The raster
+ * engine, the guided human walk, and the two-party live ceremony come later.
  *
  * Security discipline (packages/react/docs/comparison-design.md): the affirmative
  * `=` is shown ONLY for a machine `identical` verdict (§3); `unknown` ("couldn't
- * read the reference") is surfaced distinctly from `different` so a bad reference
- * can't be read as "they differ"; provenance is first-class; and a green verdict
- * means "equal to THIS reference", never "this reference is trustworthy" (§2.4).
- * Authored with React.createElement (no JSX) so the package ships raw .ts source.
+ * read the reference") is surfaced distinctly from `different`; the reference is
+ * always re-rendered through OUR pinned font (the pasted SVG is never embedded);
+ * provenance is first-class and a URL's origin is shown before any fetch (§5);
+ * and a green verdict means "equal to THIS reference", never "this reference is
+ * trustworthy" (§2.4). Authored with React.createElement (no JSX).
  */
 import {
   createElement as h,
@@ -20,7 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareValues, detectMedium, type Verdict } from "@entviz/core";
+import { compareSvg, compareValues, detectMedium, type RenderOptions, type Verdict } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
@@ -31,9 +32,9 @@ export interface EntvizCompareProps {
   targetAr?: number;
   fontSizePt?: number;
   note?: string | null;
-  // --- reference (M1a: a pasted text value; svg/raster/url come later) ---
-  reference?: { kind: "text"; data: string };
-  /** Reserved for the deferred guided walk; accepted but unused in M1a. */
+  // --- a reference supplied by the host (M1b: a text value or entviz SVG) ---
+  reference?: { kind: "text" | "svg"; data: string };
+  /** Reserved for the deferred guided walk; accepted but unused in M1a/M1b. */
   confidence?: "quick" | "strong" | "paranoid";
   // --- chrome ---
   locale?: string;
@@ -46,15 +47,18 @@ export interface EntvizCompareProps {
 export type CompareResult =
   | { kind: "pending" }
   | { kind: "verdict"; verdict: Verdict }
-  | { kind: "deferred"; medium: "svg" | "raster" }
+  | { kind: "deferred"; medium: "raster" }
   | { kind: "ambiguous" };
 
-/** Pure: route a pasted reference to a machine result (no DOM, unit-tested). */
-export function classifyResult(value: string, refValue: string): CompareResult {
-  if (!refValue.trim()) return { kind: "pending" };
-  const medium = detectMedium(refValue);
-  if (medium === "text") return { kind: "verdict", verdict: compareValues(value, refValue) };
-  if (medium === "svg" || medium === "raster") return { kind: "deferred", medium };
+type Provenance = "pasted" | "file" | "url" | "dropped" | "provided";
+
+/** Pure: route an acquired reference to a machine result (no DOM, unit-tested). */
+export function classifyResult(value: string, refContent: string, opts: RenderOptions = {}): CompareResult {
+  if (!refContent.trim()) return { kind: "pending" };
+  const medium = detectMedium(refContent);
+  if (medium === "text") return { kind: "verdict", verdict: compareValues(value, refContent) };
+  if (medium === "svg") return { kind: "verdict", verdict: compareSvg(refContent, value, opts) };
+  if (medium === "raster") return { kind: "deferred", medium };
   return { kind: "ambiguous" };
 }
 
@@ -69,6 +73,26 @@ export function looksLikeSecret(s: string): boolean {
   return false;
 }
 
+/** Read a dropped/picked file: SVG/text as text (so it routes to the SVG/text
+ *  engine), other images as a data URL (→ the deferred raster engine). */
+export function readFileAsReference(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("read failed"));
+    fr.onload = () => resolve(String(fr.result));
+    if (/^image\//i.test(file.type) && !/svg/i.test(file.type)) fr.readAsDataURL(file);
+    else fr.readAsText(file);
+  });
+}
+
+const originOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+};
+
 interface Chip {
   symbol: string;
   label: string;
@@ -82,18 +106,25 @@ function chipFor(result: CompareResult, m: CompareMessages): Chip {
     case "ambiguous":
       return { symbol: "?", label: m.unknownAmbiguous, tone: "warn" };
     case "deferred":
-      return {
-        symbol: "…",
-        label: result.medium === "svg" ? m.unknownSvg : m.unknownRaster,
-        tone: "neutral",
-      };
+      return { symbol: "…", label: m.unknownRaster, tone: "neutral" };
     default: {
-      const v = result.verdict;
-      // The text engine yields only identical / different.
-      return v.state === "identical"
-        ? { symbol: "=", label: m.identical, tone: "good" }
-        : { symbol: "≠", label: m.different, tone: "bad" };
+      // The engines (compareValues / compareSvg) return only these three states.
+      const v = result.verdict as Exclude<Verdict, { state: "pending" }>;
+      if (v.state === "identical") return { symbol: "=", label: m.identical, tone: "good" };
+      if (v.state === "different") return { symbol: "≠", label: m.different, tone: "bad" };
+      // unknown (e.g. a >512-bit or non-self-consistent SVG reference)
+      return { symbol: "?", label: fmt(m.unknownReason, { reason: v.reason }), tone: "warn" };
     }
+  }
+}
+
+function provenanceLabel(p: Provenance, origin: string, m: CompareMessages): string {
+  switch (p) {
+    case "pasted": return m.provenancePasted;
+    case "file": return m.provenanceFile;
+    case "dropped": return m.provenanceDropped;
+    case "provided": return m.provenanceProvided;
+    default: return fmt(m.provenanceUrl, { origin }); // "url"
   }
 }
 
@@ -108,49 +139,126 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const { value, targetAr, fontSizePt, note, reference, locale, messages: overrides, onVerdict, className, style } = props;
   const m: CompareMessages = { ...defaultCompareMessages, ...overrides };
   const rtl = isRtlLocale(locale ?? "");
+  const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
-  const controlledRef = reference?.kind === "text" ? reference.data : undefined;
-  const [pasted, setPasted] = useState("");
-  const refValue = controlledRef ?? pasted;
+  const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const result = useMemo(() => classifyResult(value, refValue), [value, refValue]);
+  const provided = reference ? { content: reference.data, provenance: "provided" as Provenance, origin: "" } : null;
+  const eff = provided ?? ref;
+  const refContent = eff?.content ?? "";
+
+  const result = useMemo(() => classifyResult(value, refContent, opts), [value, refContent, opts]);
   useEffect(() => {
     if (result.kind === "verdict") onVerdict?.(result.verdict);
   }, [result, onVerdict]);
 
-  const secret = looksLikeSecret(value) || looksLikeSecret(refValue);
+  const secret = looksLikeSecret(value) || looksLikeSecret(refContent);
   const chip = chipFor(result, m);
-  const opts = { targetAr, fontSizePt, note };
+  const medium = refContent.trim() ? detectMedium(refContent) : null;
 
-  // reference panel: an Entviz once the pasted/linked reference is a value
-  const referencePanel = result.kind === "verdict"
-    ? h(Entviz, { value: refValue, targetAr, fontSizePt, note, style: panelEntviz })
-    : null;
+  // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG
+  // is never embedded): for a text reference, the pasted value; for an SVG
+  // reference, our value when the machine confirmed `identical` (same value).
+  const refDisplayValue =
+    result.kind === "verdict" && medium === "text"
+      ? refContent
+      : result.kind === "verdict" && medium === "svg" && result.verdict.state === "identical"
+        ? value
+        : null;
 
-  const pasteBox = controlledRef === undefined
-    ? h("textarea", {
-        value: pasted,
-        onChange: (e: { target: { value: string } }) => setPasted(e.target.value),
-        "aria-label": m.pastePrompt,
-        placeholder: m.pastePrompt,
-        spellCheck: false,
-        autoComplete: "off",
-        rows: 2,
-        style: textareaStyle,
-      })
-    : null;
+  const onPick = (file: File | undefined, provenance: Provenance) => {
+    if (!file) return;
+    setFetchError(null);
+    readFileAsReference(file).then(
+      (content) => setRef({ content, provenance, origin: "" }),
+      () => setFetchError("read failed"),
+    );
+  };
+
+  const onFetch = async () => {
+    setFetchError(null);
+    try {
+      const res = await fetch(urlInput);
+      const text = await res.text();
+      setRef({ content: text, provenance: "url", origin: originOf(urlInput) });
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // acquisition UI (only when the host did not supply a controlled reference)
+  const acquisition = provided
+    ? null
+    : h(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        h("textarea", {
+          value: eff?.provenance === "pasted" ? refContent : "",
+          onChange: (e: { target: { value: string } }) =>
+            setRef({ content: e.target.value, provenance: "pasted", origin: "" }),
+          "aria-label": m.pastePrompt,
+          placeholder: m.pastePrompt,
+          spellCheck: false,
+          autoComplete: "off",
+          rows: 2,
+          style: textareaStyle,
+        }),
+        h(
+          "label",
+          { style: fileLabel },
+          m.pickFile,
+          h("input", {
+            type: "file",
+            accept: ".svg,image/svg+xml,image/*",
+            onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
+            style: { display: "none" },
+          }),
+        ),
+        h(
+          "div",
+          { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" } },
+          h("input", {
+            type: "url",
+            value: urlInput,
+            onChange: (e: { target: { value: string } }) => setUrlInput(e.target.value),
+            placeholder: m.urlPlaceholder,
+            "aria-label": m.urlPlaceholder,
+            style: urlStyle,
+          }),
+          h(
+            "button",
+            { type: "button", onClick: onFetch, disabled: !originOf(urlInput), style: fetchBtn },
+            m.fetchButton,
+          ),
+        ),
+        originOf(urlInput) ? h("span", { style: hint }, fmt(m.fetchHint, { origin: originOf(urlInput) })) : null,
+        fetchError ? h("span", { role: "alert", style: { ...hint, color: TONE.bad } }, fmt(m.fetchError, { error: fetchError })) : null,
+        h("span", { style: hint }, m.dropHint),
+      );
 
   return h(
     "div",
     {
       dir: rtl ? "rtl" : undefined,
       className,
+      onDragOver: provided ? undefined : (e: { preventDefault: () => void }) => e.preventDefault(),
+      onDrop: provided
+        ? undefined
+        : (e: { preventDefault: () => void; dataTransfer: DataTransfer }) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files?.[0];
+            if (file) onPick(file, "dropped");
+            else {
+              const text = e.dataTransfer.getData("text");
+              if (text) setRef({ content: text, provenance: "dropped", origin: "" });
+            }
+          },
       style: { display: "inline-flex", flexDirection: "column", gap: 10, font: "inherit", ...style },
     },
     h("strong", { style: { fontSize: "0.95em" } }, m.heading),
-    secret
-      ? h("span", { role: "alert", style: warnBanner }, m.secretWarning)
-      : null,
+    secret ? h("span", { role: "alert", style: warnBanner }, m.secretWarning) : null,
     h(
       "div",
       { style: { display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" } },
@@ -166,12 +274,15 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
-        pasteBox,
-        referencePanel,
-        refValue.trim() ? h("span", { style: provenance }, m.provenancePasted) : null,
+        acquisition,
+        refDisplayValue !== null
+          ? h(Entviz, { value: refDisplayValue, targetAr, fontSizePt, note, style: panelEntviz })
+          : null,
+        eff && refContent.trim()
+          ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
+          : null,
       ),
     ),
-    // verdict chip
     h(
       "span",
       { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
@@ -182,12 +293,21 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   );
 }
 
-const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 180 };
+const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const panelEntviz: CSSProperties = { width: 180, display: "block" };
 const textareaStyle: CSSProperties = {
   font: "0.85em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
-  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical", minWidth: 180,
+  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical", minWidth: 200,
+};
+const urlStyle: CSSProperties = {
+  font: "0.85em ui-monospace, monospace", padding: "4px 8px", borderRadius: 6,
+  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", flex: "1 1 140px", minWidth: 120,
+};
+const fileLabel: CSSProperties = { fontSize: "0.8em", color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer", alignSelf: "flex-start" };
+const fetchBtn: CSSProperties = {
+  font: "inherit", fontSize: "0.8em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+  border: "1px solid var(--entviz-compare-action, #3b34b0)", color: "var(--entviz-compare-action, #3b34b0)", background: "none",
 };
 const chipStyle: CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start",
@@ -198,6 +318,7 @@ const warnBanner: CSSProperties = {
   border: "1px solid var(--entviz-compare-warn-border, #d4a72c)", borderRadius: 6, padding: "6px 10px", fontSize: "0.85em",
 };
 const provenance: CSSProperties = { fontSize: "0.75em", opacity: 0.6 };
+const hint: CSSProperties = { fontSize: "0.72em", opacity: 0.6 };
 const caption: CSSProperties = { fontSize: "0.75em", opacity: 0.6, maxWidth: 380 };
 
 export default EntvizCompare;

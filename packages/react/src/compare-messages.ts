@@ -10,11 +10,20 @@ export interface CompareMessages {
   reference: string;
   pastePrompt: string;
   provenancePasted: string;
+  provenanceFile: string;
+  provenanceUrl: string; // "Reference: {origin}"
+  provenanceDropped: string;
+  provenanceProvided: string;
+  pickFile: string;
+  dropHint: string;
+  urlPlaceholder: string;
+  fetchButton: string;
+  fetchHint: string; // "Will fetch from {origin}"
+  fetchError: string; // "…({error})"
   pending: string;
   identical: string;
   different: string;
   unknownAmbiguous: string;
-  unknownSvg: string;
   unknownRaster: string;
   unknownReason: string; // "{reason}" — a machine reason for an `unknown` verdict
   secretWarning: string;
@@ -25,15 +34,24 @@ export const defaultCompareMessages: CompareMessages = {
   heading: "Compare visualizations",
   yours: "Yours",
   reference: "Reference",
-  pastePrompt: "Paste the reference value to compare",
+  pastePrompt: "Paste a reference value or entviz SVG to compare",
   provenancePasted: "Reference: pasted",
-  pending: "Paste a reference to compare",
+  provenanceFile: "Reference: file",
+  provenanceUrl: "Reference: {origin}",
+  provenanceDropped: "Reference: dropped",
+  provenanceProvided: "Reference: provided",
+  pickFile: "Choose a file…",
+  dropHint: "…or drop an entviz SVG / file here",
+  urlPlaceholder: "https://… (URL of an entviz SVG)",
+  fetchButton: "Fetch",
+  fetchHint: "Will fetch from {origin}",
+  fetchError: "Couldn’t fetch that URL ({error})",
+  pending: "Paste, pick, drop, or link a reference to compare",
   identical: "Identical — the same value",
   different: "Different — not the same value",
-  unknownAmbiguous: "Couldn’t recognize that — paste the reference value",
-  unknownSvg: "Comparing a pasted SVG is coming in a later release",
+  unknownAmbiguous: "Couldn’t recognize that — paste a reference value or entviz SVG",
   unknownRaster: "Comparing a pasted image is coming in a later release",
-  unknownReason: "Couldn’t determine a match — {reason}",
+  unknownReason: "Couldn’t confirm a match — {reason}",
   secretWarning:
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:
