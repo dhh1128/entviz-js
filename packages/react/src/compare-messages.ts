@@ -50,7 +50,7 @@ export const defaultCompareMessages: CompareMessages = {
   identical: "Identical — the same value",
   different: "Different — not the same value",
   unknownAmbiguous: "Couldn’t recognize that — paste a reference value or entviz SVG",
-  unknownRaster: "Comparing a pasted image is coming in a later release",
+  unknownRaster: "Comparing the image…",
   unknownReason: "Couldn’t confirm a match — {reason}",
   secretWarning:
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",

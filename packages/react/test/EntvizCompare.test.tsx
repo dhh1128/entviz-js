@@ -98,17 +98,42 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("Reference: pasted")).toBeTruthy();
   });
 
-  test("file-pick: an SVG file → identical; a PNG file → deferred", async () => {
+  test("file-pick: an SVG file → identical; a PNG file → raster engine (disprove-only)", async () => {
     const { container } = rtlRender(<EntvizCompare value={HEX} />);
     const file = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
     await waitFor(() => expect(status()).toContain("Identical"));
     expect(screen.getByText("Reference: file")).toBeTruthy();
-    // a raster file defers
+    // a raster file runs the raster engine → never identical (mocked clean rasters
+    // are look-alikes, so: unknown — an image cannot prove equality)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
-    await waitFor(() => expect(status()).toMatch(/image .* later release/i));
+    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i));
     // an empty file list is a no-op
     fireEvent.change(file, { target: { files: [] } });
+  });
+
+  test("a raster reference is disprove-only and never reaches identical", async () => {
+    const onVerdict = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onVerdict={onVerdict} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "data:image/png;base64,iVBORw0KGgo=" } });
+    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i));
+    expect(onVerdict).toHaveBeenCalled();
+    expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
+    expect(screen.queryAllByRole("img").length).toBe(1); // no reference panel for a raster
+  });
+
+  test("a reference image that fails to decode is unknown", async () => {
+    class FailImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 0;
+      naturalHeight = 0;
+      set src(_v: string) { Promise.resolve().then(() => this.onerror?.()); }
+    }
+    vi.stubGlobal("Image", FailImage);
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "data:image/png;base64,zzzz" } });
+    await waitFor(() => expect(status()).toMatch(/could not read the reference image/i));
   });
 
   test("URL-fetch: surfaces the origin, then fetches and compares", async () => {
