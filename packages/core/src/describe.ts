@@ -64,6 +64,10 @@ export interface CellDescription {
   blank: boolean;
   /** A >512-bit input's neutralised Crockford "fingerprint-middle" cell. */
   fingerprint: boolean;
+  /** The cell's 24-bit surround pattern (the fingerprint token's quant, =
+   *  `data-surround-bits`); 0 for a blank cell. Geometry-independent per token, so
+   *  it gives a strong self-consistency check when comparing two entvizes. */
+  surroundBits: number;
 }
 
 export interface QuartileDescription {
@@ -125,7 +129,14 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
   }
 
   const textByCell = new Map<number, string>();
-  for (const t of tokens) textByCell.set(cellIndices.get(t.index) as number, t.text);
+  const surroundByCell = new Map<number, number>();
+  for (const t of tokens) {
+    const ci = cellIndices.get(t.index) as number;
+    textByCell.set(ci, t.text);
+    // The surround pattern is the fingerprint token's 24-bit quant (= the cell's
+    // declared data-surround-bits in the SVG).
+    surroundByCell.set(ci, usedFtoks[t.index].quant);
+  }
 
   const cells: CellDescription[] = [];
   for (let ci = 0; ci < grid.cols * grid.rows; ci++) {
@@ -137,6 +148,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
       text: blank ? null : (textByCell.get(ci) as string),
       blank,
       fingerprint: fpMiddleCells.has(ci),
+      surroundBits: blank ? 0 : (surroundByCell.get(ci) as number),
     });
   }
 

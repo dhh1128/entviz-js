@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   compareValues,
   compareComparisonText,
+  compareSvg,
+  validateClosedProfile,
   detectMedium,
 } from "../../src/compare.ts";
 import { comparisonText } from "../../src/describe.ts";
+import { render } from "../../src/entviz.ts";
 
 const UUID = "550e8400-e29b-41d4-a716-446655440000";
 const BIG = "0123456789abcdef".repeat(16); // >512 bits → truncated
@@ -73,4 +76,64 @@ test("detectMedium: fails closed on ambiguity", () => {
   assert.equal(detectMedium("<html><body>nope</body></html>"), "ambiguous"); // markup, not entviz svg
   assert.equal(detectMedium("https://example.com/key.svg"), "ambiguous"); // a URL
   assert.equal(detectMedium("data:text/plain,hello"), "ambiguous"); // some other data URL
+});
+
+// --- validateClosedProfile ------------------------------------------------
+
+test("validateClosedProfile: accepts a real entviz, rejects anything that could repaint it", () => {
+  assert.equal(validateClosedProfile(render(UUID)), true);
+  const base = render(UUID);
+  assert.equal(validateClosedProfile(base.replace("</svg>", "<script>x()</script></svg>")), false);
+  assert.equal(validateClosedProfile(base.replace("<rect", '<rect onload="x()"')), false);
+  assert.equal(validateClosedProfile(base.replace("<rect", '<rect style="fill:url(http://e/x)"')), false);
+  assert.equal(validateClosedProfile(base.replace("</svg>", "<image href='http://e/x.png'/></svg>")), false);
+  assert.equal(validateClosedProfile(base.replace("</defs>", "<style>@font-face{}</style></defs>")), false);
+  // comments/CDATA aren't in a conformant entviz → fail closed (no strip-and-rescan)
+  assert.equal(validateClosedProfile(base.replace("<rect", "<!-- hi --><rect")), false);
+  assert.equal(validateClosedProfile(base.replace("<rect", "<![CDATA[x]]><rect")), false);
+  // a local url(#fragment) clip is fine (and is what the entviz itself uses)
+  assert.ok(/url\(#/.test(base));
+});
+
+// --- compareSvg (SVG engine) ----------------------------------------------
+
+test("compareSvg: a faithful entviz of the same value is `identical`", () => {
+  assert.deepEqual(compareSvg(render(UUID), UUID), { state: "identical" });
+  // a value whose grid has blank cells (exercises blank-cell parsing)
+  assert.deepEqual(compareSvg(render("012345"), "012345"), { state: "identical" });
+});
+
+test("compareSvg: an oversized reference is `unknown` (anti-DoS)", () => {
+  assert.equal(compareSvg("<svg>" + " ".repeat(1_000_001) + "</svg>", UUID).state, "unknown");
+});
+
+test("compareSvg: identity is geometry-independent (different ar/font still identical)", () => {
+  const ref = render(UUID, { targetAr: 2.0, fontSizePt: 20 });
+  assert.deepEqual(compareSvg(ref, UUID, {}), { state: "identical" });
+});
+
+test("compareSvg: an entviz of a different value is `different`", () => {
+  assert.deepEqual(compareSvg(render(UUID), "0123456789abcdef"), { state: "different" });
+});
+
+test("compareSvg: a non-closed-profile reference is `unknown` (not different)", () => {
+  const tampered = render(UUID).replace("</svg>", "<script/></svg>");
+  assert.equal(compareSvg(tampered, UUID).state, "unknown");
+});
+
+test("compareSvg: a non-entviz SVG is `unknown`", () => {
+  assert.equal(compareSvg("<svg></svg>", UUID).state, "unknown");
+});
+
+test("compareSvg: a >512-bit reference can never be `identical`", () => {
+  assert.equal(compareSvg(render(BIG), BIG).state, "unknown");
+});
+
+test("compareSvg: text matches but a forged gestalt is `unknown`, not identical", () => {
+  // same text channel, but tamper a surround-bits pattern → self-consistency fails
+  const forgedSurround = render(UUID).replace(/data-surround-bits="0x[0-9a-f]+"/, 'data-surround-bits="0x1"');
+  assert.equal(compareSvg(forgedSurround, UUID).state, "unknown");
+  // same text + surround, but tamper a colour-bar band letter → still unknown
+  const forgedBar = render(UUID).replace(/data-color-bar-band="(\w)"/, (_m, l) => `data-color-bar-band="${l === "W" ? "K" : "W"}"`);
+  assert.equal(compareSvg(forgedBar, UUID).state, "unknown");
 });
