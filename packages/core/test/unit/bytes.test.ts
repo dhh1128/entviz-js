@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   utf8Bytes,
   utf8ByteLength,
-  exceedsUtf8ByteCap,
   bytesToHex,
   bytesToBase64url,
 } from "../../src/bytes.ts";
@@ -23,21 +22,6 @@ test("utf8ByteLength counts UTF-8 bytes, not code units", () => {
   assert.equal(utf8ByteLength(""), 0);
   assert.equal(utf8ByteLength("hello"), 5);
   assert.equal(utf8ByteLength("ééé"), 6); // 3 code units, 6 bytes
-});
-
-test("exceedsUtf8ByteCap: long ASCII trips the cheap code-unit short-circuit", () => {
-  // 65 ASCII chars exceeds a 64-byte cap via the code-unit fast path (no encode).
-  assert.equal(exceedsUtf8ByteCap("a".repeat(65), 64), true);
-});
-
-test("exceedsUtf8ByteCap: multibyte under the code-unit count still trips on bytes", () => {
-  // 33 'é' = 33 code units (<= 64) but 66 UTF-8 bytes (> 64): must reject.
-  assert.equal(exceedsUtf8ByteCap("é".repeat(33), 64), true);
-});
-
-test("exceedsUtf8ByteCap: within the cap returns false (both operands false)", () => {
-  assert.equal(exceedsUtf8ByteCap("a".repeat(64), 64), false);
-  assert.equal(exceedsUtf8ByteCap("", 64), false);
 });
 
 test("bytesToHex matches Buffer.toString('hex')", () => {

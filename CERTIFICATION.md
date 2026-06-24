@@ -28,5 +28,11 @@ mixed-case addresses render; a bad-checksum mixed-case address is **rejected**
 The remaining corpus vectors need format-specific parsers not yet ported:
 base58 (BTC/Ripple/CIDv0), bech32 (segwit/litecoin/cosmos/cashaddr), base32
 (Stellar/CIDv1), crockford32 (ULID), base36 (LEI), decimal (snowflake), CESR,
-SSH, SWHID/gitoid; plus the >512-bit large-input branch (`hex-1024`,
-`b64-large`). These are mechanical additions on top of the proven shared core.
+SSH, SWHID/gitoid. These are mechanical additions on top of the proven shared core.
+
+The **>512-bit large-input branch is now ported** (head + 4 Crockford-base32
+fingerprint-middle cells + tail, `truncated` flag, `fingerprint of` label marker):
+`hex-1024` renders model- and raster-identical to the golden (only the
+`spec_version` stamp differs while this port targets v10 against the v11
+reference). The `b64-large` vector additionally needs the base64 alphabet-disproof
+parser, which is not yet ported.
