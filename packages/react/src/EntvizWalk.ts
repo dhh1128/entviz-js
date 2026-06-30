@@ -23,9 +23,10 @@ import {
   buildCheckPlan,
   coverage,
   describeChannels,
-  featureRects,
+  featureRectsFromModel,
   respond,
   startWalk,
+  type ChannelDescription,
   type RenderOptions,
   type WalkPreset,
   type WalkState,
@@ -78,14 +79,15 @@ const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus 
 // is drawn around the hole for definition. Both scrim and ring live in the
 // tool's own overlay SVG, never baked into the entviz (§7.1 closed profile).
 //
-// Geometry comes from the core render model (`featureRects`), not from parsing
-// the rendered SVG — and the overlay shares the entviz's viewBox AND occupies the
-// exact same rendered rectangle (the figure renders at its intrinsic size, 1 user
-// unit = 1px, and the overlay fills that same box at scale 1.0). Earlier the
-// figure was forced to 200px while the overlay re-fit the viewBox with `meet`, so
-// the layers shared a viewBox but sat at different scales — the misaligned-ring bug.
-export function ringOverlay(value: string, opts: RenderOptions, step: WalkStep, idPrefix: string): ReactNode {
-  const { viewBox, rects } = featureRects(value, opts, step);
+// Geometry comes from the core render MODEL (`featureRectsFromModel`), not from
+// parsing the rendered SVG — and the model is computed once per (value, opts) by
+// the caller, so stepping through a walk maps each step cheaply. The overlay
+// shares the entviz's viewBox AND occupies the exact same rendered rectangle (the
+// figure renders at its intrinsic size, 1 user unit = 1px, and the overlay fills
+// that same box at scale 1.0).
+export function ringOverlay(model: ChannelDescription | null, step: WalkStep, idPrefix: string): ReactNode {
+  if (!model) return null;
+  const { viewBox, rects } = featureRectsFromModel(model, step);
   if (!rects.length) return null;
   const [vx, vy, vw, vh] = viewBox.split(/\s+/).map(Number);
   const pad = 2;
@@ -119,7 +121,7 @@ export function ringOverlay(value: string, opts: RenderOptions, step: WalkStep, 
 // focus overlay on top. The container hugs the figure (inline-block + zeroed
 // line box to kill the inline-svg descender gap) so the absolutely-positioned
 // overlay covers exactly the figure's box.
-function panel(label: string, value: string, opts: RenderOptions, step: WalkStep | null): ReactNode {
+function panel(label: string, value: string, opts: RenderOptions, model: ChannelDescription | null, step: WalkStep | null): ReactNode {
   return h(
     "div",
     { style: panelStyle },
@@ -128,7 +130,7 @@ function panel(label: string, value: string, opts: RenderOptions, step: WalkStep
       "div",
       { style: figureBox },
       h(Entviz, { value, ...opts, style: { display: "block" } }),
-      step ? ringOverlay(value, opts, step, label) : null,
+      step ? ringOverlay(model, step, label) : null,
     ),
   );
 }
@@ -192,15 +194,17 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   const { value, reference, targetAr, fontSizePt, note, preset, layout = "side-by-side", externalFigures = false, onStep, onComplete, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
+  // Describe each value ONCE per (value, opts) — the focus rings, the size class,
+  // and the probe cell all read this, instead of rebuilding the model per render
+  // as we step through the walk.
+  const oursModel = useMemo(() => safeDescribe(value, opts), [value, opts]);
+  const refModel = useMemo(() => safeDescribe(reference, opts), [reference, opts]);
+
   // size class drives the preset menu (§14.4)
-  const small = useMemo(() => {
-    try {
-      const d = describeChannels(value, opts);
-      return !d.truncated && d.cells.filter((c) => !c.blank).length <= 6;
-    } catch {
-      return false;
-    }
-  }, [value, opts]);
+  const small = useMemo(
+    () => Boolean(oursModel) && !oursModel!.truncated && oursModel!.cells.filter((c) => !c.blank).length <= 6,
+    [oursModel],
+  );
 
   const [state, setState] = useState<WalkState | null>(
     preset ? () => startWalk(buildCheckPlan(value, opts, preset, csprng)) : null,
@@ -287,7 +291,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     if (step.kind === "probe") { advance("differ"); return; } // catching the probe is the right answer
     setRelook(true);
   };
-  const onProbeReveal = () => setProbeText((t) => t ?? pickCellText(value, opts));
+  const onProbeReveal = () => setProbeText((t) => t ?? pickCellText(oursModel));
 
   return h(
     "div",
@@ -301,14 +305,14 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     ),
     // the step — figures are suppressed when the host draws them (externalFigures)
     step.kind === "probe"
-      ? probePanel(value, opts, probeText, onProbeReveal)
+      ? probePanel(oursModel, probeText, onProbeReveal)
       : externalFigures
         ? null
         : h(
             "div",
             { style: layoutStyle(layout), "data-entviz-layout": layout },
-            panel("Yours", value, opts, step),
-            panel("Reference", reference, opts, step),
+            panel("Yours", value, opts, oursModel, step),
+            panel("Reference", reference, opts, refModel, step),
           ),
     h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, promptFor(step)),
     // controls
@@ -330,8 +334,8 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
 }
 
 // the probe's own two-cell display (original vs deliberately altered)
-function probePanel(value: string, opts: RenderOptions, shown: string | null, reveal: () => void): ReactNode {
-  const text = shown ?? pickCellText(value, opts);
+function probePanel(model: ChannelDescription | null, shown: string | null, reveal: () => void): ReactNode {
+  const text = shown ?? pickCellText(model);
   return h(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 6 } },
@@ -345,9 +349,18 @@ function probePanel(value: string, opts: RenderOptions, shown: string | null, re
   );
 }
 
-// Only called on a probe step of a valid large-value walk, so the value renders.
-function pickCellText(value: string, opts: RenderOptions): string {
-  return describeChannels(value, opts).cells.find((x) => !x.blank)?.text ?? "0000";
+// The first filled cell's text, from the already-built model (probe step only).
+function pickCellText(model: ChannelDescription | null): string {
+  return model?.cells.find((x) => !x.blank)?.text ?? "0000";
+}
+
+// Build the render model, tolerating an unrenderable value (returns null).
+function safeDescribe(value: string, opts: RenderOptions): ChannelDescription | null {
+  try {
+    return describeChannels(value, opts);
+  } catch {
+    return null;
+  }
 }
 
 // CSPRNG [0,1) source for the single-user walk.

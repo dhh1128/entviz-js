@@ -195,19 +195,23 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [dispAr, setDispAr] = useState(targetAr ?? 1);
   const dispOpts = { targetAr: dispAr, fontSizePt: dispFs, note };
 
-  // The empty reference placeholder must match OUR figure's footprint exactly, so
-  // the two boxes are the same size side-by-side. Our figure renders at its
-  // intrinsic px size (= the render model's viewBox W×H at the live size/shape),
-  // NOT a fixed width — so size the placeholder to that.
-  const placeholderSize = useMemo(() => {
-    try {
-      const [, , w, hh] = describeChannels(value, { targetAr: dispAr, fontSizePt: dispFs, note })
-        .geometry.viewBox.split(/\s+/).map(Number);
-      return { width: w, height: hh };
-    } catch {
-      return { width: 180, height: 120 };
-    }
+  // Describe OUR value once per (value, size, shape) — used for both the
+  // placeholder footprint and the walk's focus ring, so stepping through a walk
+  // doesn't rebuild the model every render.
+  const ourModel = useMemo(() => {
+    try { return describeChannels(value, dispOpts); } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, dispAr, dispFs, note]);
+
+  // The empty reference placeholder matches OUR figure's footprint exactly (the
+  // render model's viewBox W×H at the live size/shape), so the two boxes are the
+  // same size side-by-side; fall back to a default if the value can't be measured.
+  const placeholderSize = ourModel
+    ? (() => {
+        const [, , w, hh] = ourModel.geometry.viewBox.split(/\s+/).map(Number);
+        return { width: w, height: hh };
+      })()
+    : { width: 180, height: 120 };
 
   const provided = reference ? { content: reference.data, provenance: "provided" as Provenance, origin: "" } : null;
   const eff = provided ?? ref;
@@ -248,6 +252,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       : result.kind === "verdict" && medium === "svg" && result.verdict.state === "identical"
         ? value
         : null;
+
+  // Describe the reference once too (for its focus ring during a walk).
+  const refModel = useMemo(() => {
+    if (refDisplayValue === null) return null;
+    try { return describeChannels(refDisplayValue, dispOpts); } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refDisplayValue, dispAr, dispFs, note]);
 
   const onPick = (file: File | undefined, provenance: Provenance) => {
     if (!file) return;
@@ -360,7 +371,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             style: panelEntviz,
           }),
           // The guided walk reuses THIS figure: ring the feature it's checking.
-          walking && walkStep ? ringOverlay(value, dispOpts, walkStep, "yours") : null,
+          walking && walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
         ),
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
@@ -381,7 +392,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             // reference will land.
             : h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder),
           walking && walkStep && refDisplayValue !== null
-            ? ringOverlay(refDisplayValue, dispOpts, walkStep, "reference") : null,
+            ? ringOverlay(refModel, walkStep, "reference") : null,
         ),
         // Acquisition inputs hide during a walk (no mid-walk reference edits).
         walking ? null : acquisition,

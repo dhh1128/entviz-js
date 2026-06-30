@@ -13,7 +13,7 @@
  * unpredictability is the anti-habituation; the transparent planted probe is the
  * only added safeguard, and only for Complete on a large value.
  */
-import { describeChannels, type Rect } from "./describe.ts";
+import { describeChannels, type ChannelDescription, type Rect } from "./describe.ts";
 import type { RenderOptions } from "./entviz.ts";
 
 export type { Rect };
@@ -138,13 +138,16 @@ function gestaltPool(d: ReturnType<typeof describeChannels>): GestaltDimension[]
  * touches the closed-profile artifact). One feature may yield several rects
  * (every blank cell, every quartile cell, both color-bar markers); a probe step
  * has no figure rect (it shows a planted cell of its own — §14.7).
+ *
+ * Takes a PRE-COMPUTED model so a caller stepping through a walk can describe the
+ * value once and map every step cheaply (the per-step mapping is O(cells); the
+ * model build + geometry is not repeated). `featureRects` is the value-level
+ * convenience that builds the model for you.
  */
-export function featureRects(
-  value: string,
-  opts: RenderOptions,
+export function featureRectsFromModel(
+  d: ChannelDescription,
   step: WalkStep,
 ): { viewBox: string; rects: Rect[] } {
-  const d = describeChannels(value, opts);
   const g = d.geometry;
   const rects: Rect[] = [];
 
@@ -181,6 +184,15 @@ export function featureRects(
   }
   // probe: no figure rect
   return { viewBox: g.viewBox, rects };
+}
+
+/** Value-level convenience: build the model and map the step in one call. */
+export function featureRects(
+  value: string,
+  opts: RenderOptions,
+  step: WalkStep,
+): { viewBox: string; rects: Rect[] } {
+  return featureRectsFromModel(describeChannels(value, opts), step);
 }
 
 /**
