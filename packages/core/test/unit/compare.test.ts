@@ -36,6 +36,20 @@ test("compareValues: different values verdict `different`", () => {
   assert.equal(compareValues("urn:isbn:abc", "urn:isbn:ABC").state, "different");
 });
 
+test("compareValues: an unclassifiable input fails closed to `unknown`, never throws", () => {
+  // Regression: editing a reference into a value classifyInput rejects (e.g. an
+  // ETH address whose EIP-55 case checksum breaks when a hex digit's case is
+  // flipped) must NOT throw — a thrown classification error in the React render
+  // path blanked the whole page. It is `unknown` (couldn't read it), distinct
+  // from `different`, per the fail-closed verdict discipline (§3/§6.3).
+  const ETH = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"; // valid EIP-55
+  const ETH_BAD = "0x5Aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed"; // case-flipped → bad checksum
+  assert.doesNotThrow(() => compareValues(UUID, ETH_BAD));
+  assert.equal(compareValues(UUID, ETH_BAD).state, "unknown");
+  assert.equal(compareValues(ETH_BAD, UUID).state, "unknown"); // either side
+  assert.equal(compareValues(UUID, ETH).state, "different"); // the valid address still classifies
+});
+
 // --- compareComparisonText ------------------------------------------------
 
 test("compareComparisonText: a matching ≤512-bit readout is `identical`", () => {

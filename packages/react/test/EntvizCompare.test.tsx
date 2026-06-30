@@ -15,6 +15,13 @@ afterEach(() => {
 
 const status = () => screen.getByRole("status").textContent ?? "";
 
+// The raster/file paths are async (FileReader / Image decode → canvas → render
+// ours → disprove). The chain is microtask-fast, but waitFor's 1s default is
+// wall-clock — under the full suite with v8 coverage a starved event loop can
+// blow past it and flake. Give those waits real headroom (well under the 20s
+// testTimeout).
+const RWAIT = { timeout: 8000 };
+
 // --- pure helpers ---------------------------------------------------------
 
 describe("classifyResult", () => {
@@ -77,6 +84,21 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("≠");
   });
 
+  test("editing a reference into a checksum-broken value → `unknown`, never blanks the page", () => {
+    // Regression: an ETH address is a hex value, and flipping any hex digit's
+    // case breaks its EIP-55 checksum, which made classifyInput throw THROUGH
+    // the render path (no error boundary) — blanking the entire page on a single
+    // keystroke. It must fail closed to a warn `unknown` instead.
+    const ETH = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"; // valid EIP-55
+    const ETH_BAD = "0x5Aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed"; // case flipped → bad checksum
+    rtlRender(<EntvizCompare value={HEX} />);
+    const box = screen.getByRole("textbox", { name: /paste/i });
+    fireEvent.change(box, { target: { value: ETH } });
+    expect(status()).toContain("≠"); // the valid address classifies fine
+    expect(() => fireEvent.change(box, { target: { value: ETH_BAD } })).not.toThrow();
+    expect(status()).toMatch(/could not read the reference/i);
+  });
+
   test("pasting a faithful entviz SVG → identical (re-rendered in our font, not embedded)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: SVG } });
@@ -102,12 +124,12 @@ describe("EntvizCompare", () => {
     const { container } = rtlRender(<EntvizCompare value={HEX} />);
     const file = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
-    await waitFor(() => expect(status()).toContain("Identical"));
+    await waitFor(() => expect(status()).toContain("Identical"), RWAIT);
     expect(screen.getByText("Reference: file")).toBeTruthy();
     // a raster file runs the raster engine → never identical (mocked clean rasters
     // are look-alikes, so: unknown — an image cannot prove equality)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
-    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i));
+    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i), RWAIT);
     // an empty file list is a no-op
     fireEvent.change(file, { target: { files: [] } });
   });
@@ -116,7 +138,7 @@ describe("EntvizCompare", () => {
     const onVerdict = vi.fn();
     rtlRender(<EntvizCompare value={HEX} onVerdict={onVerdict} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "data:image/png;base64,iVBORw0KGgo=" } });
-    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i));
+    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i), RWAIT);
     expect(onVerdict).toHaveBeenCalled();
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
     expect(screen.queryAllByRole("img").length).toBe(1); // no reference panel for a raster
@@ -133,7 +155,7 @@ describe("EntvizCompare", () => {
     vi.stubGlobal("Image", FailImage);
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "data:image/png;base64,zzzz" } });
-    await waitFor(() => expect(status()).toMatch(/could not read the reference image/i));
+    await waitFor(() => expect(status()).toMatch(/could not read the reference image/i), RWAIT);
   });
 
   test("URL-fetch: surfaces the origin, then fetches and compares", async () => {

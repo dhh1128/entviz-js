@@ -37,12 +37,29 @@ function identityKey(value: string): string {
 }
 
 /**
- * Text engine (§6.1): compare two values at the value level. Definitive —
- * `identical` iff they normalize to the same identity (⇒ identical entvizes),
- * else `different`.
+ * Text engine (§6.1): compare two values at the value level. Definitive for
+ * inputs that classify — `identical` iff they normalize to the same identity
+ * (⇒ identical entvizes), else `different`. An input `classifyInput` REJECTS
+ * (a mid-edit string, or e.g. an ETH address whose EIP-55 case checksum is
+ * broken) is `unknown` — couldn't read it — never an exception: a thrown
+ * classification error in the React render path blanks the whole page, and a
+ * fail-closed `unknown` is also the right verdict (don't manufacture a false
+ * `different` for something we couldn't even parse — §3/§6.3).
  */
 export function compareValues(a: string, b: string): Verdict {
-  return identityKey(a) === identityKey(b) ? { state: "identical" } : { state: "different" };
+  let ka: string;
+  try {
+    ka = identityKey(a);
+  } catch {
+    return { state: "unknown", reason: "could not read your value" };
+  }
+  let kb: string;
+  try {
+    kb = identityKey(b);
+  } catch {
+    return { state: "unknown", reason: "could not read the reference value" };
+  }
+  return ka === kb ? { state: "identical" } : { state: "different" };
 }
 
 // Collapse runs of whitespace so a read-aloud transcription's spacing doesn't
