@@ -158,6 +158,14 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("≠");
   });
 
+  test("the verdict is labeled as the machine's check (but not while pending)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    expect(status()).not.toContain("Machine check"); // pending is an instruction, not a result
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    expect(status()).toContain("Machine check");
+    expect(status()).toContain("Identical");
+  });
+
   test("editing a reference into a checksum-broken value → `unknown`, never blanks the page", () => {
     // Regression: an ETH address is a hex value, and flipping any hex digit's
     // case breaks its EIP-55 checksum, which made classifyInput throw THROUGH

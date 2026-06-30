@@ -30,6 +30,7 @@ export interface CompareMessages {
   secretWarning: string;
   recognitionNote: string;
   referencePlaceholder: string; // the empty reference slot, before a value is given
+  machineCheck: string; // label prefixing the verdict — it's the machine's determination
 }
 
 export const defaultCompareMessages: CompareMessages = {
@@ -60,4 +61,5 @@ export const defaultCompareMessages: CompareMessages = {
   recognitionNote:
     "A match means the two values are equal; it does not vouch for the reference being the one you should trust.",
   referencePlaceholder: "The reference will appear here",
+  machineCheck: "Machine check",
 };

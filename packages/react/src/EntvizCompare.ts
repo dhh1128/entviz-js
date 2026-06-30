@@ -361,6 +361,10 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     h(
       "span",
       { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
+      // Label the verdict as the MACHINE's determination (distinct from the human
+      // walk's "no difference found"). Omitted while still pending (an instruction,
+      // not a result).
+      result.kind !== "pending" ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
       h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
       h("span", null, chip.label),
     ),
@@ -415,6 +419,9 @@ const fileLabel: CSSProperties = { fontSize: "0.8em", color: "var(--entviz-compa
 const fetchBtn: CSSProperties = {
   font: "inherit", fontSize: "0.8em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-compare-action, #3b34b0)", color: "var(--entviz-compare-action, #3b34b0)", background: "none",
+};
+const machineCheckLabel: CSSProperties = {
+  fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7,
 };
 const chipStyle: CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start",
