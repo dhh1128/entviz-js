@@ -152,6 +152,7 @@ const M = {
   pendingDone: "Sanity peek done. This was not a verification.",
   inconclusive: "Inconclusive — a planted check was missed. Try again with full attention.",
   recognitionNote: "A match means equal to this reference; it does not vouch for the reference.",
+  walkAgain: "Walk again",
 };
 
 const PROMPTS: Record<string, string> = {
@@ -201,6 +202,15 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
 
   const begin = (p: WalkPreset) => setState(startWalk(buildCheckPlan(value, opts, p, csprng)));
 
+  // After a verdict, start over so the user can run another round (a different
+  // preset, or a fresh unpredictable plan at the same one). With a fixed preset
+  // we rebuild that walk; otherwise we return to the size-aware picker.
+  const restart = () => {
+    setState(preset ? startWalk(buildCheckPlan(value, opts, preset, csprng)) : null);
+    setRelook(false);
+    setProbeText(null);
+  };
+
   const advance = (r: "match" | "differ") => {
     setState((s) => {
       if (!s) return s;
@@ -247,9 +257,10 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     const tone = state.status === "no-difference" ? "#1a7f37" : state.status === "different" ? "#c4314b" : "#57606a";
     return h(
       "div",
-      { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, font: "inherit", ...style } },
+      { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", ...style } },
       h("strong", { style: { color: tone } }, msg),
       h("span", { style: hint }, M.recognitionNote),
+      h("button", { type: "button", style: btn, onClick: restart }, M.walkAgain),
     );
   }
 

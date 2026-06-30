@@ -128,6 +128,22 @@ describe("EntvizWalk verdicts", () => {
     driveCatchingProbe();
     expect(screen.getByText(/no difference found/i)).toBeTruthy();
   });
+
+  test("'Walk again' restarts after a verdict — fresh walk (preset) or picker (none)", () => {
+    // with a fixed preset → rebuilds that walk
+    const a = rtlRender(<EntvizWalk value={HEX256} reference={HEX256} preset="good" />);
+    driveCatchingProbe();
+    expect(screen.getByText(/no difference found/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /walk again/i }));
+    expect(btn(/looks the same/i)).toBeTruthy(); // back in a walk
+    a.unmount();
+    // no preset → returns to the size-aware picker so the goal can change
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} />);
+    fireEvent.click(btn(/strong spot-check/i)!);
+    driveCatchingProbe();
+    fireEvent.click(screen.getByRole("button", { name: /walk again/i }));
+    expect(btn(/strong spot-check/i)).toBeTruthy(); // picker again
+  });
 });
 
 function driveCatchingProbeWithReveal(max = 120) {
