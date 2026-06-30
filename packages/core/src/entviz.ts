@@ -1930,3 +1930,6 @@ export * from "./describe.ts";
 
 // Machine-comparison engines (compareValues, detectMedium, …) for <EntvizCompare>.
 export * from "./compare.ts";
+
+// The guided human walk (M2): check-plan builder + walk reducer.
+export * from "./compare-walk.ts";
