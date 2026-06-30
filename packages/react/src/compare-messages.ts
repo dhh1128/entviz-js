@@ -20,6 +20,7 @@ export interface CompareMessages {
   fetchButton: string;
   fetchHint: string; // "Will fetch from {origin}"
   fetchError: string; // "…({error})"
+  walkLaunch: string;
   pending: string;
   identical: string;
   different: string;
@@ -52,6 +53,7 @@ export const defaultCompareMessages: CompareMessages = {
   unknownAmbiguous: "Couldn’t recognize that — paste a reference value or entviz SVG",
   unknownRaster: "Comparing the image…",
   unknownReason: "Couldn’t confirm a match — {reason}",
+  walkLaunch: "Verify by walking the cells →",
   secretWarning:
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:

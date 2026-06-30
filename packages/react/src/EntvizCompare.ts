@@ -23,6 +23,7 @@ import {
 } from "react";
 import { compareSvg, compareValues, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
+import { EntvizWalk } from "./EntvizWalk.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 
@@ -178,6 +179,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [walking, setWalking] = useState(false);
 
   const provided = reference ? { content: reference.data, provenance: "provided" as Provenance, origin: "" } : null;
   const eff = provided ?? ref;
@@ -341,8 +343,32 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       h("span", null, chip.label),
     ),
     h("span", { style: caption }, m.recognitionNote),
+    // Manual verification: available for a value reference (M2b walks value-vs-value).
+    medium === "text" && refContent.trim()
+      ? walking
+        ? h(EntvizWalk, {
+            value,
+            reference: refContent,
+            targetAr,
+            fontSizePt,
+            note,
+            style: { marginTop: 4 },
+          })
+        : h(
+            "button",
+            { type: "button", onClick: () => setWalking(true), style: walkLaunchStyle },
+            m.walkLaunch,
+          )
+      : null,
   );
 }
+
+const walkLaunchStyle: CSSProperties = {
+  alignSelf: "flex-start", font: "inherit", fontSize: "0.85em", padding: "5px 11px",
+  borderRadius: 8, cursor: "pointer",
+  border: "1px solid var(--entviz-compare-action, #3b34b0)",
+  color: "var(--entviz-compare-action, #3b34b0)", background: "none",
+};
 
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };

@@ -199,6 +199,13 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("Reference: provided")).toBeTruthy();
   });
 
+  test("offers a manual cell-walk for a value reference", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    fireEvent.click(screen.getByRole("button", { name: /walking the cells/i }));
+    expect(screen.getByText(/how thorough/i)).toBeTruthy(); // the walk's preset picker
+  });
+
   test("warns on secret material; RTL + messages override", () => {
     const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
     const { container, rerender } = rtlRender(<EntvizCompare value={mnemonic} />);
