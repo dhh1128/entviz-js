@@ -24,6 +24,7 @@ export interface CompareMessages {
   walkSpotCheckHint: string;
   walkComplete: string;
   walkCompleteHint: string;
+  urlReady: string; // chip label when a URL is detected but not yet fetched
   pending: string;
   identical: string;
   different: string;
@@ -40,7 +41,7 @@ export const defaultCompareMessages: CompareMessages = {
   heading: "Compare visualizations",
   yours: "Yours",
   reference: "Reference",
-  pastePrompt: "Paste a reference value or entviz SVG to compare",
+  pastePrompt: "Paste a value, an entviz SVG, or a URL — or pick a file — to compare",
   provenancePasted: "Reference: pasted",
   provenanceFile: "Reference: file",
   provenanceUrl: "Reference: {origin}",
@@ -62,6 +63,7 @@ export const defaultCompareMessages: CompareMessages = {
   walkSpotCheckHint: "Sample features in a surprising order; stop when you're satisfied",
   walkComplete: "Check (complete)",
   walkCompleteHint: "Read every cell",
+  urlReady: "A URL — fetch it to compare",
   secretWarning:
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:

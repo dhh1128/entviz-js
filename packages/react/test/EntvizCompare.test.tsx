@@ -202,9 +202,10 @@ describe("EntvizCompare", () => {
     expect(screen.getAllByRole("img").length).toBe(1); // no reference panel for an unconfirmed SVG
   });
 
-  test("pasting an ambiguous string fails closed (no false verdict)", () => {
+  test("pasting an ambiguous (non-URL) string fails closed (no false verdict)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/x" } });
+    // markup-ish but not a recognized entviz SVG, and not a URL → ambiguous warning
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "<not-an-entviz>" } });
     expect(status()).toMatch(/recognize/i);
     expect(screen.getByText("Reference: pasted")).toBeTruthy();
   });
@@ -251,16 +252,14 @@ describe("EntvizCompare", () => {
     await waitFor(() => expect(status()).toMatch(/could not read the reference image/i), RWAIT);
   });
 
-  test("URL-fetch: surfaces the origin, then fetches and compares", async () => {
+  test("a URL pasted into the single field is detected and offered for fetch, then compares", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ text: async () => SVG })));
     rtlRender(<EntvizCompare value={HEX} />);
-    const url = screen.getByRole("textbox", { name: /URL of an entviz/i });
-    const fetchBtn = screen.getByRole("button", { name: "Fetch" });
-    expect((fetchBtn as HTMLButtonElement).disabled).toBe(true); // disabled until a valid URL
-    fireEvent.change(url, { target: { value: "https://example.com/key.svg" } });
-    expect(screen.getByText(/Will fetch from https:\/\/example.com/)).toBeTruthy();
-    expect((fetchBtn as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(fetchBtn);
+    const field = screen.getByRole("textbox", { name: /paste/i });
+    expect(screen.queryByRole("button", { name: "Fetch" })).toBeNull(); // no URL yet
+    fireEvent.change(field, { target: { value: "https://example.com/key.svg" } });
+    expect(screen.getByText(/Will fetch from https:\/\/example.com/)).toBeTruthy(); // origin shown first (§5)
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
     await waitFor(() => expect(status()).toContain("Identical"));
     expect(screen.getByText(/Reference: https:\/\/example.com/)).toBeTruthy();
   });
@@ -268,7 +267,7 @@ describe("EntvizCompare", () => {
   test("URL-fetch failure surfaces an error, not a verdict", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
     rtlRender(<EntvizCompare value={HEX} />);
-    fireEvent.change(screen.getByRole("textbox", { name: /URL of an entviz/i }), { target: { value: "https://example.com/x" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/x" } });
     fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/network down/i));
   });

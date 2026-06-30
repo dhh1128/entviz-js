@@ -182,7 +182,6 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
-  const [urlInput, setUrlInput] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   // null = not walking (show the two entry buttons); otherwise the chosen mode.
   const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
@@ -223,6 +222,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const refContent = eff?.content ?? "";
 
   const medium = refContent.trim() ? detectMedium(refContent) : null;
+  // A pasted URL is detected in the SAME field (no separate URL box): it's
+  // "ambiguous" to the medium detector but parses as a URL, so we offer to fetch
+  // it (origin shown first, never auto-fetched — §5).
+  const refOrigin = originOf(refContent);
+  const isUrl = medium === "ambiguous" && !!refOrigin;
   const baseResult = useMemo(() => classifyResult(value, refContent, opts), [value, refContent, opts]);
 
   // Raster comparison is async (decode the image, render ours, disprove); the
@@ -246,7 +250,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   }, [result, onVerdict]);
 
   const secret = looksLikeSecret(value) || looksLikeSecret(refContent);
-  const chip = chipFor(result, m);
+  // A detected-but-unfetched URL isn't "couldn't recognize" — it's recognized,
+  // just not loaded yet: show a neutral "fetch it" chip instead of the warning.
+  const chip: Chip = isUrl
+    ? { symbol: "↻", label: m.urlReady, tone: "neutral" }
+    : chipFor(result, m);
 
   // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG
   // is never embedded): for a text reference, the pasted value; for an SVG
@@ -277,60 +285,53 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const onFetch = async () => {
     setFetchError(null);
     try {
-      const res = await fetch(urlInput);
+      const res = await fetch(refContent);
       const text = await res.text();
-      setRef({ content: text, provenance: "url", origin: originOf(urlInput) });
+      setRef({ content: text, provenance: "url", origin: refOrigin });
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  // acquisition UI (only when the host did not supply a controlled reference)
-  const acquisition = provided
+  // One full-width acquisition field (#4/#5): paste a value, an entviz SVG, or a
+  // URL — all into the same box; a button beside it picks a file. A pasted URL is
+  // auto-detected and offered for fetch (origin shown first). Hidden during a walk
+  // (no mid-walk reference edits) and when the host supplies a controlled reference.
+  const acquisition = provided || walking
     ? null
     : h(
         "div",
-        { style: { display: "flex", flexDirection: "column", gap: 6 } },
-        h("textarea", {
-          value: eff?.provenance === "pasted" ? refContent : "",
-          onChange: (e: { target: { value: string } }) =>
-            setRef({ content: e.target.value, provenance: "pasted", origin: "" }),
-          "aria-label": m.pastePrompt,
-          placeholder: m.pastePrompt,
-          spellCheck: false,
-          autoComplete: "off",
-          rows: 2,
-          style: textareaStyle,
-        }),
-        h(
-          "label",
-          { style: fileLabel },
-          m.pickFile,
-          h("input", {
-            type: "file",
-            accept: ".svg,image/svg+xml,image/*",
-            onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
-            style: { display: "none" },
-          }),
-        ),
+        { style: { display: "flex", flexDirection: "column", gap: 6, width: "100%" } },
         h(
           "div",
-          { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" } },
-          h("input", {
-            type: "url",
-            value: urlInput,
-            onChange: (e: { target: { value: string } }) => setUrlInput(e.target.value),
-            placeholder: m.urlPlaceholder,
-            "aria-label": m.urlPlaceholder,
-            style: urlStyle,
+          { style: { display: "flex", gap: 6, alignItems: "flex-start", width: "100%" } },
+          h("textarea", {
+            value: eff?.provenance === "pasted" ? refContent : "",
+            onChange: (e: { target: { value: string } }) =>
+              setRef({ content: e.target.value, provenance: "pasted", origin: "" }),
+            "aria-label": m.pastePrompt,
+            placeholder: m.pastePrompt,
+            spellCheck: false,
+            autoComplete: "off",
+            rows: 2,
+            style: textareaStyle,
           }),
           h(
-            "button",
-            { type: "button", onClick: onFetch, disabled: !originOf(urlInput), style: fetchBtn },
-            m.fetchButton,
+            "label",
+            { style: fileLabel },
+            m.pickFile,
+            h("input", {
+              type: "file",
+              accept: ".svg,image/svg+xml,image/*",
+              onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
+              style: { display: "none" },
+            }),
           ),
+          isUrl
+            ? h("button", { type: "button", onClick: onFetch, style: fetchBtn }, m.fetchButton)
+            : null,
         ),
-        originOf(urlInput) ? h("span", { style: hint }, fmt(m.fetchHint, { origin: originOf(urlInput) })) : null,
+        isUrl ? h("span", { style: hint }, fmt(m.fetchHint, { origin: refOrigin })) : null,
         fetchError ? h("span", { role: "alert", style: { ...hint, color: TONE.bad } }, fmt(m.fetchError, { error: fetchError })) : null,
         h("span", { style: hint }, m.dropHint),
       );
@@ -387,8 +388,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
       // figure (or a placeholder of the same footprint) sits DIRECTLY under the
-      // label, horizontally level with "Yours" for line-of-sight comparison; the
-      // acquisition inputs go BELOW so they never push the figure down (#3).
+      // label, horizontally level with "Yours" for line-of-sight comparison.
       h(
         "div",
         { style: panelStyle },
@@ -405,20 +405,20 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
                 walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
               )
             : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureCell }),
-        // Acquisition inputs hide during a walk (no mid-walk reference edits).
-        walking ? null : acquisition,
         eff && refContent.trim()
           ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
           : null,
       ),
     ),
+    // The acquisition field spans the WHOLE comparator, below both figures (#5).
+    acquisition,
     h(
       "span",
       { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
       // Label the verdict as the MACHINE's determination (distinct from the human
       // walk's "no difference found"). Omitted while still pending (an instruction,
       // not a result).
-      result.kind !== "pending" ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
+      !isUrl && result.kind !== "pending" ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
       h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
       h("span", null, chip.label),
     ),
@@ -477,13 +477,10 @@ const placeholderBox: CSSProperties = {
 };
 const textareaStyle: CSSProperties = {
   font: "0.85em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
-  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical", minWidth: 200,
+  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical",
+  flex: "1 1 auto", minWidth: 0, boxSizing: "border-box", // span the full comparator width (#5)
 };
-const urlStyle: CSSProperties = {
-  font: "0.85em ui-monospace, monospace", padding: "4px 8px", borderRadius: 6,
-  border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", flex: "1 1 140px", minWidth: 120,
-};
-const fileLabel: CSSProperties = { fontSize: "0.8em", color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer", alignSelf: "flex-start" };
+const fileLabel: CSSProperties = { fontSize: "0.8em", color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer", whiteSpace: "nowrap", alignSelf: "center" };
 const fetchBtn: CSSProperties = {
   font: "inherit", fontSize: "0.8em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-compare-action, #3b34b0)", color: "var(--entviz-compare-action, #3b34b0)", background: "none",
