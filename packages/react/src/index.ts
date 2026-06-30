@@ -7,5 +7,6 @@
 export { Entviz, default as EntvizDefault, type EntvizProps } from "./Entviz.ts";
 export { EntvizPill, type EntvizPillProps, type CopyKind } from "./EntvizPill.ts";
 export { EntvizCompare, type EntvizCompareProps, type CompareResult } from "./EntvizCompare.ts";
+export { EntvizWalk, type EntvizWalkProps, featureRects, mutate } from "./EntvizWalk.ts";
 export { SUPPORTED_LOCALES, type Messages } from "./pill-messages.ts";
 export { type CompareMessages } from "./compare-messages.ts";

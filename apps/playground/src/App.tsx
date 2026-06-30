@@ -191,7 +191,7 @@ export function App() {
             <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
           </div>
           <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
-            Paste/drop/pick/link the same value or its entviz SVG to see <code style={{ fontFamily: mono }}>=</code>, a different one for <code style={{ fontFamily: mono }}>≠</code>. A tampered or non-closed-profile SVG, a &gt;512-bit one, or anything ambiguous fails closed (no false “differ”). An image is disprove-only — it can show <code style={{ fontFamily: mono }}>≠</code> or “unknown”, never <code style={{ fontFamily: mono }}>=</code> (no OCR). The guided human walk + two-party live ceremony come next (gated on the §10 params).
+            Paste/drop/pick/link the same value or its entviz SVG to see <code style={{ fontFamily: mono }}>=</code>, a different one for <code style={{ fontFamily: mono }}>≠</code>. A tampered or non-closed-profile SVG, a &gt;512-bit one, or anything ambiguous fails closed (no false “differ”). An image is disprove-only — it can show <code style={{ fontFamily: mono }}>≠</code> or “unknown”, never <code style={{ fontFamily: mono }}>=</code> (no OCR). Paste a value to also get <strong>Verify by walking the cells →</strong> — the guided human walk (M2): pick a size-aware target, then step through an unpredictable mix of text + gestalt checks. The two-party live ceremony (M3) comes next.
           </p>
         </section>
       </div>
