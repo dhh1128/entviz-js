@@ -72,6 +72,46 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("Paste");
   });
 
+  test("resize on our figure drives BOTH panels", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    const figs = () => [...container.querySelectorAll("svg[data-entviz-version]")] as SVGElement[];
+    expect(figs().length).toBe(2); // ours + the re-rendered reference
+    const before = figs().map((s) => Number(s.getAttribute("width")));
+    fireEvent.click(container.querySelector('[aria-label="larger"]') as HTMLButtonElement);
+    const after = figs().map((s) => Number(s.getAttribute("width")));
+    expect(after[0]).toBeGreaterThan(before[0]); // ours grew
+    expect(after[1]).toBeGreaterThan(before[1]); // reference grew too — one control, both panels
+  });
+
+  test("reshape on our figure drives BOTH panels", () => {
+    const MULTI = "0123456789abcdef".repeat(4); // many grid shapes
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    const dims = () =>
+      [...container.querySelectorAll("svg[data-entviz-version]")].map(
+        (s) => `${s.getAttribute("width")}x${s.getAttribute("height")}`,
+      );
+    const before = dims();
+    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
+      (b) => b.getAttribute("aria-pressed") !== "true",
+    ) as HTMLButtonElement;
+    fireEvent.click(other);
+    const after = dims();
+    expect(after[0]).not.toBe(before[0]); // ours re-shaped
+    expect(after[1]).not.toBe(before[1]); // reference re-shaped too
+  });
+
+  test("a raster reference disables reshape on our figure (size stays)", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), {
+      target: { value: "data:image/png;base64,iVBORw0KGgo=" },
+    });
+    expect(container.querySelector('[aria-label="shape"]')).toBeNull(); // can't reshape an image
+    expect(container.querySelector('[aria-label="size"]')).toBeTruthy(); // size still offered
+  });
+
   test("layout: side-by-side by default; stacked/auto configurable", () => {
     for (const layout of [undefined, "stacked", "auto"] as const) {
       const { container, unmount } = rtlRender(<EntvizCompare value={HEX} layout={layout} />);

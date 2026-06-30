@@ -186,6 +186,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [walking, setWalking] = useState(false);
 
+  // Shared display size/shape (#3): the resize/reshape controls live on OUR
+  // figure and drive BOTH panels. Initialized from the host's render inputs.
+  const [dispFs, setDispFs] = useState(fontSizePt ?? 12);
+  const [dispAr, setDispAr] = useState(targetAr ?? 1);
+
   const provided = reference ? { content: reference.data, provenance: "provided" as Provenance, origin: "" } : null;
   const eff = provided ?? ref;
   const refContent = eff?.content ?? "";
@@ -320,21 +325,27 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     h(
       "div",
       { style: panelsStyle, "data-entviz-layout": layout },
-      // Yours
+      // Yours — carries the shared size/reshape controls (drives both panels).
+      // Reshape is disabled for a raster reference (an image can't be re-shaped).
       h(
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.yours),
-        h(Entviz, { value, targetAr, fontSizePt, note, style: panelEntviz }),
+        h(Entviz, {
+          value, targetAr: dispAr, fontSizePt: dispFs, note,
+          controls: true, reshapable: medium !== "raster",
+          onResize: setDispFs, onReshape: setDispAr,
+          style: panelEntviz,
+        }),
       ),
-      // Reference
+      // Reference — re-rendered at the same shared size/shape; no controls.
       h(
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
         acquisition,
         refDisplayValue !== null
-          ? h(Entviz, { value: refDisplayValue, targetAr, fontSizePt, note, style: panelEntviz })
+          ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
           : null,
         eff && refContent.trim()
           ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
