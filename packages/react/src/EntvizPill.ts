@@ -97,7 +97,7 @@ export function placeFloater(
   return { top, left };
 }
 
-// The accessible, colour-independent description of the expanded entviz (design
+// The accessible, color-independent description of the expanded entviz (design
 // §9): every discrete verification channel as text, so AT users reach parity.
 // Pure: takes the already-computed channel data + the localized template.
 export function a11yDescription(channels: ChannelDescription, m: Messages): string {

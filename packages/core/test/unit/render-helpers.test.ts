@@ -58,7 +58,7 @@ test("blankCellIndices: row-major indices with no token", () => {
 
 const edge = ["#ffffff", "#e7be00", "#ff3f2f", "#2f3fbf"];
 
-test("blankFillColors: sole blank IS coloured (it is the map blank)", () => {
+test("blankFillColors: sole blank IS colored (it is the map blank)", () => {
   const digest = Buffer.alloc(64);
   digest[32] = 2; // -> edge index 2
   const m = blankFillColors([5], 5, digest, edge);
@@ -67,15 +67,15 @@ test("blankFillColors: sole blank IS coloured (it is the map blank)", () => {
 
 test("blankFillColors: with multiple blanks the map blank is excluded; siblings indexed in order", () => {
   const digest = Buffer.alloc(64);
-  digest[32] = 2; // first coloured blank -> edge[2]
-  digest[33] = 3; // second coloured blank -> edge[3]
+  digest[32] = 2; // first colored blank -> edge[2]
+  digest[33] = 3; // second colored blank -> edge[3]
   const m = blankFillColors([3, 5, 7], 3, digest, edge); // 3 is the map blank
   assert.equal(m.has(3), false);
   assert.equal(m.get(5), "#ff3f2f");
   assert.equal(m.get(7), "#2f3fbf");
 });
 
-test("blankMapMarkerColors: sole blank -> both markers take the contrast colour", () => {
+test("blankMapMarkerColors: sole blank -> both markers take the contrast color", () => {
   assert.deepEqual(blankMapMarkerColors(true, "#ffffff"), { minColor: "#000000", maxColor: "#000000" });
   assert.deepEqual(blankMapMarkerColors(true, "#000000"), { minColor: "#ffffff", maxColor: "#ffffff" });
 });

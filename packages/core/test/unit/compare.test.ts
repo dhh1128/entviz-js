@@ -135,7 +135,7 @@ test("compareSvg: text matches but a forged gestalt is `unknown`, not identical"
   // same text channel, but tamper a surround-bits pattern → self-consistency fails
   const forgedSurround = render(UUID).replace(/data-surround-bits="0x[0-9a-f]+"/, 'data-surround-bits="0x1"');
   assert.equal(compareSvg(forgedSurround, UUID).state, "unknown");
-  // same text + surround, but tamper a colour-bar band letter → still unknown
+  // same text + surround, but tamper a color-bar band letter → still unknown
   const forgedBar = render(UUID).replace(/data-color-bar-band="(\w)"/, (_m, l) => `data-color-bar-band="${l === "W" ? "K" : "W"}"`);
   assert.equal(compareSvg(forgedBar, UUID).state, "unknown");
 });
@@ -161,7 +161,7 @@ const WHITE: [number, number, number] = [0xff, 0xff, 0xff];
 const RED: [number, number, number] = [0xff, 0, 0];
 const BLACK: [number, number, number] = [0, 0, 0];
 
-test("rasterFidelityProbe: a clean #808080/#ffffff frame passes; a coloured edge fails", () => {
+test("rasterFidelityProbe: a clean #808080/#ffffff frame passes; a colored edge fails", () => {
   assert.equal(rasterFidelityProbe(raster(20, 20, GRAY, WHITE).rgba, 20, 20), true);
   assert.equal(rasterFidelityProbe(raster(20, 20, WHITE, RED).rgba, 20, 20), true); // white margin
   assert.equal(rasterFidelityProbe(raster(20, 20, RED, WHITE).rgba, 20, 20), false); // photo-ish edge

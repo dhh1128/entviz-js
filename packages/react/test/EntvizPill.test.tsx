@@ -81,7 +81,7 @@ describe("pure helpers", () => {
     const s = a11yDescription(describeChannels(UUID), m);
     expect(s).toContain("UUID");
     expect(s).toContain("550e84"); // first cell text
-    expect(s).toMatch(/g r b k/); // colour-bar letters
+    expect(s).toMatch(/g r b k/); // color-bar letters
     const big = a11yDescription(describeChannels(BIG), m);
     expect(big).toContain("·"); // a blank separator appears in the cells readout
   });
@@ -137,7 +137,7 @@ describe("EntvizPill rendering", () => {
     expect(pill.getAttribute("title")).toBe("View visualization");
     expect(pill.getAttribute("aria-label")).toBe("view visualization, hex·64");
     expect(screen.getByText("hex·64")).toBeTruthy();
-    // badge = a 2x2 grid of 4 constant colour cells
+    // badge = a 2x2 grid of 4 constant color cells
     expect(pill.querySelectorAll('span[aria-hidden] > span').length).toBe(4);
   });
 

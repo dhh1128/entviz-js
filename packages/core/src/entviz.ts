@@ -1288,7 +1288,7 @@ export function cellTextSizes(fontSizePt: number, alphabet: Alphabet): { cellTex
 }
 
 // v10: the fingerprint-edge cells — top-left (grid position 0) plus the 1st/2nd
-// quartile-ftok cells — whose surround edge colour is fingerprint-driven.
+// quartile-ftok cells — whose surround edge color is fingerprint-driven.
 // Skipped where the target cell is blank or the quartile ftok is null.
 export function fingerprintEdgeCells(
   quartFtoks: (Token | null)[],
@@ -1328,8 +1328,8 @@ export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): numb
   return out;
 }
 
-// v10 hybrid fingerprint blank fill: the j-th *coloured* blank (in cell-index
-// order) takes edge_palette[digest[32 + j] & 0b11]. The map blank is coloured
+// v10 hybrid fingerprint blank fill: the j-th *colored* blank (in cell-index
+// order) takes edge_palette[digest[32 + j] & 0b11]. The map blank is colored
 // only when it is the sole blank; otherwise it keeps the white/gold anchor and
 // is excluded here.
 export function blankFillColors(
@@ -1349,8 +1349,8 @@ export function blankFillColors(
   return out;
 }
 
-// v10: in the sole-blank case the map fill is fingerprint-coloured, so both
-// markers take the luminance-contrast colour against it (shape still carries
+// v10: in the sole-blank case the map fill is fingerprint-colored, so both
+// markers take the luminance-contrast color against it (shape still carries
 // max/min). Otherwise the fixed v9 red plus / blue dot.
 export function blankMapMarkerColors(soleBlank: boolean, mapFillColor: string | undefined): { minColor: string; maxColor: string } {
   if (soleBlank && mapFillColor) {
@@ -1413,12 +1413,12 @@ export function drawBlankCells(
     const plusW = Math.max(1.0, dotR * 0.55);
     // v10: in the sole-blank case the map blank is fingerprint-filled, so the
     // fixed red/blue would clash — both markers take the luminance-contrast
-    // colour against that fill. Max/min identity rides on SHAPE (plus vs dot),
-    // not hue, so this costs only the redundant colour cue.
+    // color against that fill. Max/min identity rides on SHAPE (plus vs dot),
+    // not hue, so this costs only the redundant color cue.
     const { minColor, maxColor } = blankMapMarkerColors(soleBlank, blankFillColor.get(mapCellIdx as number));
     // minftok = blue dot (drawn first); maxftok = red plus (drawn on top, so it
     // stays visible where both land on one cell). The SHAPE carries the max/min
-    // semantic so it survives total colour blindness (PSY-F1); each marker's
+    // semantic so it survives total color blindness (PSY-F1); each marker's
     // data-blank-map-* attribute carries the literal "row,col" of its cell so a
     // checker recovers the position directly, not from pixel geometry (SPEC-F2).
     g.child("circle").set("cx", minCx).set("cy", minCy).set("r", dotR)
@@ -1559,16 +1559,16 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     const nx = cellX + boxWidth;
     const ny = cellY + boxHeight;
     // Middle cells are neutralised to the entviz bg; this nucleusBg feeds BOTH
-    // the nucleus fill and the surround edge-colour pick (mirrors the reference).
+    // the nucleus fill and the surround edge-color pick (mirrors the reference).
     const nucleusBg = fpMiddleCells.has(ci) ? style.bgColor : nucleusColors(token.quant)[0];
     tokenCells.push({ token, ftok: usedFtoks[token.index], ci, nx, ny, nucleusBg });
   }
 
   // Layer 1: edges.
   // v10: fingerprint-edge cells — the top-left cell (grid position 0) and the
-  // cells of the 1st & 2nd quartile ftoks take their surround edge colour from
+  // cells of the 1st & 2nd quartile ftoks take their surround edge color from
   // the fingerprint (2 low-order ftok-quant bits → edge palette) instead of the
-  // nearest-palette nucleus echo, so the surround colour avalanches to a casual
+  // nearest-palette nucleus echo, so the surround color avalanches to a casual
   // glance. Skipped where the target cell is blank or the quartile ftok is null.
   const usedCellIndices = new Set(cellIndices.values());
   const fpEdgeCells = fingerprintEdgeCells(quartFtoks, cellIndices, usedCellIndices);
@@ -1634,7 +1634,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     const g = cellGroups.get(tc.ci) as El;
     const isMid = fpMiddleCells.has(tc.ci);
     // Middle cells take the neutral entviz-bg + a contrast fg derived from it
-    // (same Oklab rule, applied to the bg colour); entropy cells use the token.
+    // (same Oklab rule, applied to the bg color); entropy cells use the token.
     const [bg, fg] = isMid
       ? nucleusColors(
           parseInt(tc.nucleusBg.slice(1, 3), 16) |
@@ -1663,8 +1663,8 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
 
   // Layer 3b: blank cells + map.
   // v10 hybrid fingerprint blank fill: the map blank is fingerprint-filled only
-  // when it is the sole blank (where the casual-avalanche colour is needed),
-  // else it keeps the white/gold anchor while its siblings carry the colour.
+  // when it is the sole blank (where the casual-avalanche color is needed),
+  // else it keeps the white/gold anchor while its siblings carry the color.
   const { minCi, maxCi } = minMaxFtokCells(tokens, usedFtoks, cellIndices);
   const blankIndices = blankCellIndices(grid, usedCellIndices);
   const mapCellIdx = blankIndices.length ? Math.min(...blankIndices) : null;

@@ -8,8 +8,8 @@
  *    preserved as a `·` separator (so the head/middle/tail of a large input stay
  *    visually segmented). Case-exact; never localized or re-normalized.
  *  - `describeChannels(value, opts)` — structured channel data (cell text, the
- *    colour-bar band letters, the quartile marks, and the blank-map / colour-bar
- *    marker positions) for building an accessible, colour-independent description
+ *    color-bar band letters, the quartile marks, and the blank-map / color-bar
+ *    marker positions) for building an accessible, color-independent description
  *    so AT users reach verification parity (pill design §9; paper §5.4).
  *
  * This module COMPOSES the same exported stage functions `render()` uses, so its
@@ -81,7 +81,7 @@ export interface MarkerDescription {
   /** The blank-cell map's min (dot) / max (plus) ftok cells; null when the grid
    *  has no blank cells (and therefore no map). */
   blankMap: { minCell: number; maxCell: number } | null;
-  /** The two colour-bar gutter markers, by slot index within `slots` equal slots. */
+  /** The two color-bar gutter markers, by slot index within `slots` equal slots. */
   colorBar: { slots: number; left: number; right: number };
 }
 
@@ -93,13 +93,13 @@ export interface ChannelDescription {
   rows: number;
   /** Every grid cell in reading order (index 0 → cols*rows-1). */
   cells: CellDescription[];
-  /** Colour-bar band letters, top → bottom, lowercase (the rendered glyphs). */
+  /** Color-bar band letters, top → bottom, lowercase (the rendered glyphs). */
   colorBarLetters: string[];
   quartiles: QuartileDescription[];
   markers: MarkerDescription;
 }
 
-// Recompute the render model (no geometry beyond what the colour-bar markers
+// Recompute the render model (no geometry beyond what the color-bar markers
 // need). Mirrors render()'s orchestration over the shared stage functions.
 function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription {
   const rawInput = value.trim();
@@ -152,7 +152,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
     });
   }
 
-  // Colour-bar band letters in vertical (first-appearance) order — mirrors
+  // Color-bar band letters in vertical (first-appearance) order — mirrors
   // drawColorBar: only patterns that occur in the digest get a band.
   const usage = twoBitUsage(digest, style.edgeColors);
   const bandOrder = twoBitFirstAppearance(digest, style.edgeColors);
@@ -160,7 +160,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
   bandOrder.forEach((c, i) => orderPos.set(c, i));
   const paletteOrder = new Map<string, number>();
   style.edgeColors.forEach((c, i) => paletteOrder.set(c, i));
-  // Every edge colour is keyed in `usage` and `orderPos` (twoBitUsage /
+  // Every edge color is keyed in `usage` and `orderPos` (twoBitUsage /
   // twoBitFirstAppearance set all four), so these lookups are non-defensive.
   const usedBands = style.edgeColors
     .map((c) => [c, usage.get(c) as number] as [string, number])
@@ -187,7 +187,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
     blankMap = { minCell: minCi, maxCell: maxCi };
   }
 
-  // The two colour-bar markers ride K equal gutter slots, where K depends on the
+  // The two color-bar markers ride K equal gutter slots, where K depends on the
   // bar height — so this is the one channel needing geometry (font-size + whether
   // a bottom strip is present). Matches drawColorBar's K and slot math exactly.
   const fontSizePt = opts.fontSizePt ?? 12;
@@ -223,7 +223,7 @@ export function comparisonText(value: string, opts: RenderOptions = {}): string 
   return cells.map((c) => (c.blank ? BLANK_SEP : (c.text as string))).join(" ");
 }
 
-/** Structured, colour-independent channel data for an accessible description. */
+/** Structured, color-independent channel data for an accessible description. */
 export function describeChannels(value: string, opts: RenderOptions = {}): ChannelDescription {
   return buildModel(value, opts);
 }

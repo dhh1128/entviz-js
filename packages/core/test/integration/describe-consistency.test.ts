@@ -8,7 +8,7 @@ import { comparisonText, describeChannels } from "../../src/describe.ts";
 // describeChannels()/comparisonText() agree with it — so they can never drift.
 
 // Per-cell readout pulled straight from the rendered SVG. Cell groups are
-// emitted in cell-index order; each chunk is bounded before the colour-bar /
+// emitted in cell-index order; each chunk is bounded before the color-bar /
 // label channels so a blank LAST cell is not mis-read as a later <text>.
 function svgCells(svg: string) {
   const chunks = svg.split('<g data-channel="cell"');
@@ -67,13 +67,13 @@ for (const [name, value, opts] of CASES) {
     const expectedCmp = cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");
     assert.equal(comparisonText(value, opts), expectedCmp);
 
-    // colour-bar band letters (top→bottom), lowercased to the rendered glyph
+    // color-bar band letters (top→bottom), lowercased to the rendered glyph
     const bands = [...svg.matchAll(/data-color-bar-band="([WGRBK])"/g)].map((m) =>
       m[1].toLowerCase(),
     );
     assert.deepEqual(d.colorBarLetters, bands);
 
-    // colour-bar gutter markers
+    // color-bar gutter markers
     assert.equal(d.markers.colorBar.slots, Number(attr(svg, "data-bar-slots")));
     assert.equal(d.markers.colorBar.left, Number(attr(svg, "data-bar-marker-left")));
     assert.equal(d.markers.colorBar.right, Number(attr(svg, "data-bar-marker-right")));

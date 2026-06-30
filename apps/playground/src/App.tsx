@@ -175,7 +175,7 @@ export function App() {
               <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onError={(m) => console.warn("pill:", m)} />
             </code>
             <br />
-            Inherits the running font &amp; colour:{" "}
+            Inherits the running font &amp; color:{" "}
             <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />
             {" "}— and again without its badge:{" "}
             <EntvizPill value={value} label={pillLabel || undefined} showType={showType} showIcon={false} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />

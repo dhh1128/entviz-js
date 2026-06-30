@@ -54,7 +54,7 @@ for a thin `<Entviz value="…" />` wrapper.
 
 Each entviz encodes its value in several redundant channels — verbatim **text**
 cells (lossless for ≤512-bit inputs), a fingerprint-driven **surround pattern**,
-**nucleus colours**, a **colour bar**, an **ellipse overlay**, **blank-cell**
+**nucleus colors**, a **color bar**, an **ellipse overlay**, **blank-cell**
 positions, and **quartile** marks — so a one-character difference is obvious to a
 casual glance while careful spot-checks stay possible. The algorithm and its
 guarantees are defined in the [spec](https://github.com/dhh1128/entviz/blob/main/docs/spec.md).

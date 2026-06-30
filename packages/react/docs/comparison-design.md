@@ -185,7 +185,7 @@ live-laid-out cell geometry — so a host CSS `transform` can't shift the ring t
 
 ### 7.2 Hard exact-text floor
 **No affirmative verdict is reached until a fixed floor of *forced, case-confirmed, read-back*
-text checks pass.** Gestalt channels (colour bar, ellipse, blank map, quartile, nucleus colour)
+text checks pass.** Gestalt channels (color bar, ellipse, blank map, quartile, nucleus color)
 may only **fail-fast to DIFFERENT**; they never independently fill the affirmative meter. This
 makes the soundness claim true *by construction* rather than by hoped-for ordering, and it
 neutralises order-steering (a steered order cannot avoid the required text checks). (Converged
@@ -414,11 +414,11 @@ A difference can be checked along many **features**, of two kinds:
   gestalt dimension at once** — together they are a **whole-value CRC**, and being un-steerable
   they are the *true* grind cost against the realistic constrained attacker. The checkable pool
   (all carried by ringable elements):
-  - *Salient (read loosely in the parallel glance; focus to confirm):* **background colour**
-    (~2 bits); **colour-bar pattern** — band order + heights (~4.6 bits for the order);
+  - *Salient (read loosely in the parallel glance; focus to confirm):* **background color**
+    (~2 bits); **color-bar pattern** — band order + heights (~4.6 bits for the order);
     **ellipse** — orientation / aspect / size (~7 bits, factored); **blank pattern** — which
     cells are holes.
-  - *Positional CRC (need directed attention; higher positional bits):* **colour-bar markers**
+  - *Positional CRC (need directed attention; higher positional bits):* **color-bar markers**
     (the two gutter circles' slot positions); **quartile marks** (the four triangles' cell
     positions, ~4·log₂N); **blank-map markers** (the plus = max, dot = min inside the one map
     cell).
@@ -428,7 +428,7 @@ A difference can be checked along many **features**, of two kinds:
   lowest-indexed blank and *additionally* carries the min/max marks. The per-cell **surround
   texture** (24 box on/offs = `data-surround-bits`) is *machine-grade* — it is why `compareSvg`
   is strong, but 24 on/offs are below reliable eyeball discrimination, so it stays out of the
-  human pool (offered only as a diligent extra in Complete). Nucleus *colour* re-encodes the
+  human pool (offered only as a diligent extra in Complete). Nucleus *color* re-encodes the
   cell's text bits, so it is checked *as* the text, not as a separate dimension.
 
 > **"Gestalt" means "characterizing the whole rather than the parts," along one dimension of
@@ -446,8 +446,8 @@ A difference can be checked along many **features**, of two kinds:
 
 A walk executes a **check plan**: an **unpredictable, ordered subset** of features.
 
-- **Mixed.** A plan combines text cells and gestalt dimensions (e.g. *2 text + colour-bar order +
-  ellipse*, or *4 text + colour-bar order*). It always includes **≥ 2 text cells** as the lossless
+- **Mixed.** A plan combines text cells and gestalt dimensions (e.g. *2 text + color-bar order +
+  ellipse*, or *4 text + color-bar order*). It always includes **≥ 2 text cells** as the lossless
   backstop — a gestalt match is only *within human tolerance* and cannot, alone, bless. The exact
   recipe per preset is a tunable knob, not a blocker.
 - **Unpredictable selection + order** — from the **local CSPRNG** (single-user) or the
@@ -466,10 +466,10 @@ A walk executes a **check plan**: an **unpredictable, ordered subset** of featur
 Because the tool renders both figures, it knows the **exact geometry** of every element from the
 render model (`describeChannels` + geometry). The §7.1 focus ring therefore **generalises to every
 feature**: a computed highlight **around** (never over) the element that carries it — a cell, the
-colour-bar rect, the ellipse's contour/bounding box, a marker, a blank cell — drawn in the
+color-bar rect, the ellipse's contour/bounding box, a marker, a blank cell — drawn in the
 **tool-controlled container** (fixed integer scale, host-transform-proof), anchored by re-measuring
 live geometry. One feature at a time, on **both** figures. For a **gestalt dimension** the ring
-lands on its carrying element and a short prompt names the dimension ("same colours, top to
+lands on its carrying element and a short prompt names the dimension ("same colors, top to
 bottom?"; "does the oval lean the same way?").
 
 - **SVG / value reference** (we re-render it): both rings are precise.

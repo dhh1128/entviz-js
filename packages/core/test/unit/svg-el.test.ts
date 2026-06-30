@@ -41,7 +41,7 @@ test("twoBitUsage: tallies the four 2-bit patterns across 256 slices", () => {
   for (const c of EDGE) assert.equal(mixed.get(c), 64);
 });
 
-test("twoBitFirstAppearance: orders colours by first appearance, tie-break by pattern", () => {
+test("twoBitFirstAppearance: orders colors by first appearance, tie-break by pattern", () => {
   // 0x1b scans patterns 3,2,1,0 within the first byte -> that is the order.
   assert.deepEqual(twoBitFirstAppearance(Buffer.alloc(64, 0x1b), EDGE),
     ["#2f3fbf", "#ff3f2f", "#e7be00", "#ffffff"]);

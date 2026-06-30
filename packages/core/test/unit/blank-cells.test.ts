@@ -13,7 +13,7 @@ function groups(count: number): Map<number, El> {
 
 test("drawBlankCells: multi-blank — map keeps the anchor, sibling is fingerprint-filled", () => {
   const cg = groups(6);
-  const fill = new Map([[5, "#ff3f2f"]]); // map blank (3) excluded; sibling 5 coloured
+  const fill = new Map([[5, "#ff3f2f"]]); // map blank (3) excluded; sibling 5 colored
   drawBlankCells(cg, [3, 5], 3, fill, "#ffffff", 0, 1, grid, geom);
 
   const map = cg.get(3)!.render();
@@ -27,9 +27,9 @@ test("drawBlankCells: multi-blank — map keeps the anchor, sibling is fingerpri
   assert.doesNotMatch(sib, /data-cell-blank-map/);
 });
 
-test("drawBlankCells: sole blank IS the fingerprint-filled map, markers take contrast colour", () => {
+test("drawBlankCells: sole blank IS the fingerprint-filled map, markers take contrast color", () => {
   const cg = groups(6);
-  const fill = new Map([[5, "#ffffff"]]); // sole blank coloured; white fill -> black markers
+  const fill = new Map([[5, "#ffffff"]]); // sole blank colored; white fill -> black markers
   drawBlankCells(cg, [5], 5, fill, "#ffffff", 0, 4, grid, geom);
 
   const map = cg.get(5)!.render();

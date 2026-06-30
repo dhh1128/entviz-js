@@ -66,7 +66,7 @@ function take<T>(items: T[], n: number, rng: () => number): T[] {
   return shuffle(items, rng).slice(0, Math.max(0, Math.min(n, items.length)));
 }
 
-// The gestalt dimensions actually present for this value (background, colour bar,
+// The gestalt dimensions actually present for this value (background, color bar,
 // and ellipse are always there; blanks/quartiles depend on the layout).
 function gestaltPool(d: ReturnType<typeof describeChannels>): GestaltDimension[] {
   const pool: GestaltDimension[] = ["background", "colorbar-pattern", "colorbar-markers", "ellipse"];

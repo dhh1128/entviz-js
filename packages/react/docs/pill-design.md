@@ -74,7 +74,7 @@ expands on demand.
   and blue `#2f3fbf` on the top row, black `#000000` and red `#ff3f2f` on the
   bottom (the two dark cells split across rows so it doesn't read bottom-heavy) —
   with a hairline border so black reads on dark and gold reads on light. It is **the
-  same on every entviz** — a *type badge* meaning "this is an entviz, colour
+  same on every entviz** — a *type badge* meaning "this is an entviz, color
   hiding beneath," carrying **zero identity bits**, so it can never be
   glance-compared for verification. Toggle with `showIcon` (default `true`).
 - **Type** text: the parser-derived category (`hex·256`, `UUID`, `BTC address`,
@@ -110,7 +110,7 @@ value-derived visual (glance-equivalence) — both rejected.
 
 - **No truncated value chars** (`014d…b5e2`): this trains the prefix/suffix
   heuristic that vanity-grinding attacks defeat (threat-model T1/T6; paper §5.1).
-- **No single colour / colour-bar crop**: a lossy projection of identity invites
+- **No single color / color-bar crop**: a lossy projection of identity invites
   glance-equivalence. A *constant* badge (zero identity bits) does not.
 
 ### 3.4 Inline behaviour
@@ -292,11 +292,11 @@ open), and consider `vi`. English is the fallback for any unmatched tag.
   `role="menu"` (arrow-key nav, Escape, focus return).
 - **Copy confirmations** announced via `aria-live="polite"`.
 - **Expanded entviz** = `role="img"` with the visualization label, **and** its
-  accessible description exposes the **discrete, colour-independent channels**
-  (cell text in reading order, colour-bar letters, quartile orientations, marker
+  accessible description exposes the **discrete, color-independent channels**
+  (cell text in reading order, color-bar letters, quartile orientations, marker
   positions) so a screen-reader user can read/verify. *Accessibility is the same
   problem as security* (paper §5.4): the text channel is the highest-capacity,
-  colour-independent channel, so the screen-reader read-aloud **is** the
+  color-independent channel, so the screen-reader read-aloud **is** the
   verification path — AT users get parity, not a degraded glance.
 
 ## 10. Security rationale (one-line index)

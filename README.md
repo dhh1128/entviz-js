@@ -89,7 +89,7 @@ out the reference, compares `SPEC_VERSION` against ours, and:
 As of this writing this port targets **v11**, matching the reference: the full
 v8–v11 render model (deterministic blank-map `row,col` markers + plus-shaped max
 marker, decoupled color-bar band order + the two fixed-slot bar markers,
-fingerprint-edge cell colours, the hybrid fingerprint blank fills, and the v11
+fingerprint-edge cell colors, the hybrid fingerprint blank fills, and the v11
 DID/URN **prefix-fold**) is implemented for the ported subset. The remaining
 unported parsers are tracked in [`CERTIFICATION.md`](CERTIFICATION.md).
 
