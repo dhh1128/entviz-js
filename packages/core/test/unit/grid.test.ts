@@ -1,10 +1,39 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseGrid, assignCellIndices, type Token } from "../../src/entviz.ts";
+import { chooseGrid, gridCandidates, gridAspectRatio, assignCellIndices, type Token } from "../../src/entviz.ts";
+import { gridShapes } from "../../src/describe.ts";
 
 test("chooseGrid: spec worked example 11 tokens @ 1:1 -> 3x4", () => {
   const g = chooseGrid(11, 1.0);
   assert.deepEqual([g.cols, g.rows], [3, 4]);
+});
+
+test("gridCandidates / chooseGrid agree: every candidate is reachable by its own AR", () => {
+  // The reshape picker offers gridCandidates; selecting a shape feeds its natural
+  // AR back to chooseGrid, which must return exactly that shape.
+  for (const count of [6, 11, 16, 20]) {
+    for (const c of gridCandidates(count)) {
+      const g = chooseGrid(count, gridAspectRatio(c.cols, c.rows));
+      assert.deepEqual([g.cols, g.rows], [c.cols, c.rows], `count ${count}, shape ${c.cols}x${c.rows}`);
+    }
+  }
+});
+
+test("gridShapes: distinct arrangements of the value's fixed cell count, tall→wide", () => {
+  const shapes = gridShapes("0123456789abcdef".repeat(4)); // a 256-bit hex value
+  assert.ok(shapes.length >= 2);
+  // sorted ascending by aspect ratio (tall → wide), each targetAr = its own AR
+  for (let i = 1; i < shapes.length; i++) assert.ok(shapes[i].targetAr >= shapes[i - 1].targetAr);
+  for (const s of shapes) assert.equal(s.targetAr, gridAspectRatio(s.cols, s.rows));
+  // arrangements are distinct
+  const keys = new Set(shapes.map((s) => `${s.cols}x${s.rows}`));
+  assert.equal(keys.size, shapes.length);
+});
+
+test("gridShapes: a >512-bit value enumerates shapes of the 20 displayed cells", () => {
+  const shapes = gridShapes("0123456789abcdef".repeat(16)); // truncated → 20 tokens
+  assert.ok(shapes.length >= 2);
+  assert.ok(shapes.every((s) => s.cols * s.rows >= 20));
 });
 
 test("chooseGrid: 6 tokens @ 1:1 -> 2x3 (tiles exactly, no blanks)", () => {

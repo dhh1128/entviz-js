@@ -374,7 +374,17 @@ export interface Grid {
   tokenCount: number;
 }
 
-export function chooseGrid(tokenCount: number, targetAr = 1.0): Grid {
+// The grid's natural aspect ratio (W/H) — cells are 3:2, so a cols×rows grid is
+// (cols·3)/(rows·2). chooseGrid selects the candidate closest to (and ≥) the
+// requested targetAr; this is also the targetAr that re-selects that candidate.
+export function gridAspectRatio(cols: number, rows: number): number {
+  return (cols * 3) / (rows * 2);
+}
+
+// All grid shapes a given token count can take (one tightest cols per row count),
+// in no particular order. chooseGrid picks one of these by targetAr; the reshape
+// picker offers them. Shared so the two can never disagree on what is achievable.
+export function gridCandidates(tokenCount: number): Grid[] {
   const tightest = new Map<number, number>();
   for (let cols = 2; cols <= tokenCount; cols++) {
     const rows = Math.ceil(tokenCount / cols);
@@ -383,19 +393,21 @@ export function chooseGrid(tokenCount: number, targetAr = 1.0): Grid {
       tightest.set(rows, cols);
     }
   }
-  const candidates: [number, number, number][] = [];
-  for (const [rows, cols] of tightest) {
-    candidates.push([cols, rows, (cols * 3) / (rows * 2)]);
-  }
+  const out: Grid[] = [];
+  for (const [rows, cols] of tightest) out.push({ cols, rows, tokenCount });
+  return out;
+}
+
+export function chooseGrid(tokenCount: number, targetAr = 1.0): Grid {
+  const candidates = gridCandidates(tokenCount);
   if (!candidates.length) return { cols: 2, rows: 2, tokenCount };
-  const above = candidates.filter((c) => c[2] >= targetAr);
-  let chosen: [number, number, number];
-  if (above.length) {
-    chosen = above.reduce((a, b) => (b[2] - targetAr < a[2] - targetAr ? b : a));
-  } else {
-    chosen = candidates.reduce((a, b) => (b[2] > a[2] ? b : a));
-  }
-  return { cols: chosen[0], rows: chosen[1], tokenCount };
+  const above = candidates.filter((c) => gridAspectRatio(c.cols, c.rows) >= targetAr);
+  const closestAbove = (a: Grid, b: Grid) =>
+    gridAspectRatio(b.cols, b.rows) - targetAr < gridAspectRatio(a.cols, a.rows) - targetAr ? b : a;
+  const widest = (a: Grid, b: Grid) =>
+    gridAspectRatio(b.cols, b.rows) > gridAspectRatio(a.cols, a.rows) ? b : a;
+  const chosen = above.length ? above.reduce(closestAbove) : candidates.reduce(widest);
+  return { cols: chosen.cols, rows: chosen.rows, tokenCount };
 }
 
 export function assignCellIndices(

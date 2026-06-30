@@ -39,6 +39,8 @@ import {
   computeGeometry,
   enumerateInteriorCorners,
   enumerateExternalCorners,
+  gridCandidates,
+  gridAspectRatio,
   sanitizeNote,
   MAX_TOKENS,
   HEAD_TOKENS,
@@ -344,4 +346,28 @@ export function comparisonText(value: string, opts: RenderOptions = {}): string 
 /** Structured, color-independent channel data for an accessible description. */
 export function describeChannels(value: string, opts: RenderOptions = {}): ChannelDescription {
   return buildModel(value, opts);
+}
+
+/** One achievable grid arrangement for a value, with the `targetAr` that selects
+ *  it (`render`/`chooseGrid` snap to it). The reshape picker offers these. */
+export interface GridShape {
+  cols: number;
+  rows: number;
+  /** Pass this as `targetAr` to render the entviz in this shape. */
+  targetAr: number;
+}
+
+/**
+ * Every grid shape a value can take (its cell count is fixed; only the
+ * arrangement varies). Sorted tall → wide. The cell count comes from the same
+ * tokenization render() uses, so the offered shapes are exactly the achievable
+ * ones — picking one and feeding its `targetAr` back to render reproduces it.
+ */
+export function gridShapes(value: string, opts: RenderOptions = {}): GridShape[] {
+  const { core, alphabet } = classifyInput(value.trim());
+  const { tokens, truncated } = tokenizeEntropy(core, alphabet);
+  const count = truncated ? MAX_TOKENS : tokens.length;
+  return gridCandidates(count)
+    .map((g) => ({ cols: g.cols, rows: g.rows, targetAr: gridAspectRatio(g.cols, g.rows) }))
+    .sort((a, b) => a.targetAr - b.targetAr);
 }
