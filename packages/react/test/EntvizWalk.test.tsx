@@ -31,6 +31,19 @@ function driveAlwaysMatch(max = 120) {
   }
 }
 
+describe("EntvizWalk layout", () => {
+  test("arranges the two figures; side-by-side by default", () => {
+    for (const layout of [undefined, "stacked", "auto"] as const) {
+      const { container, unmount } = rtlRender(
+        <EntvizWalk value={HEX256} reference={HEX256} preset="good" layout={layout} />,
+      );
+      const figs = container.querySelector("[data-entviz-layout]") as HTMLElement;
+      expect(figs.getAttribute("data-entviz-layout")).toBe(layout ?? "side-by-side");
+      unmount();
+    }
+  });
+});
+
 describe("mutate", () => {
   test("changes the last character deterministically", () => {
     expect(mutate("abcdef")).toBe("abcdee"); // f→e

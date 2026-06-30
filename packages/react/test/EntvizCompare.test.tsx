@@ -72,6 +72,16 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("Paste");
   });
 
+  test("layout: side-by-side by default; stacked/auto configurable", () => {
+    for (const layout of [undefined, "stacked", "auto"] as const) {
+      const { container, unmount } = rtlRender(<EntvizCompare value={HEX} layout={layout} />);
+      const panels = container.querySelector("[data-entviz-layout]") as HTMLElement;
+      expect(panels.getAttribute("data-entviz-layout")).toBe(layout ?? "side-by-side");
+      expect(panels.style.flexDirection || "row").toBe(layout === "stacked" ? "column" : "row");
+      unmount();
+    }
+  });
+
   test("pasting a matching value → `=`; a different value → `≠`", () => {
     const onVerdict = vi.fn();
     rtlRender(<EntvizCompare value={HEX} onVerdict={onVerdict} />);

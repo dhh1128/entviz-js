@@ -23,7 +23,7 @@ import {
 } from "react";
 import { compareSvg, compareValues, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
-import { EntvizWalk } from "./EntvizWalk.ts";
+import { EntvizWalk, layoutStyle, type EntvizLayout } from "./EntvizWalk.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 
@@ -38,6 +38,10 @@ export interface EntvizCompareProps {
   /** Reserved for the deferred guided walk; accepted but unused in M1a/M1b. */
   confidence?: "quick" | "strong" | "paranoid";
   // --- chrome ---
+  /** Panel arrangement: "side-by-side" (default — the two figures sit next to
+   *  each other so a comparison is a saccade, not a scroll), "stacked" (one above
+   *  the other), or "auto" (side-by-side, wrapping to stacked when too narrow). */
+  layout?: EntvizLayout;
   locale?: string;
   messages?: Partial<CompareMessages>;
   onVerdict?: (v: Verdict) => void;
@@ -171,9 +175,10 @@ const TONE: Record<Chip["tone"], string> = {
 };
 
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
-  const { value, targetAr, fontSizePt, note, reference, locale, messages: overrides, onVerdict, className, style } = props;
+  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, className, style } = props;
   const m: CompareMessages = { ...defaultCompareMessages, ...overrides };
   const rtl = isRtlLocale(locale ?? "");
+  const panelsStyle = layoutStyle(layout);
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
@@ -314,7 +319,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     secret ? h("span", { role: "alert", style: warnBanner }, m.secretWarning) : null,
     h(
       "div",
-      { style: { display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" } },
+      { style: panelsStyle, "data-entviz-layout": layout },
       // Yours
       h(
         "div",
@@ -352,6 +357,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             targetAr,
             fontSizePt,
             note,
+            layout,
             style: { marginTop: 4 },
           })
         : h(

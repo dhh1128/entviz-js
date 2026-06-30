@@ -32,6 +32,18 @@ import {
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 
+/** Panel arrangement shared by the comparator and the walk. */
+export type EntvizLayout = "side-by-side" | "stacked" | "auto";
+
+// side-by-side is the default (both figures at the same eye height, so a
+// comparison is a saccade not a scroll); stacked is one-above-the-other; auto is
+// side-by-side that wraps to stacked when the container is too narrow.
+export function layoutStyle(layout: EntvizLayout): CSSProperties {
+  if (layout === "stacked") return { display: "flex", flexDirection: "column", gap: 16 };
+  if (layout === "auto") return { display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" };
+  return { display: "flex", flexWrap: "nowrap", gap: 16, alignItems: "flex-start" };
+}
+
 export interface EntvizWalkProps {
   value: string;
   /** The reference, as a value we can render (M2b: value-vs-value). */
@@ -41,6 +53,8 @@ export interface EntvizWalkProps {
   note?: string | null;
   /** Pre-select a preset (skips the picker); otherwise the user declares one. */
   preset?: WalkPreset;
+  /** Figure arrangement (default "side-by-side"). */
+  layout?: EntvizLayout;
   onComplete?: (status: WalkState["status"]) => void;
   className?: string;
   style?: CSSProperties;
@@ -166,7 +180,7 @@ export function mutate(text: string): string {
 const isDone = (s: WalkState): boolean => s.status !== "pending" || s.index >= s.plan.steps.length;
 
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
-  const { value, reference, targetAr, fontSizePt, note, preset, onComplete, className, style } = props;
+  const { value, reference, targetAr, fontSizePt, note, preset, layout = "side-by-side", onComplete, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   // size class drives the preset menu (§14.4)
@@ -262,7 +276,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
       ? probePanel(value, opts, probeText, onProbeReveal)
       : h(
           "div",
-          { style: { display: "flex", gap: 16, flexWrap: "wrap" } },
+          { style: layoutStyle(layout), "data-entviz-layout": layout },
           panel("Yours", value, opts, step),
           panel("Reference", reference, opts, step),
         ),
