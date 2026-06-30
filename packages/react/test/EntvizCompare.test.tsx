@@ -227,8 +227,12 @@ describe("EntvizCompare", () => {
     const onVerdict = vi.fn();
     rtlRender(<EntvizCompare value={HEX} onVerdict={onVerdict} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "data:image/png;base64,iVBORw0KGgo=" } });
-    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i), RWAIT);
-    expect(onVerdict).toHaveBeenCalled();
+    // retry BOTH conditions together — the async decode resolves the verdict and
+    // the onVerdict callback on the same render, but over separate microtask ticks.
+    await waitFor(() => {
+      expect(status()).toMatch(/cannot prove|look alike/i);
+      expect(onVerdict).toHaveBeenCalled();
+    }, RWAIT);
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
     expect(screen.queryAllByRole("img").length).toBe(1); // no reference panel for a raster
   });

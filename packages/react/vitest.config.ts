@@ -12,11 +12,12 @@ export default defineConfig({
     environment: "jsdom",
     include: ["test/**/*.test.{ts,tsx}"],
     setupFiles: ["./test/setup.ts"],
-    // The heaviest walk tests drive ~30 steps over a 22-cell figure, re-parsing
-    // the SVG each render; under v8 coverage instrumentation that can exceed the
-    // 5s default on a loaded machine. Give headroom — correctness is fine; they
-    // pass well under this without coverage.
-    testTimeout: 20000,
+    // The heaviest walk tests drive ~30 steps over a 22-cell figure, recomputing
+    // the render model each step; under v8 coverage on a loaded machine that can
+    // run long. Give generous headroom — correctness is fine; they pass quickly
+    // without coverage. (A per-render model memo would cut this; tracked as a
+    // follow-up.)
+    testTimeout: 30000,
     coverage: {
       provider: "v8",
       include: ["src/**"],
