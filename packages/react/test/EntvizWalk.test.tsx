@@ -17,9 +17,9 @@ const isProbe = () => screen.queryAllByText(/planted check/i).length > 0;
 // an affirmative verdict on a probe-containing plan.
 function driveCatchingProbe(max = 120) {
   for (let i = 0; i < max; i++) {
-    const match = btn(/they match/i);
+    const match = btn(/looks the same/i);
     if (!match) return;
-    if (isProbe()) fireEvent.click(btn(/they differ/i)!);
+    if (isProbe()) fireEvent.click(btn(/looks different/i)!);
     else fireEvent.click(match);
   }
 }
@@ -27,7 +27,7 @@ function driveCatchingProbe(max = 120) {
 // Click "match" on everything, including the probe → two probe misses → inconclusive.
 function driveAlwaysMatch(max = 120) {
   for (let i = 0; i < max; i++) {
-    const match = btn(/they match/i);
+    const match = btn(/looks the same/i);
     if (!match) return;
     fireEvent.click(match);
   }
@@ -85,14 +85,14 @@ describe("EntvizWalk preset picker", () => {
     rtlRender(<EntvizWalk value={UUID} reference={UUID} />);
     expect(btn(/sanity peek \(/i)).toBeNull();
     fireEvent.click(btn(/read every cell/i)!);
-    expect(btn(/they match/i)).toBeTruthy(); // walk started
+    expect(btn(/looks the same/i)).toBeTruthy(); // walk started
   });
 
   test("a large value offers all three presets, each starting a walk", () => {
     for (const re of [/sanity peek \(/i, /strong spot-check/i, /verify in full/i]) {
       const { unmount } = rtlRender(<EntvizWalk value={HEX512} reference={HEX512} />);
       fireEvent.click(btn(re)!);
-      expect(btn(/they match/i)).toBeTruthy();
+      expect(btn(/looks the same/i)).toBeTruthy();
       unmount();
     }
   });
@@ -114,7 +114,7 @@ describe("EntvizWalk verdicts", () => {
 
   test("a reported difference asks for a re-look, then confirms DIFFERENT", () => {
     rtlRender(<EntvizWalk value={HEX256} reference={HEX256} preset="good" />);
-    fireEvent.click(btn(/they differ/i)!);
+    fireEvent.click(btn(/looks different/i)!);
     expect(screen.getByText(/look again/i)).toBeTruthy();
     fireEvent.click(btn(/yes, different/i)!);
     expect(screen.getByText(/not the same value/i)).toBeTruthy();
@@ -122,9 +122,9 @@ describe("EntvizWalk verdicts", () => {
 
   test("re-look can be retracted, returning to the walk", () => {
     rtlRender(<EntvizWalk value={HEX256} reference={HEX256} preset="good" />);
-    fireEvent.click(btn(/they differ/i)!);
+    fireEvent.click(btn(/looks different/i)!);
     fireEvent.click(btn(/my mistake/i)!);
-    expect(btn(/they match/i)).toBeTruthy(); // back to the step
+    expect(btn(/looks the same/i)).toBeTruthy(); // back to the step
   });
 
   test("a Quick walk completes but stays a non-verdict peek", () => {
@@ -155,12 +155,12 @@ describe("EntvizWalk verdicts", () => {
 
 function driveCatchingProbeWithReveal(max = 120) {
   for (let i = 0; i < max; i++) {
-    const match = btn(/they match/i);
+    const match = btn(/looks the same/i);
     if (!match) return;
     if (isProbe()) {
       const planted = screen.getAllByText(/[0-9a-z]/i).find((e) => e.tagName === "SPAN" && /^[0-9a-zA-Z]+$/.test(e.textContent ?? ""));
       if (planted) fireEvent.mouseEnter(planted);
-      fireEvent.click(btn(/they differ/i)!);
+      fireEvent.click(btn(/looks different/i)!);
     } else {
       fireEvent.click(match);
     }

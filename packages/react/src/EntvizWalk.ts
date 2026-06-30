@@ -111,27 +111,57 @@ export function featureRects(svg: string, step: WalkStep): { viewBox: string; re
   return { viewBox, rects: merge ? union(rects) : rects };
 }
 
-const RING = "var(--entviz-walk-ring, #39ff14)"; // bright lime focus ring (§7.1)
+const RING = "var(--entviz-walk-ring, #39ff14)"; // bright focus ring around the spotlight (§7.1)
+const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus is dimmed
 
-function ringOverlay(svg: string, step: WalkStep): ReactNode {
+// The focus overlay: a semi-transparent scrim over the whole figure with a hole
+// punched out where the feature is (via an SVG mask — white shows the scrim,
+// black hides it), so attention is directed by *darkening the surroundings*
+// rather than a thin line lost in the busy figure beneath. A crisp bright ring
+// is drawn around the hole for definition. Both scrim and ring live in the
+// tool's own overlay SVG, never baked into the entviz (§7.1 closed profile).
+//
+// Geometry: the overlay shares the entviz's viewBox AND occupies the exact same
+// rendered rectangle (the figure renders at its intrinsic size, 1 user unit =
+// 1px, and the overlay fills that same box at scale 1.0). Earlier the figure was
+// forced to 200px while the overlay filled a 200px box but re-fit the viewBox
+// with `meet`, so the two layers shared a viewBox but sat at different scales/
+// offsets — that was the misaligned-ring bug.
+function ringOverlay(svg: string, step: WalkStep, idPrefix: string): ReactNode {
   const { viewBox, rects } = featureRects(svg, step);
   if (!rects.length) return null;
+  const [vx, vy, vw, vh] = viewBox.split(/\s+/).map(Number);
   const pad = 2;
+  const maskId = `entviz-walk-spot-${idPrefix.replace(/[^a-z0-9]/gi, "")}`;
+  const holes = rects.map((r) => ({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad }));
   return h(
     "svg",
-    { viewBox, preserveAspectRatio: "xMidYMid meet", "aria-hidden": true, style: overlayStyle },
-    rects.map((r, i) =>
+    { viewBox, preserveAspectRatio: "none", "aria-hidden": true, style: overlayStyle },
+    h(
+      "defs",
+      null,
+      h(
+        "mask",
+        { id: maskId },
+        h("rect", { x: vx, y: vy, width: vw, height: vh, fill: "#fff" }),
+        holes.map((r, i) => h("rect", { key: i, x: r.x, y: r.y, width: r.w, height: r.h, rx: 2, fill: "#000" })),
+      ),
+    ),
+    h("rect", { x: vx, y: vy, width: vw, height: vh, fill: SCRIM, opacity: 0.5, mask: `url(#${maskId})` }),
+    holes.map((r, i) =>
       h("rect", {
         key: i,
-        x: r.x - pad, y: r.y - pad, width: r.w + 2 * pad, height: r.h + 2 * pad,
-        fill: "none", stroke: RING, "stroke-width": 2, rx: 2,
+        x: r.x, y: r.y, width: r.w, height: r.h, rx: 2,
+        fill: "none", stroke: RING, "stroke-width": 3,
       }),
     ),
   );
 }
 
-// A panel = the entviz re-rendered through our own font, with the focus ring
-// overlaid (never baked into the entviz SVG).
+// A panel = the entviz (rendered at its intrinsic size by <Entviz>) with the
+// focus overlay on top. The container hugs the figure (inline-block + zeroed
+// line box to kill the inline-svg descender gap) so the absolutely-positioned
+// overlay covers exactly the figure's box.
 function panel(label: string, value: string, opts: RenderOptions, svg: string, step: WalkStep | null): ReactNode {
   return h(
     "div",
@@ -139,9 +169,9 @@ function panel(label: string, value: string, opts: RenderOptions, svg: string, s
     h("span", { style: panelLabel }, label),
     h(
       "div",
-      { style: { position: "relative", width: 200 } },
-      h(Entviz, { value, ...opts, style: { width: 200, display: "block" } }),
-      step ? ringOverlay(svg, step) : null,
+      { style: figureBox },
+      h(Entviz, { value, ...opts, style: { display: "block" } }),
+      step ? ringOverlay(svg, step, label) : null,
     ),
   );
 }
@@ -154,13 +184,21 @@ const M = {
   good: "Good — a strong spot-check",
   complete: "Complete — verify in full",
   completeSmall: "Complete — read every cell (small enough to verify fully)",
-  match: "They match",
-  differ: "They differ",
+  // Universal answer labels — the focused feature may be singular (one
+  // background, one oval) or plural (the highlighted characters), so avoid
+  // "they": "Looks the same / different" reads naturally for every prompt.
+  match: "Looks the same",
+  differ: "Looks different",
   relook: "Look again — is it really different?",
   relookYes: "Yes, different",
   relookNo: "No, my mistake",
   probeNotice: "Planted check: we deliberately changed one character here. Spot the difference.",
-  noDifference: "No difference found across what you checked — strong, but not the machine's certainty.",
+  noDiffSpot:
+    "No difference found — a good indicator of equivalence, but spot checks are less than complete and should not be relied on when stakes are high.",
+  noDiffCompleteSmall:
+    "No difference found — you read every cell, a full visual check. Only a machine can certify an exact match.",
+  noDiffCompleteLarge:
+    "No difference found across every displayed cell — a strong check, though a value this large keeps some detail summarized rather than read in full. Only a machine can certify an exact match.",
   different: "Different — these are not the same value.",
   pendingDone: "Sanity peek done. This was not a verification.",
   inconclusive: "Inconclusive — a planted check was missed. Try again with full attention.",
@@ -169,8 +207,8 @@ const M = {
 
 const PROMPTS: Record<string, string> = {
   text: "Do the highlighted characters match?",
-  background: "Is the background colour the same?",
-  "colorbar-pattern": "Same coloured bands, in the same order?",
+  background: "Is the background color the same?",
+  "colorbar-pattern": "Same colored bands, in the same order?",
   "colorbar-markers": "Are the two bar dots at the same heights?",
   ellipse: "Does the oval match — same tilt, shape, and size?",
   "blank-pattern": "Are the empty cells in the same places?",
@@ -250,8 +288,12 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
 
   // --- done ---
   if (isDone(state)) {
+    const noDiffMsg =
+      state.plan.preset === "complete"
+        ? state.plan.sizeClass === "small" ? M.noDiffCompleteSmall : M.noDiffCompleteLarge
+        : M.noDiffSpot;
     const msg =
-      state.status === "no-difference" ? M.noDifference
+      state.status === "no-difference" ? noDiffMsg
       : state.status === "different" ? M.different
       : state.status === "inconclusive" ? M.inconclusive
       : M.pendingDone;
@@ -347,6 +389,9 @@ function csprng(): number {
 }
 
 const overlayStyle: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" };
+// hugs the intrinsic-size figure; zeroed line box removes the inline-svg gap so
+// the overlay aligns to the figure pixel-for-pixel.
+const figureBox: CSSProperties = { position: "relative", display: "inline-block", lineHeight: 0, fontSize: 0 };
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const hint: CSSProperties = { fontSize: "0.8em", opacity: 0.7, maxWidth: 420 };
