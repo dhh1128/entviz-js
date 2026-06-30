@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chooseGrid, gridCandidates, gridAspectRatio, assignCellIndices, type Token } from "../../src/entviz.ts";
-import { gridShapes } from "../../src/describe.ts";
+import { gridShapes, describeChannels } from "../../src/describe.ts";
 
 test("chooseGrid: spec worked example 11 tokens @ 1:1 -> 3x4", () => {
   const g = chooseGrid(11, 1.0);
@@ -19,13 +19,19 @@ test("gridCandidates / chooseGrid agree: every candidate is reachable by its own
   }
 });
 
-test("gridShapes: distinct arrangements of the value's fixed cell count, tall→wide", () => {
-  const shapes = gridShapes("0123456789abcdef".repeat(4)); // a 256-bit hex value
+test("gridShapes: each shape's targetAr selects it — robustly, even when UI-rounded", () => {
+  const value = "0123456789abcdef".repeat(4); // a 256-bit hex value, several shapes
+  const shapes = gridShapes(value);
   assert.ok(shapes.length >= 2);
-  // sorted ascending by aspect ratio (tall → wide), each targetAr = its own AR
-  for (let i = 1; i < shapes.length; i++) assert.ok(shapes[i].targetAr >= shapes[i - 1].targetAr);
-  for (const s of shapes) assert.equal(s.targetAr, gridAspectRatio(s.cols, s.rows));
-  // arrangements are distinct
+  for (let i = 1; i < shapes.length; i++) assert.ok(shapes[i].targetAr >= shapes[i - 1].targetAr); // tall→wide
+  for (const s of shapes) {
+    const exact = describeChannels(value, { targetAr: s.targetAr });
+    assert.deepEqual([exact.cols, exact.rows], [s.cols, s.rows], `${s.cols}x${s.rows} exact`);
+    // Regression: a boundary AR rounded for display used to skip to the next
+    // shape (3×4's 1.125 → 1.13 → 4×3). The midpoint targetAr survives rounding.
+    const rounded = describeChannels(value, { targetAr: Number(s.targetAr.toFixed(2)) });
+    assert.deepEqual([rounded.cols, rounded.rows], [s.cols, s.rows], `${s.cols}x${s.rows} rounded`);
+  }
   const keys = new Set(shapes.map((s) => `${s.cols}x${s.rows}`));
   assert.equal(keys.size, shapes.length);
 });

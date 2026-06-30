@@ -367,7 +367,17 @@ export function gridShapes(value: string, opts: RenderOptions = {}): GridShape[]
   const { core, alphabet } = classifyInput(value.trim());
   const { tokens, truncated } = tokenizeEntropy(core, alphabet);
   const count = truncated ? MAX_TOKENS : tokens.length;
-  return gridCandidates(count)
-    .map((g) => ({ cols: g.cols, rows: g.rows, targetAr: gridAspectRatio(g.cols, g.rows) }))
-    .sort((a, b) => a.targetAr - b.targetAr);
+  const sorted = gridCandidates(count)
+    .map((g) => ({ cols: g.cols, rows: g.rows, ar: gridAspectRatio(g.cols, g.rows) }))
+    .sort((a, b) => a.ar - b.ar);
+  // targetAr is the MIDDLE of the range that selects each shape, NOT its exact
+  // aspect ratio. chooseGrid picks the candidate closest to but ≥ targetAr, so
+  // shape i is selected for targetAr in (ar[i-1], ar[i]]. Returning ar[i] itself
+  // is a boundary value a consumer's display rounding can tip into shape i+1
+  // (e.g. 3×4's 1.125 rounded to 1.13 → 4×3); the midpoint is robust.
+  return sorted.map((s, i) => ({
+    cols: s.cols,
+    rows: s.rows,
+    targetAr: ((i > 0 ? sorted[i - 1].ar : 0) + s.ar) / 2,
+  }));
 }

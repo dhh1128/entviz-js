@@ -151,7 +151,7 @@ export function App() {
                 note={note || null}
                 controls
                 onResize={setFontSizePt}
-                onReshape={(ar) => setTargetAr(Number(ar.toFixed(2)))}
+                onReshape={setTargetAr}
                 style={width ? { width } : undefined}
                 onError={(m) => console.warn("entviz onError:", m)}
               />
