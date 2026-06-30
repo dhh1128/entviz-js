@@ -143,8 +143,8 @@ const M = {
 const PROMPTS: Record<string, string> = {
   text: "Do the highlighted characters match?",
   background: "Is the background color the same?",
-  "colorbar-pattern": "Same colored bands, in the same order?",
-  "colorbar-markers": "Are the two bar dots at the same heights?",
+  "colorbar-pattern": "Same colored bands, same order, same ratios?",
+  "colorbar-markers": "Are the two dots in the same spots on the bar?",
   ellipse: "Does the oval match — same tilt, shape, and size?",
   "blank-pattern": "Are the empty cells in the same places?",
   "blank-map": "Do the plus and dot point to the same cells?",
