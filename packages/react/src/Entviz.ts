@@ -165,17 +165,21 @@ function nearestLadderIndex(pt: number): number {
   return best;
 }
 
-// A tiny cols×rows grid icon for a reshape option (Google-Docs-table style).
+// A tiny cols×rows grid icon for a reshape option (Google-Docs-table style). The
+// constituent cells are drawn 3:2 (the entviz cell's true aspect) with gaps and
+// padding proportional to the cell, so the thumbnail's overall shape matches the
+// entviz's real shape — a 2×3 reads square, a 3×2 reads wide, as they actually
+// render (a square cell made a near-square 2×3 look portrait).
 function gridThumb(cols: number, rows: number): React.ReactElement {
-  const cell = 3, gap = 1, pad = 1;
-  const w = pad * 2 + cols * cell + (cols - 1) * gap;
-  const hgt = pad * 2 + rows * cell + (rows - 1) * gap;
+  const cw = 3, ch = 2, gapX = 0.6, gapY = 0.4, pad = 1; // cell w:h = 3:2
+  const w = pad * 2 + cols * cw + (cols - 1) * gapX;
+  const hgt = pad * 2 + rows * ch + (rows - 1) * gapY;
   const cells: React.ReactElement[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       cells.push(React.createElement("rect", {
-        key: `${r}-${c}`, x: pad + c * (cell + gap), y: pad + r * (cell + gap),
-        width: cell, height: cell, fill: "currentColor",
+        key: `${r}-${c}`, x: pad + c * (cw + gapX), y: pad + r * (ch + gapY),
+        width: cw, height: ch, fill: "currentColor",
       }));
     }
   }
