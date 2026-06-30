@@ -29,6 +29,7 @@ export interface CompareMessages {
   unknownReason: string; // "{reason}" — a machine reason for an `unknown` verdict
   secretWarning: string;
   recognitionNote: string;
+  referencePlaceholder: string; // the empty reference slot, before a value is given
 }
 
 export const defaultCompareMessages: CompareMessages = {
@@ -58,4 +59,5 @@ export const defaultCompareMessages: CompareMessages = {
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:
     "A match means the two values are equal; it does not vouch for the reference being the one you should trust.",
+  referencePlaceholder: "The reference will appear here",
 };

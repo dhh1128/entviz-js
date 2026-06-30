@@ -338,15 +338,21 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           style: panelEntviz,
         }),
       ),
-      // Reference — re-rendered at the same shared size/shape; no controls.
+      // Reference — re-rendered at the same shared size/shape; no controls. The
+      // figure (or a placeholder of the same footprint) sits DIRECTLY under the
+      // label, horizontally level with "Yours" for line-of-sight comparison; the
+      // acquisition inputs go BELOW so they never push the figure down (#3).
       h(
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
-        acquisition,
         refDisplayValue !== null
           ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
-          : null,
+          // Footprint tracks the live shared dispAr, so the empty slot previews
+          // the SHAPE the reference will take — reshaping "Yours" reshapes the
+          // placeholder too, and the real figure lands at the same shape (no jump).
+          : h("div", { style: { ...placeholderBox, aspectRatio: String(dispAr) }, "aria-hidden": true }, m.referencePlaceholder),
+        acquisition,
         eff && refContent.trim()
           ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
           : null,
@@ -390,6 +396,13 @@ const walkLaunchStyle: CSSProperties = {
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const panelEntviz: CSSProperties = { width: 180, display: "block" };
+// An empty reference slot the same footprint as the figure, so both panels show
+// a figure-sized box side-by-side from the start (#3).
+const placeholderBox: CSSProperties = {
+  width: 180, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
+  border: "1px dashed var(--entviz-compare-placeholder, #d0d7de)", borderRadius: 8,
+  color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: "0.75em", textAlign: "center", padding: 8,
+};
 const textareaStyle: CSSProperties = {
   font: "0.85em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
   border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical", minWidth: 200,

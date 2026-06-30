@@ -72,6 +72,30 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("Paste");
   });
 
+  test("reference: a placeholder holds the slot until a value is given; inputs sit below the figure", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    const placeholder = screen.getByText(/reference will appear here/i);
+    const textarea = screen.getByRole("textbox", { name: /paste/i });
+    // figure-sized placeholder comes BEFORE the inputs (horizontal line-of-sight)
+    expect(placeholder.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // once a value arrives, the placeholder gives way to the re-rendered figure
+    fireEvent.change(textarea, { target: { value: HEX } });
+    expect(screen.queryByText(/reference will appear here/i)).toBeNull();
+    expect(screen.getAllByRole("img").length).toBe(2);
+  });
+
+  test("the empty reference placeholder tracks the live target aspect ratio", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    const ph = () => screen.getByText(/reference will appear here/i) as HTMLElement;
+    const before = ph().style.aspectRatio;
+    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
+      (b) => b.getAttribute("aria-pressed") !== "true",
+    ) as HTMLButtonElement;
+    fireEvent.click(other); // reshape "Yours" while the reference is still empty
+    expect(ph().style.aspectRatio).not.toBe(before); // placeholder previews the new shape
+  });
+
   test("resize on our figure drives BOTH panels", () => {
     const { container } = rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
