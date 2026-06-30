@@ -24,11 +24,12 @@ import {
   coverage,
   describeChannels,
   featureRectsFromModel,
+  finish,
   respond,
   startWalk,
   type ChannelDescription,
   type RenderOptions,
-  type WalkPreset,
+  type WalkMode,
   type WalkState,
   type WalkStep,
 } from "@entviz/core";
@@ -53,8 +54,8 @@ export interface EntvizWalkProps {
   targetAr?: number;
   fontSizePt?: number;
   note?: string | null;
-  /** Pre-select a preset (skips the picker); otherwise the user declares one. */
-  preset?: WalkPreset;
+  /** Pre-select a mode (skips the picker); otherwise the user declares one. */
+  mode?: WalkMode;
   /** Figure arrangement (default "side-by-side"). */
   layout?: EntvizLayout;
   /** When true, DON'T render the two figures — the host draws them and overlays
@@ -138,28 +139,35 @@ function panel(label: string, value: string, opts: RenderOptions, model: Channel
 // English walk copy (localization framework to follow once the surface settles).
 const M = {
   title: "Verify by walking the cells",
-  pickPrompt: "How thorough do you want to be? (you decide — there's no default)",
-  quick: "Quick — a sanity peek (proves nothing)",
-  good: "Good — a strong spot-check",
-  complete: "Complete — verify in full",
+  pickPrompt: "How do you want to check? (you decide — there's no default)",
+  spotCheck: "Spot-check — sample features in a surprising order; stop when satisfied",
+  complete: "Complete — read every cell",
   completeSmall: "Complete — read every cell (small enough to verify fully)",
+  quickTick: "Quick",
+  goodTick: "Good",
+  completeTick: "Complete",
   // Universal answer labels — the focused feature may be singular (one
   // background, one oval) or plural (the highlighted characters), so avoid
   // "they": "Looks the same / different" reads naturally for every prompt.
   match: "Looks the same",
   differ: "Looks different",
+  done: "Done — that's enough",
   relook: "Look again — is it really different?",
   relookYes: "Yes, different",
   relookNo: "No, my mistake",
   probeNotice: "Planted check: we deliberately changed one character here. Spot the difference.",
+  // live verdict shown while the walk is in progress
+  belowGood: "A sanity look so far — keep going to reach a verification.",
+  pastGood: "No difference so far — keep going for more coverage, or stop.",
+  // final verdicts
   noDiffSpot:
-    "No difference found — a good indicator of equivalence, but spot checks are less than complete and should not be relied on when stakes are high.",
+    "No difference found — a good indicator of equivalence, but a spot-check is less than complete and should not be relied on when stakes are high.",
   noDiffCompleteSmall:
     "No difference found — you read every cell, a full visual check. Only a machine can certify an exact match.",
   noDiffCompleteLarge:
     "No difference found across every displayed cell — a strong check, though a value this large keeps some detail summarized rather than read in full. Only a machine can certify an exact match.",
   different: "Different — these are not the same value.",
-  pendingDone: "Sanity peek done. This was not a verification.",
+  pendingDone: "Stopped early — a sanity look, not a verification.",
   inconclusive: "Inconclusive — a planted check was missed. Try again with full attention.",
   recognitionNote: "A match means equal to this reference; it does not vouch for the reference.",
   walkAgain: "Walk again",
@@ -188,10 +196,8 @@ export function mutate(text: string): string {
   return text.slice(0, i) + next;
 }
 
-const isDone = (s: WalkState): boolean => s.status !== "pending" || s.index >= s.plan.steps.length;
-
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
-  const { value, reference, targetAr, fontSizePt, note, preset, layout = "side-by-side", externalFigures = false, onStep, onComplete, className, style } = props;
+  const { value, reference, targetAr, fontSizePt, note, mode, layout = "side-by-side", externalFigures = false, onStep, onComplete, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   // Describe each value ONCE per (value, opts) — the focus rings, the size class,
@@ -207,43 +213,48 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   );
 
   const [state, setState] = useState<WalkState | null>(
-    preset ? () => startWalk(buildCheckPlan(value, opts, preset, csprng)) : null,
+    mode ? () => startWalk(buildCheckPlan(value, opts, mode, csprng)) : null,
   );
   const [relook, setRelook] = useState(false);
   const [probeText, setProbeText] = useState<string | null>(null);
 
   // Report the feature currently being checked so a host using externalFigures can
-  // ring it on its own figures; clear it when done/in the picker and on unmount.
+  // ring it on its own figures; clear it when the walk ends / in the picker / on
+  // unmount. (The walk stays active past the Good milestone, so gate on `ended`.)
   useEffect(() => {
     if (!onStep) return;
-    onStep(state && state.status === "pending" && state.index < state.plan.steps.length
+    onStep(state && !state.ended && state.index < state.plan.steps.length
       ? state.plan.steps[state.index] : null);
   }, [state, onStep]);
   useEffect(() => () => onStep?.(null), [onStep]);
 
-  const begin = (p: WalkPreset) => setState(startWalk(buildCheckPlan(value, opts, p, csprng)));
+  const begin = (m: WalkMode) => setState(startWalk(buildCheckPlan(value, opts, m, csprng)));
 
-  // After a verdict, start over so the user can run another round (a different
-  // preset, or a fresh unpredictable plan at the same one). With a fixed preset
-  // we rebuild that walk; otherwise we return to the size-aware picker.
+  // After a verdict, start over for another round (a different mode, or a fresh
+  // unpredictable plan at the same one). With a fixed mode prop we rebuild that
+  // walk; otherwise we return to the picker.
   const restart = () => {
-    setState(preset ? startWalk(buildCheckPlan(value, opts, preset, csprng)) : null);
+    setState(mode ? startWalk(buildCheckPlan(value, opts, mode, csprng)) : null);
     setRelook(false);
     setProbeText(null);
   };
 
-  const advance = (r: "match" | "differ") => {
+  // Apply a state transition (respond / finish), firing onComplete when the walk
+  // ends, and clearing the transient relook/probe UI.
+  const apply = (compute: (s: WalkState) => WalkState) => {
     setState((s) => {
       if (!s) return s;
-      const next = respond(s, r);
-      if (isDone(next)) onComplete?.(next.status);
+      const next = compute(s);
+      if (next.ended && !s.ended) onComplete?.(next.status);
       return next;
     });
     setRelook(false);
     setProbeText(null);
   };
+  const advance = (r: "match" | "differ") => apply((s) => respond(s, r));
+  const onDone = () => apply(finish);
 
-  // --- preset picker ---
+  // --- mode picker (binary; Quick/Good are milestones inside spot-check) ---
   if (!state) {
     return h(
       "div",
@@ -256,18 +267,17 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
         small
           ? h("button", { type: "button", style: btn, onClick: () => begin("complete") }, M.completeSmall)
           : [
-              h("button", { key: "q", type: "button", style: btn, onClick: () => begin("quick") }, M.quick),
-              h("button", { key: "g", type: "button", style: btn, onClick: () => begin("good") }, M.good),
+              h("button", { key: "s", type: "button", style: btn, onClick: () => begin("spot-check") }, M.spotCheck),
               h("button", { key: "c", type: "button", style: btn, onClick: () => begin("complete") }, M.complete),
             ],
       ),
     );
   }
 
-  // --- done ---
-  if (isDone(state)) {
+  // --- ended: the final verdict ---
+  if (state.ended) {
     const noDiffMsg =
-      state.plan.preset === "complete"
+      state.plan.mode === "complete"
         ? state.plan.sizeClass === "small" ? M.noDiffCompleteSmall : M.noDiffCompleteLarge
         : M.noDiffSpot;
     const msg =
@@ -287,6 +297,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
 
   // --- walking ---
   const step = state.plan.steps[state.index];
+  const past = state.status === "no-difference"; // crossed the Good milestone
   const onDiffer = () => {
     if (step.kind === "probe") { advance("differ"); return; } // catching the probe is the right answer
     setRelook(true);
@@ -297,12 +308,10 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     "div",
     { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } },
     h("strong", null, M.title),
-    // coverage meter
-    h(
-      "div",
-      { style: meterTrack, role: "progressbar", "aria-valuenow": Math.round(coverage(state) * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
-      h("div", { style: { ...meterFill, width: `${coverage(state) * 100}%` } }),
-    ),
+    // coverage meter, with Quick/Good milestone ticks for a spot-check
+    coverageMeter(state),
+    // live verdict so the user sees where they stand on the scale
+    h("span", { "aria-live": "polite", style: { fontSize: "0.85em", color: past ? "#1a7f37" : "#57606a" } }, past ? M.pastGood : M.belowGood),
     // the step — figures are suppressed when the host draws them (externalFigures)
     step.kind === "probe"
       ? probePanel(oursModel, probeText, onProbeReveal)
@@ -326,10 +335,37 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
         )
       : h(
           "div",
-          { style: { display: "flex", gap: 8 } },
+          { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
           h("button", { type: "button", style: btn, onClick: () => advance("match") }, M.match),
           h("button", { type: "button", style: btnBad, onClick: onDiffer }, M.differ),
+          h("button", { type: "button", style: btnGhost, onClick: onDone }, M.done),
         ),
+  );
+}
+
+// The coverage bar: a fill plus, for a spot-check, labeled Quick/Good ticks so
+// the user watches themselves cross the milestones (the continuous scale, §14.4).
+function coverageMeter(state: WalkState): ReactNode {
+  const { plan } = state;
+  const cov = coverage(state);
+  const pct = (bits: number) => `${Math.min(100, (bits / plan.totalBits) * 100)}%`;
+  const tick = (bits: number, label: string): ReactNode =>
+    h(
+      "div",
+      { key: label, style: { position: "absolute", left: pct(bits), top: 0, transform: "translateX(-50%)" } },
+      h("div", { style: tickMark }),
+      h("div", { style: tickLabel }, label),
+    );
+  return h(
+    "div",
+    { style: { position: "relative", paddingBottom: 14 } },
+    h(
+      "div",
+      { style: meterTrack, role: "progressbar", "aria-valuenow": Math.round(cov * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
+      h("div", { style: { ...meterFill, width: `${cov * 100}%` } }),
+    ),
+    plan.mode === "spot-check" ? tick(plan.quickBits, M.quickTick) : null,
+    plan.mode === "spot-check" ? tick(plan.goodBits, M.goodTick) : null,
   );
 }
 
@@ -382,7 +418,11 @@ const btn: CSSProperties = {
   border: "1px solid var(--entviz-walk-btn, #d0d7de)", background: "var(--entviz-walk-btn-bg, #fff)",
 };
 const btnBad: CSSProperties = { ...btn, borderColor: "#c4314b", color: "#c4314b" };
+const btnGhost: CSSProperties = { ...btn, border: "1px solid transparent", background: "none", opacity: 0.75 };
 const meterTrack: CSSProperties = { height: 6, borderRadius: 999, background: "var(--entviz-walk-track, #eaeef2)", overflow: "hidden" };
 const meterFill: CSSProperties = { height: "100%", background: "var(--entviz-walk-meter, #1a7f37)", transition: "width .15s" };
+// Quick/Good milestone marks on the coverage bar.
+const tickMark: CSSProperties = { width: 2, height: 10, marginTop: -2, background: "var(--entviz-walk-tick, #9aa3af)" };
+const tickLabel: CSSProperties = { fontSize: "0.62em", color: "#9aa3af", marginTop: 1, whiteSpace: "nowrap" };
 
 export default EntvizWalk;

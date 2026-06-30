@@ -5,6 +5,7 @@ import {
   featureRects,
   startWalk,
   respond,
+  finish,
   coverage,
   type CheckPlan,
   type GestaltDimension,
@@ -27,26 +28,46 @@ function rngFrom(seed: number): () => number {
 
 const kinds = (p: CheckPlan) => p.steps.map((s) => s.kind);
 
+const GW: Record<string, number> = {
+  ellipse: 7, "quartile-marks": 6, "colorbar-markers": 5, "blank-map": 5,
+  "colorbar-pattern": 4, "blank-pattern": 3, background: 2,
+};
+
 // --- buildCheckPlan -------------------------------------------------------
 
-test("buildCheckPlan: quick is a small sub-floor peek that can't go affirmative", () => {
-  const p = buildCheckPlan(HEX512, {}, "quick", rngFrom(1));
-  assert.equal(p.affirmative, false);
-  assert.equal(p.hasProbe, false);
-  assert.ok(p.steps.length <= 2);
-  assert.ok(kinds(p).includes("text"));
-});
-
-test("buildCheckPlan: good mixes text (≥2 backstop) and gestalt, no probe", () => {
-  const p = buildCheckPlan(HEX512, {}, "good", rngFrom(2));
-  assert.equal(p.affirmative, true);
+test("buildCheckPlan: spot-check is the full continuous sequence (≥2 text + gestalt, no probe)", () => {
+  const p = buildCheckPlan(HEX512, {}, "spot-check", rngFrom(2));
+  assert.equal(p.mode, "spot-check");
   assert.equal(p.hasProbe, false);
   assert.ok(kinds(p).filter((k) => k === "text").length >= 2);
   assert.ok(kinds(p).includes("gestalt"));
+  // milestones are ordered and the sequence climbs all the way to 100%
+  assert.ok(p.quickBits <= p.goodBits && p.goodBits <= p.totalBits);
+  assert.ok(p.steps.length > 3); // more than just the Good front — keep-going is possible
+});
+
+test("buildCheckPlan: spot-check's Good milestone has the ≥2 text floor + ≥12 gestalt bits", () => {
+  for (let seed = 1; seed <= 80; seed++) {
+    const p = buildCheckPlan(HEX512, {}, "spot-check", rngFrom(seed));
+    assert.ok(p.goodBits >= 2 * 24 + 12, `seed ${seed}: goodBits ${p.goodBits}`);
+  }
+});
+
+test("buildCheckPlan: spot-check favours discriminatory gestalt early (ellipse before background)", () => {
+  let ellipseSum = 0, bgSum = 0, n = 0;
+  for (let seed = 1; seed <= 500; seed++) {
+    const g = buildCheckPlan(HEX512, {}, "spot-check", rngFrom(seed)).steps
+      .filter((s) => s.kind === "gestalt").map((s) => (s as { dimension: string }).dimension);
+    const ei = g.indexOf("ellipse"), bi = g.indexOf("background");
+    if (ei >= 0 && bi >= 0) { ellipseSum += ei; bgSum += bi; n++; }
+  }
+  // weighting biases ORDER (the full pool is always present): ellipse lands earlier
+  assert.ok(ellipseSum / n < bgSum / n, `ellipse avg ${ellipseSum / n} vs background ${bgSum / n}`);
 });
 
 test("buildCheckPlan: complete on a small value reads all text, no gestalt, no probe", () => {
   const p = buildCheckPlan(UUID, {}, "complete", rngFrom(3));
+  assert.equal(p.mode, "complete");
   assert.equal(p.sizeClass, "small");
   assert.equal(p.hasProbe, false);
   assert.ok(p.steps.every((s) => s.kind === "text"));
@@ -61,40 +82,13 @@ test("buildCheckPlan: complete on a large value adds the gestalt CRC and one pro
   assert.ok(kinds(p).includes("gestalt"));
 });
 
-test("buildCheckPlan: a >512-bit value is huge; good anchors on the fingerprint-middle cells", () => {
+test("buildCheckPlan: a >512-bit value is huge; spot-check text anchors on the fingerprint-middle cells", () => {
   const fp = new Set(describeChannels(BIG).cells.filter((c) => c.fingerprint).map((c) => c.index));
   assert.equal(fp.size, 4);
-  const p = buildCheckPlan(BIG, {}, "good", rngFrom(5));
+  const p = buildCheckPlan(BIG, {}, "spot-check", rngFrom(5));
   assert.equal(p.sizeClass, "huge");
-  // every credited text cell must be one of the 4 fingerprint-middle cells
   for (const s of p.steps) if (s.kind === "text") assert.ok(fp.has(s.cellIndex));
-  // complete-huge has the probe (20 displayed cells > threshold)
   assert.equal(buildCheckPlan(BIG, {}, "complete", rngFrom(6)).hasProbe, true);
-});
-
-const GW: Record<string, number> = {
-  ellipse: 7, "quartile-marks": 6, "colorbar-markers": 5, "blank-map": 5,
-  "colorbar-pattern": 4, "blank-pattern": 3, background: 2,
-};
-
-test("buildCheckPlan: gestalt selection is weighted by discriminability (ellipse ≫ background)", () => {
-  const counts: Record<string, number> = {};
-  for (let seed = 1; seed <= 500; seed++) {
-    for (const s of buildCheckPlan(HEX512, {}, "good", rngFrom(seed)).steps) {
-      if (s.kind === "gestalt") counts[s.dimension] = (counts[s.dimension] ?? 0) + 1;
-    }
-  }
-  // not uniform: the 7-bit ellipse is picked far more than the 2-bit background
-  assert.ok((counts.ellipse ?? 0) > (counts.background ?? 0) * 1.5, JSON.stringify(counts));
-});
-
-test("buildCheckPlan: good's gestalt reaches the bit target (≥ 12), not a fixed count", () => {
-  for (let seed = 1; seed <= 80; seed++) {
-    const p = buildCheckPlan(HEX512, {}, "good", rngFrom(seed));
-    const bits = p.steps.filter((s) => s.kind === "gestalt")
-      .reduce((b, s) => b + GW[(s as { dimension: string }).dimension], 0);
-    assert.ok(bits >= 12, `seed ${seed}: only ${bits} gestalt bits`);
-  }
 });
 
 test("buildCheckPlan: deterministic for a fixed rng", () => {
@@ -106,25 +100,31 @@ test("buildCheckPlan: deterministic for a fixed rng", () => {
 
 // --- the walk reducer -----------------------------------------------------
 
-const planOf = (steps: CheckPlan["steps"], over: Partial<CheckPlan> = {}): CheckPlan => ({
-  preset: "complete",
-  steps,
-  affirmative: true,
-  hasProbe: false,
-  sizeClass: "large",
-  ...over,
-});
+const planOf = (steps: CheckPlan["steps"], over: Partial<CheckPlan> = {}): CheckPlan => {
+  const totalBits = steps.reduce(
+    (b, s) => b + (s.kind === "text" ? 24 : s.kind === "gestalt" ? GW[s.dimension] : 0),
+    0,
+  );
+  return { mode: "spot-check", steps, quickBits: 0, goodBits: 0, totalBits, hasProbe: false, sizeClass: "large", ...over };
+};
 
-test("respond: all-match through an affirmative plan → no-difference", () => {
+test("respond: climbs to the Good milestone → no-difference; keeps going, ends when exhausted", () => {
   let s = startWalk(planOf([
     { kind: "text", cellIndex: 0 },
+    { kind: "text", cellIndex: 1 },
     { kind: "gestalt", dimension: "ellipse" },
-  ]));
+  ], { goodBits: 48 })); // 2 text cells = 48 bits
   assert.equal(s.status, "pending");
+  assert.equal(s.ended, false);
   assert.equal(coverage(s), 0);
-  s = respond(s, "match");
-  s = respond(s, "match");
+  s = respond(s, "match"); // 1 text — floor not met yet
+  assert.equal(s.status, "pending");
+  s = respond(s, "match"); // 2 text — floor + Good bits → affirmative, but NOT ended
   assert.equal(s.status, "no-difference");
+  assert.equal(s.ended, false);
+  s = respond(s, "match"); // ellipse — still no-difference, now exhausted → ended
+  assert.equal(s.status, "no-difference");
+  assert.equal(s.ended, true);
   assert.equal(coverage(s), 1);
 });
 
@@ -140,39 +140,58 @@ test("coverage: weighted by feature bits (an ellipse step advances more than bac
   assert.equal(coverage(s), 1);
 });
 
-test("respond: a quick plan completes but stays PENDING (a peek, not a verdict)", () => {
-  let s = startWalk(planOf([{ kind: "text", cellIndex: 0 }], { preset: "quick", affirmative: false }));
-  s = respond(s, "match");
+test("finish: Done freezes the live verdict — PENDING below Good, NO-DIFFERENCE at/above", () => {
+  const plan = planOf([
+    { kind: "text", cellIndex: 0 }, { kind: "text", cellIndex: 1 },
+    { kind: "gestalt", dimension: "ellipse" },
+  ], { goodBits: 48 });
+  // Done below Good → still a peek
+  let s = startWalk(plan);
+  s = respond(s, "match"); // 1 text
+  s = finish(s);
   assert.equal(s.status, "pending");
-  // further responses past the end are inert
-  assert.deepEqual(respond(s, "match"), s);
+  assert.equal(s.ended, true);
+  assert.deepEqual(respond(s, "match"), s); // terminal
+  // Done past Good → keep the affirmative, stop early
+  let t = startWalk(plan);
+  t = respond(t, "match"); // text0
+  t = respond(t, "match"); // text1 → no-difference
+  t = finish(t);
+  assert.equal(t.status, "no-difference");
+  assert.equal(t.ended, true);
 });
 
 test("respond: any differs → different (terminal)", () => {
   let s = startWalk(planOf([{ kind: "text", cellIndex: 0 }, { kind: "text", cellIndex: 1 }]));
   s = respond(s, "differ");
   assert.equal(s.status, "different");
+  assert.equal(s.ended, true);
   assert.deepEqual(respond(s, "match"), s); // terminal: no further change
 });
 
-test("respond: the transparent probe — caught → advance; missed → reset; missed twice → inconclusive", () => {
-  const plan = planOf([{ kind: "text", cellIndex: 0 }, { kind: "probe" }, { kind: "gestalt", dimension: "ellipse" }], { hasProbe: true });
+test("respond: the transparent probe — caught advances; missed resets; missed twice → inconclusive", () => {
+  const plan = planOf(
+    [{ kind: "text", cellIndex: 0 }, { kind: "probe" }, { kind: "text", cellIndex: 1 }],
+    { hasProbe: true, goodBits: 48 },
+  );
   // caught
   let s = startWalk(plan);
-  s = respond(s, "match"); // text
-  s = respond(s, "differ"); // probe caught
-  s = respond(s, "match"); // gestalt
+  s = respond(s, "match"); // text0
+  s = respond(s, "differ"); // probe caught → advance
+  s = respond(s, "match"); // text1 → 2 text, no-difference, exhausted → ended
   assert.equal(s.status, "no-difference");
+  assert.equal(s.ended, true);
   // missed once → reset to the start
-  s = respond(startWalk(plan), "match"); // text, at index 1 (the probe)
+  s = respond(startWalk(plan), "match"); // text0, now at the probe
   s = respond(s, "match"); // probe missed
   assert.equal(s.index, 0);
   assert.equal(s.probeResets, 1);
-  assert.equal(s.status, "pending");
-  // missed twice → inconclusive
-  s = respond(s, "match"); // text again
+  assert.equal(s.ended, false);
+  // missed twice → inconclusive (ended)
+  s = respond(s, "match"); // text0 again
   s = respond(s, "match"); // probe missed again
   assert.equal(s.status, "inconclusive");
+  assert.equal(s.ended, true);
 });
 
 // --- featureRects (geometry from the render model) ------------------------

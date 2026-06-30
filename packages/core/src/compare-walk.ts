@@ -2,15 +2,18 @@
  * compare-walk — the guided human walk (M2), pinned by comparison-design.md §14.
  *
  * Two pure, isomorphic pieces (the React layer renders the focus rings and drives
- * them): `buildCheckPlan` produces an unpredictable, ordered, *mixed* plan of
- * features to check (text cells + gestalt dimensions), sized to the preset and the
- * value's size; the walk reducer (`startWalk` / `respond`) turns the user's
- * match/differ responses into a verdict per the §14.6 state machine.
+ * them): `buildCheckPlan` produces an unpredictable, ordered, *mixed* sequence of
+ * features (text cells + gestalt dimensions) for a MODE — a continuous spot-check
+ * (with Quick/Good as milestones along the coverage scale) or a Complete read; the
+ * walk reducer (`startWalk` / `respond` / `finish`) turns the user's match/differ
+ * responses into a coverage-driven verdict per the §14.6 state machine.
  *
  * Discipline: a human walk reaches `no-difference` (coverage), NEVER `identical`
  * (that is machine-only). One `differs` is certain `different`. Text cells are the
- * lossless backstop; gestalt dimensions add whole-value-CRC coverage. The plan's
- * unpredictability is the anti-habituation; the transparent planted probe is the
+ * lossless backstop; gestalt dimensions add whole-value-CRC coverage. The verdict
+ * is coverage-driven (PENDING below the Good milestone, NO-DIFFERENCE at/above it);
+ * the walk does not stop at Good — the user keeps checking until Done or the end.
+ * Unpredictability is the anti-habituation; the transparent planted probe is the
  * only added safeguard, and only for Complete on a large value.
  */
 import { describeChannels, type ChannelDescription, type Rect } from "./describe.ts";
@@ -18,7 +21,9 @@ import type { RenderOptions } from "./entviz.ts";
 
 export type { Rect };
 
-export type WalkPreset = "quick" | "good" | "complete";
+// The user declares one of two MODES (no default). Quick/Good are no longer
+// modes — they are milestones along the spot-check scale (§14.4).
+export type WalkMode = "spot-check" | "complete";
 
 export type GestaltDimension =
   | "background"
@@ -35,11 +40,18 @@ export type WalkStep =
   | { kind: "probe" }; // a transparent planted difference (large Complete only)
 
 export interface CheckPlan {
-  preset: WalkPreset;
+  mode: WalkMode;
+  /** The full ordered sequence of checks — a spot-check is a continuous climb
+   *  through it; the user stops anywhere (Done) or runs to the end. */
   steps: WalkStep[];
-  /** false for Quick — it can never reach an affirmative verdict (§14.4). */
-  affirmative: boolean;
-  /** a transparent planted difference is present (§14.7). */
+  /** Coverage-bit milestones along the meter. `quickBits` is a visual "sanity
+   *  peek" mark (still PENDING); `goodBits` is the threshold at which the verdict
+   *  turns NO-DIFFERENCE; `totalBits` is the meter's denominator (100% = all). */
+  quickBits: number;
+  goodBits: number;
+  totalBits: number;
+  /** a transparent planted difference is present (§14.7) — Complete on a large
+   *  value only; spot-check never (its unpredictable order is the safeguard). */
   hasProbe: boolean;
   /** value-size class that shaped the plan. */
   sizeClass: "small" | "large" | "huge";
@@ -48,8 +60,8 @@ export interface CheckPlan {
 // Tunable knobs (comparison-design.md §14.2/§14.4) — composition, not soundness.
 const SMALL_MAX_CELLS = 6; // ≤ this many text cells ⇒ "small": Complete is the natural target
 const PROBE_MIN_CELLS = 12; // Complete on more displayed cells than this gets the probe
-const GOOD_TEXT = 2; // credited text cells in a Good plan (the ≥ 2 lossless backstop)
-const QUICK_TEXT = 1;
+const GOOD_TEXT = 2; // ≥ 2 lossless text cells anchor the Good milestone (the backstop)
+const QUICK_BITS = 28; // the "sanity peek" tick ≈ 1 text + ~1 gestalt (still PENDING)
 
 // Gestalt dimensions are NOT equally discriminatory, so the walk must not pick
 // them as if they were fungible. Each carries a weight = its effective
@@ -118,6 +130,22 @@ function weightedGestalt(
     const [picked] = remaining.splice(i, 1);
     out.push(picked);
     bits += GESTALT_WEIGHT[picked];
+  }
+  return out;
+}
+
+// A full weighted-random permutation (no replacement): higher-weight items tend
+// earlier, but the order stays unpredictable. Used to order the "keep going" tail
+// of a spot-check so it climbs through the more discriminatory checks first.
+function weightedOrder<T>(items: T[], weight: (t: T) => number, rng: () => number): T[] {
+  const remaining = items.slice();
+  const out: T[] = [];
+  while (remaining.length) {
+    const total = remaining.reduce((s, t) => s + weight(t), 0);
+    let r = rng() * total;
+    let i = 0;
+    while (i < remaining.length - 1 && (r -= weight(remaining[i])) >= 0) i++;
+    out.push(remaining.splice(i, 1)[0]);
   }
   return out;
 }
@@ -196,13 +224,21 @@ export function featureRects(
 }
 
 /**
- * Build a check plan. `rng` is a [0,1) source — the platform CSPRNG for a
- * single-user walk, the committed seed for a live one (M3).
+ * Build a check plan for a MODE. `rng` is a [0,1) source — the platform CSPRNG
+ * for a single-user walk, the committed seed for a live one (M3).
+ *
+ * A **spot-check** is the full continuous sequence: a Good "front" (≥2 lossless
+ * text cells + weighted gestalt CRC, shuffled) that defines the `goodBits`
+ * milestone, then the rest of the pool in weighted order so the user can keep
+ * climbing toward a full read. **Complete** reads every cell (+ the planted probe
+ * on a large value); it is the deliberate exhaustive chore. Either way the verdict
+ * is coverage-driven (PENDING below `goodBits`, NO-DIFFERENCE at/above it with the
+ * text floor met); the mode shapes the *sequence*, not the verdict rule.
  */
 export function buildCheckPlan(
   value: string,
   opts: RenderOptions,
-  preset: WalkPreset,
+  mode: WalkMode,
   rng: () => number,
 ): CheckPlan {
   const d = describeChannels(value, opts);
@@ -222,24 +258,34 @@ export function buildCheckPlan(
 
   const textStep = (i: number): WalkStep => ({ kind: "text", cellIndex: i });
   const gestaltStep = (g: GestaltDimension): WalkStep => ({ kind: "gestalt", dimension: g });
+  const bitsOf = (s: WalkStep[]) => s.reduce((b, st) => b + stepWeight(st), 0);
 
-  if (preset === "quick") {
-    const steps = [
-      ...take(creditText, QUICK_TEXT, rng).map(textStep),
-      ...weightedGestalt(gestalt, rng, { count: 1 }).map(gestaltStep),
-    ];
-    return { preset, steps: shuffle(steps, rng), affirmative: false, hasProbe: false, sizeClass };
-  }
-
-  if (preset === "good") {
-    // ≥2 lossless text cells (the backstop), then weighted gestalt added until the
-    // plan reaches the gestalt bit target — Good is "enough discriminating
-    // coverage", not a fixed count of checks.
-    const steps = [
-      ...take(creditText, Math.min(GOOD_TEXT, creditText.length), rng).map(textStep),
-      ...weightedGestalt(gestalt, rng, { bitTarget: GOOD_GESTALT_BITS }).map(gestaltStep),
-    ];
-    return { preset, steps: shuffle(steps, rng), affirmative: true, hasProbe: false, sizeClass };
+  if (mode === "spot-check") {
+    // Good front: ≥2 lossless text cells + weighted gestalt CRC — guarantees the
+    // Good milestone includes both the backstop and whole-value coverage.
+    const floor = take(creditText, Math.min(GOOD_TEXT, creditText.length), rng);
+    const frontGestalt = weightedGestalt(gestalt, rng, { bitTarget: GOOD_GESTALT_BITS });
+    const front = shuffle([...floor.map(textStep), ...frontGestalt.map(gestaltStep)], rng);
+    // The rest of the pool (remaining text + gestalt), weighted so the climb past
+    // Good keeps hitting the more discriminatory checks first.
+    const restText = creditText.filter((i) => !floor.includes(i));
+    const restGestalt = gestalt.filter((g) => !frontGestalt.includes(g));
+    const rest = weightedOrder(
+      [...restText.map(textStep), ...restGestalt.map(gestaltStep)],
+      stepWeight,
+      rng,
+    );
+    const steps = [...front, ...rest];
+    const goodBits = bitsOf(front);
+    return {
+      mode,
+      steps,
+      quickBits: Math.min(QUICK_BITS, goodBits),
+      goodBits,
+      totalBits: bitsOf(steps),
+      hasProbe: false,
+      sizeClass,
+    };
   }
 
   // complete: read all text; small Complete is full lossless (no gestalt, no probe);
@@ -254,7 +300,20 @@ export function buildCheckPlan(
     const at = Math.floor(rng() * (body.length + 1));
     body.splice(at, 0, { kind: "probe" });
   }
-  return { preset, steps: body, affirmative: true, hasProbe, sizeClass };
+  const totalBits = bitsOf(body);
+  // The verdict turns NO-DIFFERENCE once the usual Good coverage is met; a full
+  // Complete read sails past it. Clamp so a tiny value (whose total is below the
+  // nominal target) still reaches NO-DIFFERENCE when fully read.
+  const goodBits = Math.min(GOOD_TEXT * TEXT_BITS + GOOD_GESTALT_BITS, totalBits);
+  return {
+    mode,
+    steps: body,
+    quickBits: Math.min(QUICK_BITS, goodBits),
+    goodBits,
+    totalBits,
+    hasProbe,
+    sizeClass,
+  };
 }
 
 // --- the walk reducer (§14.6 state machine) -------------------------------
@@ -265,56 +324,75 @@ export type WalkResponse = "match" | "differ";
 export interface WalkState {
   plan: CheckPlan;
   index: number; // next step to present
-  status: WalkStatus;
+  status: WalkStatus; // the live (or final) verdict
   probeResets: number; // failed transparent-probe count
+  /** true once the walk is over: a confirmed differ, a missed probe twice, the
+   *  user pressed Done, or every check was completed. While false the user can
+   *  keep checking past the Good milestone (the continuous-scale model, §14.4). */
+  ended: boolean;
 }
 
+// Bits / text cells confirmed so far (completed steps before `index`).
+const doneBits = (s: WalkState): number =>
+  s.plan.steps.slice(0, s.index).reduce((b, st) => b + stepWeight(st), 0);
+const doneTextCount = (s: WalkState): number =>
+  s.plan.steps.slice(0, s.index).filter((st) => st.kind === "text").length;
+
+// The coverage-driven affirmative: NO-DIFFERENCE once ≥2 lossless text cells AND
+// the Good bit milestone are confirmed, else PENDING (a sub-Good peek).
+const liveVerdict = (s: WalkState): WalkStatus =>
+  doneTextCount(s) >= GOOD_TEXT && doneBits(s) >= s.plan.goodBits ? "no-difference" : "pending";
+
 export function startWalk(plan: CheckPlan): WalkState {
-  return { plan, index: 0, status: "pending", probeResets: 0 };
+  return { plan, index: 0, status: "pending", probeResets: 0, ended: false };
 }
 
 /**
  * Coverage meter: the fraction of the plan's *bits* confirmed so far — weighted
  * by each feature's discriminability (a confirmed ellipse advances it far more
- * than a confirmed background), never a probability. Reaches 1 when the whole
- * plan is walked. (A probe step carries 0 bits, so it doesn't move the meter.)
+ * than a confirmed background), never a probability. Reaches 1 when every check
+ * is done. (A probe step carries 0 bits, so it doesn't move the meter.)
  */
 export function coverage(state: WalkState): number {
-  const steps = state.plan.steps;
-  const total = steps.reduce((s, st) => s + stepWeight(st), 0);
-  if (!total) return 0;
-  const done = steps.slice(0, state.index).reduce((s, st) => s + stepWeight(st), 0);
-  return done / total;
+  return state.plan.totalBits ? doneBits(state) / state.plan.totalBits : 0;
 }
 
 /**
  * Apply a (UI-confirmed) response to the current step. The UI handles the
  * "re-look" prompt before reporting a confirmed `differ`, and re-queues a
- * retraction itself (it simply does not call this with `differ`).
+ * retraction itself (it simply does not call this with `differ`). A `match`
+ * advances and recomputes the live verdict; the walk does NOT auto-stop at the
+ * Good milestone — it ends only when every check is done (or via `finish`).
  */
 export function respond(state: WalkState, response: WalkResponse): WalkState {
-  if (state.status !== "pending") return state; // terminal
-  if (state.index >= state.plan.steps.length) return state; // already walked the whole plan
+  if (state.ended) return state;
+  if (state.index >= state.plan.steps.length) return state;
   const step = state.plan.steps[state.index];
 
   if (step.kind === "probe") {
     if (response === "differ") {
       // caught the planted difference → attention calibrated; advance past it
-      return finishOrAdvance({ ...state, index: state.index + 1 });
+      return advance({ ...state, index: state.index + 1 });
     }
     // missed it → inattention: reset to the start; a second miss is inconclusive
     const probeResets = state.probeResets + 1;
-    if (probeResets >= 2) return { ...state, status: "inconclusive", probeResets };
+    if (probeResets >= 2) return { ...state, status: "inconclusive", ended: true, probeResets };
     return { ...state, index: 0, probeResets };
   }
 
   // a real text/gestalt feature
-  if (response === "differ") return { ...state, status: "different" };
-  return finishOrAdvance({ ...state, index: state.index + 1 });
+  if (response === "differ") return { ...state, status: "different", ended: true };
+  return advance({ ...state, index: state.index + 1 });
 }
 
-function finishOrAdvance(state: WalkState): WalkState {
-  if (state.index < state.plan.steps.length) return state; // more to check
-  // plan complete with no `differs`: Quick stays PENDING (a peek), else NO-DIFFERENCE.
-  return { ...state, status: state.plan.affirmative ? "no-difference" : "pending" };
+function advance(state: WalkState): WalkState {
+  const status = liveVerdict(state);
+  // ended only when there is nothing left to check; otherwise the user may keep going.
+  return { ...state, status, ended: state.index >= state.plan.steps.length };
+}
+
+/** The user is done (the "Done" button): freeze the current live verdict. */
+export function finish(state: WalkState): WalkState {
+  if (state.ended) return state;
+  return { ...state, status: liveVerdict(state), ended: true };
 }

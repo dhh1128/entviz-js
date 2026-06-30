@@ -488,39 +488,33 @@ bottom?"; "does the oval lean the same way?").
 - **Raster reference** (an image we can't geometry): we ring **our** side precisely and prompt the
   user to find the matching feature on the reference.
 
-### 14.4 Presets — the user declares; the menu is size-aware
+### 14.4 The entry is a binary; Quick/Good are milestones on a continuous scale
 
-There is **no default**: the user **declares** the standard before the walk. But which presets are
-*sensible* depends on the value's **size in cells**, so the tool presents a **size-aware** menu and
-may *advise* — it never silently defaults.
+There is **no default**: the user **declares** how to check — but the choice is a **binary**, not a
+three-way preset, and Quick/Good are no longer buttons. They are **milestones along the spot-check
+scale** the user watches themselves cross.
 
-- **Small (the whole value is only a handful of cells — roughly ≤128 bits):** reading every cell is
-  trivial, so **Complete is the natural target and the only non-degenerate one** — a "Quick" check
-  of a 5-cell LEI is nonsensical (a subset is nearly the whole). Offer Complete (noting the value is
-  small enough to verify in full); mark the spot-check presets redundant. Complete here = the
-  **lossless whole value → certainty**.
-- **Large, ≤512-bit (up to ~22 cells):** all three are meaningful — Complete = lossless certainty
-  (a chore); Quick / Good = spot-check. The tool may *advise* by stakes ("256-bit value; for
-  anything irreversible, Complete") without defaulting.
-- **>512-bit (a huge value; only 20 cells are displayed):** the whole value can't be read
-  regardless, so even **Complete = "all 20 displayed cells," which is strong but not lossless**
-  (head + tail recognition + the 96-bit fingerprint-middle) — it reaches **NO-DIFFERENCE**, never
-  the lossless certainty of a small Complete. Quick / Good are lighter spot-checks of the same.
+- **Spot-check** — a single **continuous** walk: an unpredictable, weighted-ordered sequence the user
+  climbs as far as they like. The coverage meter carries **Quick and Good tick marks**; as checks
+  accumulate the user passes them. The walk does **not** stop at Good — the user keeps going for more
+  coverage or presses **Done** to stop. (Anti-habituation = the unpredictable order; **no probe**.)
+- **Complete** — the deliberate exhaustive read of **every cell, in order**, plus the **planted
+  probe** on a large value (§14.7). Distinct from "a spot-check taken to 100%": only Complete
+  guarantees every text cell *and* the probe. Small → lossless certainty; large/huge → strongest read.
+- **Size-aware:** a **small** value (≤ ~6 cells) offers **only Complete** — a spot-check of a handful
+  of cells is degenerate (a subset is nearly the whole). Large/huge offer both.
 
-The meter is a **bit-weighted coverage bar** — the fraction of the plan's *discriminability bits*
-confirmed, **not** a count of checks and **not** a `1-in-2^N` probability. Each feature advances it
-by its own weight (a confirmed ellipse moves it far more than a confirmed background; a text cell
-≈ 24 bits, §7.3), so the bar reflects *how much was actually covered*, not *how many operations
-ran*. It is a conservative upper bound, labelled as such (human-error and perceptual-coupling
-discounts are unmeasured). **Good is defined as reaching a bit target, not a fixed count of
-checks**: it takes the ≥ 2 lossless text cells (the backstop) and then **adds weighted gestalt
-until the gestalt bit target is met** — so a draw of high-discriminability channels needs fewer
-features and a draw of weak ones needs more, but the *coverage* is what's held constant. The three
-names are **anchors on a continuous scale** — the user may keep checking past Good (the meter shows
-where they are), so no fourth level is needed. **Quick caps at PENDING** ("a sanity look, not a
-verification"); **Good** and **Complete** reach **NO-DIFFERENCE**. **Credit is per-feature bits and
-0 for any non-locally-generated input cell** (a programmable / vanity value can't reach Good through
-its text — though a >512-bit one still can via the always-credited fingerprint-middle).
+The meter is a **bit-weighted coverage bar** — the fraction of the sequence's *discriminability bits*
+confirmed, **not** a count of checks and **not** a `1-in-2^N` probability. Each feature advances it by
+its own weight (a confirmed ellipse moves it far more than a confirmed background; a text cell ≈ 24
+bits, §7.3), so the bar reflects *how much was actually covered*, not *how many operations ran*. It is
+a conservative upper bound, labelled as such (human-error and perceptual-coupling discounts are
+unmeasured). The verdict is **coverage-driven**: **below the Good milestone → PENDING** ("a sanity
+look"); **at/above it, with the ≥ 2 lossless text floor met → NO-DIFFERENCE**. The Good milestone is a
+bit threshold whose front guarantees the text floor + weighted gestalt CRC; the Quick tick is a purely
+visual "you've done a peek's worth" mark (still PENDING). **Credit is per-feature bits and 0 for any
+non-locally-generated input cell** (a programmable / vanity value can't reach Good through its text —
+though a >512-bit one still can via the always-credited fingerprint-middle).
 
 ### 14.5 Reporting a check (by mode)
 
@@ -552,8 +546,13 @@ for it).
   **coverage** (the whole-value CRC + un-steerable bits), but the **affirmative still requires the
   ≥ 2 lossless text cells** — only text certifies *same value*.
 - **Each distinct feature counts once** (no re-credit for re-checking).
-- **PENDING → NO-DIFFERENCE** only when the text backstop is met **and** coverage ≥ the declared
-  preset target.
+- **The verdict is live and coverage-driven, and NO-DIFFERENCE is *not* terminal.** As the user
+  checks, the status is **PENDING** below the Good milestone and **NO-DIFFERENCE** at/above it (with
+  the ≥ 2 lossless text floor met) — but the walk keeps going. The user can **keep checking past
+  Good** (the meter climbs toward a full read) or press **Done** to stop and freeze the current live
+  verdict. The walk **ends** on: a confirmed Differs (DIFFERENT), a probe missed twice
+  (INCONCLUSIVE), **Done**, or every check completed. Stopping below Good freezes **PENDING** ("a
+  sanity look, not a verification") — that is the old "Quick" outcome, now just a place on the scale.
 - **Resets:** a **failed optional probe** (Complete) → warn + **reset the meter to 0 → PENDING**
   (graduated: a second miss ends the walk "inconclusive — do this with full attention"); a
   **preceding raster `unknown`** → the walk **starts at 0** (a degraded reference credits nothing,
@@ -561,11 +560,11 @@ for it).
 
 ### 14.7 Anti-habituation
 
-The primary mechanism is the **unpredictable mixed plan** (§14.2) — relocation by surprise, not by
+The primary mechanism is the **unpredictable mixed sequence** (§14.2) — relocation by surprise, not by
 ceremony. On top of that, a **transparent planted difference** is **standard for Complete on a
 large value** (more than ~10–12 cells, where the exhaustive read is long enough to breed
-inattention) and used **nowhere else** (a small Complete is too short to need it; Quick/Good rely
-on the unpredictable plan).
+inattention) and used **nowhere else** (a small Complete is too short to need it; a **spot-check**
+relies on its unpredictable order, so it carries no probe).
 
 It is **disclosed, not a hidden decoy**: the tool tells the user it has planted **exactly one**
 mismatch and asks them to find it. The outcomes are unambiguous:
