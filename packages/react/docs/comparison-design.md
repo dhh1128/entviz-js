@@ -108,10 +108,12 @@ The naive user picks based on situation, never on a security mode:
    can.
 2. **"I'm comparing live with another person"** — the guided two-party ceremony (§8).
 
-The only exposed security knob is a confidence target: **Quick / Strong / Paranoid**, mapping
-to concrete check counts and seed-entropy floors (§7.3, §8). No commitment / entropy-method /
-nonce-length choice is ever surfaced; all are derived (and, per §8, commitment is **on by
-default**, not a user choice).
+The only exposed security knob is a confidence target the user **declares** (there is no
+default): **Quick / Good / Complete**, mapping to concrete check plans — pinned in
+[§14](#14-m2--the-guided-walk-pinned-specification). The *sensible* choice is **size-aware**
+(for a small value Complete is cheap and the spot-check presets degenerate; §14.4). No
+commitment / entropy-method / nonce-length choice is ever surfaced; all are derived (and, per
+§8, commitment is the live default for the remote ceremony, not a user choice).
 
 ---
 
@@ -317,8 +319,9 @@ the value or comparison text; never use locale-aware casing on the value.
 Both adjudications stressed that *product severity* is uncertain because these are unspecified.
 They are prerequisites, not afterthoughts:
 
-1. **Concrete K (checklist size), L per preset, and the bit thresholds** Quick/Strong/Paranoid
-   map to — and the seed `H_min` each requires.
+1. **Concrete K (checklist size), L per preset, and the bit thresholds** Quick/Good/Complete
+   map to — and the seed `H_min` each requires. *(Pinned for M2 in
+   [§14](#14-m2--the-guided-walk-pinned-specification); seed `H_min` is an M3 item.)*
 2. **The channel-authentication model** the live ceremony assumes (what makes the OOB channel
    "authenticated" in the UX).
 3. **The full verdict state machine** (transitions, what credits/resets the meter).
@@ -381,3 +384,208 @@ partial preimage. The genuine, philosophy-independent requirements are the machi
 meter fixes (S3, S6, S10, S12) plus human hardening (S2, S9). And commitment **does** belong in
 the live default — not because text is weak, but because the live ceremony admits a last-mover
 who could steer the check-order. This doc encodes that corrected, adjudicated position.
+
+---
+
+## 14. M2 — the guided walk (pinned specification)
+
+This section pins the guided walk for implementation. It **supersedes the §7 sketch and the §4
+preset names where they differ** — notably: presets are **Quick / Good / Complete**; gestalt
+dimensions **contribute coverage**, not fail-fast only; attention probes are **opt-in for
+Complete only**; commitment/seed/channel-auth move to the live ceremony (M3, §8). It is grounded
+in the companion adversarial paper *Measuring the Glance*: the operative strength is a **curve**,
+the casual glance is loose and parallel, and a difference is reliably *perceived* only when
+attention is **directed** to a feature. The walk's job is to spend scarce attention well.
+
+It covers the **single-user** walk (when the machine path bailed to `unknown` — an inconsistent
+SVG, a raster, a >512-bit input — and the human verifies anyway) and the shared mechanics the
+live ceremony builds on.
+
+### 14.1 What a walk checks: text cells and gestalt dimensions
+
+A difference can be checked along many **features**, of two kinds:
+
+- **Text cells** — a cell's glyphs. *Local, lossless* (at ≤512 bits the text *is* the value),
+  *input-driven* (steerable: an attacker can set them by choosing the input). They are the
+  **certainty backstop** — matching one exactly is positive proof for that slice of the value.
+- **Gestalt dimensions** — each one **dimension along which the figure-as-a-whole is
+  characterized**, and each a deterministic function of SHA-512 of the *entire* value
+  (*hash-driven / un-steerable*), so **a difference anywhere in the value avalanches every
+  gestalt dimension at once** — together they are a **whole-value CRC**, and being un-steerable
+  they are the *true* grind cost against the realistic constrained attacker. The checkable pool
+  (all carried by ringable elements):
+  - *Salient (read loosely in the parallel glance; focus to confirm):* **background colour**
+    (~2 bits); **colour-bar pattern** — band order + heights (~4.6 bits for the order);
+    **ellipse** — orientation / aspect / size (~7 bits, factored); **blank pattern** — which
+    cells are holes.
+  - *Positional CRC (need directed attention; higher positional bits):* **colour-bar markers**
+    (the two gutter circles' slot positions); **quartile marks** (the four triangles' cell
+    positions, ~4·log₂N); **blank-map markers** (the plus = max, dot = min inside the one map
+    cell).
+
+  Two clarifications. The **blank pattern** (where the holes are) and the **blank-map markers**
+  (where the map's plus/dot point) are *separate* dimensions — the map is the single
+  lowest-indexed blank and *additionally* carries the min/max marks. The per-cell **surround
+  texture** (24 box on/offs = `data-surround-bits`) is *machine-grade* — it is why `compareSvg`
+  is strong, but 24 on/offs are below reliable eyeball discrimination, so it stays out of the
+  human pool (offered only as a diligent extra in Complete). Nucleus *colour* re-encodes the
+  cell's text bits, so it is checked *as* the text, not as a separate dimension.
+
+> **"Gestalt" means "characterizing the whole rather than the parts," along one dimension of
+> analysis** — the way light/dark ratio and clumpiness are both properties of a bitmap, yet a
+> viewer attends one *independently* of the other. It does **not** mean "absorbed automatically
+> in one glance": a casual glance reads the gestalt loosely and in parallel and can miss any
+> given dimension (crowding, overlay-tint coupling, masking — *Measuring the Glance* §5–6). Each
+> gestalt dimension must have attention **directed** to it to be discriminated reliably — which
+> is exactly why the walk focuses *every* feature, gestalt or text. (A dimension too diffuse to
+> localise — overall "clumpiness", grid aspect ratio — is not a checkable feature; we check only
+> dimensions carried by a *ringable element*, and a gross structural difference like a different
+> grid shape is caught for free.)
+
+### 14.2 The check plan
+
+A walk executes a **check plan**: an **unpredictable, ordered subset** of features.
+
+- **Mixed.** A plan combines text cells and gestalt dimensions (e.g. *2 text + colour-bar order +
+  ellipse*, or *4 text + colour-bar order*). It always includes **≥ 2 text cells** as the lossless
+  backstop — a gestalt match is only *within human tolerance* and cannot, alone, bless. The exact
+  recipe per preset is a tunable knob, not a blocker.
+- **Unpredictable selection + order** — from the **local CSPRNG** (single-user) or the
+  **committed-then-revealed seed** (live remote, M3), so neither the user's habit nor a steering
+  peer can pre-empt it. *This unpredictability is the anti-habituation mechanism*: the user can't
+  pre-load a rote answer, they must look at whatever the ring lands on. (It retires planted
+  decoys for Quick/Good; see §14.6 for the Complete-only probe.)
+- The **familiar ends** (first/last cells) are **recognition-only, zero credit** — eligible for
+  the random pool but never privileged, so an attacker who vanity-grinds the ends gains nothing.
+- For **>512-bit** inputs the **fingerprint-middle (Crockford) cells are the mandatory anchor** —
+  SHA-512-derived (hard to forge unconditionally) and single-case / homoglyph-clean; head/tail are
+  recognition-only.
+
+### 14.3 Directing attention (any feature)
+
+Because the tool renders both figures, it knows the **exact geometry** of every element from the
+render model (`describeChannels` + geometry). The §7.1 focus ring therefore **generalises to every
+feature**: a computed highlight **around** (never over) the element that carries it — a cell, the
+colour-bar rect, the ellipse's contour/bounding box, a marker, a blank cell — drawn in the
+**tool-controlled container** (fixed integer scale, host-transform-proof), anchored by re-measuring
+live geometry. One feature at a time, on **both** figures. For a **gestalt dimension** the ring
+lands on its carrying element and a short prompt names the dimension ("same colours, top to
+bottom?"; "does the oval lean the same way?").
+
+- **SVG / value reference** (we re-render it): both rings are precise.
+- **Raster reference** (an image we can't geometry): we ring **our** side precisely and prompt the
+  user to find the matching feature on the reference.
+
+### 14.4 Presets — the user declares; the menu is size-aware
+
+There is **no default**: the user **declares** the standard before the walk. But which presets are
+*sensible* depends on the value's **size in cells**, so the tool presents a **size-aware** menu and
+may *advise* — it never silently defaults.
+
+- **Small (the whole value is only a handful of cells — roughly ≤128 bits):** reading every cell is
+  trivial, so **Complete is the natural target and the only non-degenerate one** — a "Quick" check
+  of a 5-cell LEI is nonsensical (a subset is nearly the whole). Offer Complete (noting the value is
+  small enough to verify in full); mark the spot-check presets redundant. Complete here = the
+  **lossless whole value → certainty**.
+- **Large, ≤512-bit (up to ~22 cells):** all three are meaningful — Complete = lossless certainty
+  (a chore); Quick / Good = spot-check. The tool may *advise* by stakes ("256-bit value; for
+  anything irreversible, Complete") without defaulting.
+- **>512-bit (a huge value; only 20 cells are displayed):** the whole value can't be read
+  regardless, so even **Complete = "all 20 displayed cells," which is strong but not lossless**
+  (head + tail recognition + the 96-bit fingerprint-middle) — it reaches **NO-DIFFERENCE**, never
+  the lossless certainty of a small Complete. Quick / Good are lighter spot-checks of the same.
+
+The meter is a **coverage bar** (features checked of the plan), **not** a `1-in-2^N` probability;
+a conservative bit estimate lives in a tooltip only, labelled an upper bound before human-error
+discount. The three names are **anchors on a continuous scale** — the user may keep checking past
+Good (the meter shows where they are), so no fourth level is needed. **Quick caps at PENDING** ("a
+sanity look, not a verification"); **Good** and **Complete** reach **NO-DIFFERENCE**. **Credit is
+binary per feature and 0 for any non-locally-generated input cell** (a programmable / vanity value
+can't reach Good through its text — though a >512-bit one still can via the always-credited
+fingerprint-middle).
+
+### 14.5 Reporting a check (by mode)
+
+A focused check is reported **Matches / Differs**; *how* depends on the channel:
+
+- **Single-user (visual, both figures in the pinned font, side by side):** **click**. No read-back —
+  the pinned high-disambiguation font makes glyph differences (incl. base64url confusables) visible,
+  and focusing supplies the attention, so homoglyph erosion ≈ 0.
+- **Live + a trusted digital channel:** the parties **copy/paste** the value or comparison text and
+  we run the **machine compare** — definitive, no walk. Strictly better than reading aloud whenever
+  available. (Pasting the *value* is definitive; pasting *comparison text* is definitive ≤512, but
+  only a strong-but-`unknown` match >512 — the text isn't lossless there.)
+- **Live, voice-only:** **typed or spoken read-back**. **No NATO**; homoglyphs are *tolerated* and
+  compensated by **one extra credited text cell** when the plan contains base64url cells (arbitrary
+  text / DID / URN) — never for >512 (the Crockford anchor is clean) or homoglyph-safe alphabets
+  (hex, base58, bech32, base32, Crockford, decimal, Ethereum).
+
+### 14.6 Verdict state machine
+
+States: **DIFFERENT** (terminal) · **PENDING** · **NO-DIFFERENCE** (coverage; affirmative-but-
+probabilistic) · **IDENTICAL** (machine-only — **never** reachable from a walk; reserve `=`/green
+for it).
+
+- **Any feature reported Differs → re-look prompt.** *Maintained* → **DIFFERENT** (terminal,
+  certain). *Retracted* ("misclick") → the feature is **re-queued as a fresh check**, never silently
+  credited, so a hasty or pressured retraction can't become a free pass. (We never offer a "confirm
+  your Matches" — that would coach a stamper.)
+- **A gestalt dimension fails-fast to DIFFERENT** like any feature; a *match* contributes
+  **coverage** (the whole-value CRC + un-steerable bits), but the **affirmative still requires the
+  ≥ 2 lossless text cells** — only text certifies *same value*.
+- **Each distinct feature counts once** (no re-credit for re-checking).
+- **PENDING → NO-DIFFERENCE** only when the text backstop is met **and** coverage ≥ the declared
+  preset target.
+- **Resets:** a **failed optional probe** (Complete) → warn + **reset the meter to 0 → PENDING**
+  (graduated: a second miss ends the walk "inconclusive — do this with full attention"); a
+  **preceding raster `unknown`** → the walk **starts at 0** (a degraded reference credits nothing,
+  §6.3).
+
+### 14.7 Anti-habituation
+
+The primary mechanism is the **unpredictable mixed plan** (§14.2) — relocation by surprise, not by
+ceremony. On top of that, a **transparent planted difference** is **standard for Complete on a
+large value** (more than ~10–12 cells, where the exhaustive read is long enough to breed
+inattention) and used **nowhere else** (a small Complete is too short to need it; Quick/Good rely
+on the unpredictable plan).
+
+It is **disclosed, not a hidden decoy**: the tool tells the user it has planted **exactly one**
+mismatch and asks them to find it. The outcomes are unambiguous:
+- **found zero** → inattention (→ reset, §14.6);
+- **found exactly one** → attention calibrated; the planted difference is discarded;
+- **found more than one** → the values genuinely differ (a real mismatch avalanches into many).
+
+Because it is disclosed, it adds confidence without the tool ever deceiving the user, and the
+single planted difference doubles as the calibration baseline against which any *real* difference
+stands out.
+
+### 14.8 Messaging & mental model
+
+How the walk is framed teaches a mental model and calibrates risk, so it is a **first-class part
+of the design, not chrome**. Three ideas the copy must instill:
+
+- **A glance can miss things; this walk *aims* your attention so you actually see.** (Counters the
+  "I looked, it's fine" overconfidence the paper warns of.)
+- **Text *proves* a slice of the value; the picture *covers* the whole** — a real difference lights
+  up many features at once.
+- **You declared the standard; here is exactly what it does and does not promise.**
+
+Per-preset framing (illustrative; localized per the pill catalog):
+
+- **Quick** — "A sanity peek, not a verification — this proves nothing on its own."
+- **Good** — "We'll aim your attention at a handful of unpredictable features — some exact text,
+  some whole-figure patterns. If anything differs, stop. A strong spot-check, not exhaustive."
+- **Complete (large)** — "We'll walk every cell in a deliberate, unpredictable order, and we've
+  planted **exactly one** difference — find it. Find none and you weren't really looking; find more
+  than one and the values genuinely differ."
+- **Complete (small)** — "This value is small enough to verify in full; we'll read every cell."
+
+Verdict copy keeps the §3 discipline: reserve `=` / green / the word "identical" for a **machine**
+result; a human walk yields **"no difference found across what you checked,"** never certainty.
+
+### 14.9 Out of scope → M3 (the live ceremony, §8)
+
+The **committed seed + reveal**, the **channel-authentication affirmation** (what the UX requires to
+treat the out-of-band channel as authenticated), and the **copy/paste-vs-voice routing** for the
+*remote* ceremony are M3. This section specifies the single-user walk and the shared mechanics
+(plan, focus, presets, state machine) the ceremony reuses.
