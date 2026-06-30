@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { Entviz } from "../src/index.ts";
 
 // Migrated from node:test + react-dom/server to Vitest + Testing Library + jsdom:
@@ -56,5 +56,93 @@ describe("Entviz", () => {
     expect(container.querySelector("svg")).toBeNull();
     // The custom title labels the fallback too.
     expect(img(container).getAttribute("aria-label")).toBe("labelled");
+  });
+});
+
+// --- opt-in controls (size ladder + reshape picker) ------------------------
+
+const MULTI = "0123456789abcdef".repeat(4); // ~11 cells → several grid shapes
+const SINGLE = "0123456789abcdef01234567"; // 4 tokens → exactly one shape (2x2)
+
+const btn = (c: HTMLElement, name: string) =>
+  c.querySelector(`[aria-label="${name}"]`) as HTMLButtonElement;
+const figW = (c: HTMLElement) => (c.querySelector("svg") as SVGElement).getAttribute("width");
+
+describe("Entviz controls", () => {
+  test("off by default: a single span, no control strip", () => {
+    const { container } = render(<Entviz value={MULTI} />);
+    expect(container.querySelector('[aria-label="size"]')).toBeNull();
+    expect(container.firstChild).toBe(img(container)); // the span IS the root
+  });
+
+  test("size: + / − step the font ladder (uncontrolled); 0 resets via keyboard", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    expect(container.textContent).toContain("12pt");
+    fireEvent.click(btn(container, "larger"));
+    expect(container.textContent).toContain("14pt");
+    fireEvent.click(btn(container, "smaller"));
+    expect(container.textContent).toContain("12pt");
+    fireEvent.click(btn(container, "larger")); // → 14pt, then reset
+    const wrap = container.querySelector('div[tabindex="0"]') as HTMLElement;
+    fireEvent.keyDown(wrap, { key: "0" });
+    expect(container.textContent).toContain("12pt");
+  });
+
+  test("size: ladder clamps at both ends (buttons disable), within the spec [6,30]", () => {
+    const lo = render(<Entviz value={MULTI} controls fontSizePt={6} />);
+    expect(btn(lo.container, "smaller").disabled).toBe(true);
+    expect(btn(lo.container, "larger").disabled).toBe(false);
+    const hi = render(<Entviz value={MULTI} controls fontSizePt={30} />);
+    expect(btn(hi.container, "larger").disabled).toBe(true);
+  });
+
+  test("size: keyboard +/- step; an unrelated key is ignored", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    const wrap = container.querySelector('div[tabindex="0"]') as HTMLElement;
+    fireEvent.keyDown(wrap, { key: "+" });
+    expect(container.textContent).toContain("14pt");
+    fireEvent.keyDown(wrap, { key: "-" });
+    expect(container.textContent).toContain("12pt");
+    fireEvent.keyDown(wrap, { key: "x" }); // ignored
+    expect(container.textContent).toContain("12pt");
+  });
+
+  test("size: controlled — onResize fires, the prop still drives the figure", () => {
+    const onResize = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} onResize={onResize} />);
+    fireEvent.click(btn(container, "larger"));
+    expect(onResize).toHaveBeenCalledWith(14);
+    expect(container.textContent).toContain("12pt"); // controlled: unchanged until the prop updates
+  });
+
+  test("reshape: offers the achievable shapes; one is active; picking re-shapes (uncontrolled)", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    const shapes = [...container.querySelectorAll('[aria-label="shape"] button')] as HTMLButtonElement[];
+    expect(shapes.length).toBeGreaterThan(1);
+    expect(shapes.filter((b) => b.getAttribute("aria-pressed") === "true").length).toBe(1);
+    const before = figW(container);
+    const other = shapes.find((b) => b.getAttribute("aria-pressed") !== "true")!;
+    fireEvent.click(other);
+    expect(other.getAttribute("aria-pressed")).toBe("true"); // now active
+    expect(figW(container)).not.toBe(before); // figure re-shaped
+  });
+
+  test("reshape: controlled — onReshape fires with the shape's targetAr", () => {
+    const onReshape = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} onReshape={onReshape} />);
+    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
+      (b) => b.getAttribute("aria-pressed") !== "true",
+    ) as HTMLButtonElement;
+    fireEvent.click(other);
+    expect(onReshape).toHaveBeenCalledTimes(1);
+    expect(typeof onReshape.mock.calls[0][0]).toBe("number");
+  });
+
+  test("reshape: suppressed when reshapable=false, or when only one shape exists", () => {
+    const off = render(<Entviz value={MULTI} controls reshapable={false} />);
+    expect(off.container.querySelector('[aria-label="shape"]')).toBeNull();
+    expect(off.container.querySelector('[aria-label="size"]')).toBeTruthy(); // size still there
+    const single = render(<Entviz value={SINGLE} controls />);
+    expect(single.container.querySelector('[aria-label="shape"]')).toBeNull(); // only one arrangement
   });
 });

@@ -149,11 +149,20 @@ export function App() {
                 targetAr={targetAr}
                 fontSizePt={fontSizePt}
                 note={note || null}
-                style={{ width, display: "block" }}
+                controls
+                onResize={setFontSizePt}
+                onReshape={(ar) => setTargetAr(Number(ar.toFixed(2)))}
+                style={width ? { width } : undefined}
                 onError={(m) => console.warn("entviz onError:", m)}
               />
             )}
           </div>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
+            The −/+ buttons step a clean font-size ladder (or focus the figure and press
+            <code style={{ fontFamily: mono }}> +</code> / <code style={{ fontFamily: mono }}>−</code> /
+            <code style={{ fontFamily: mono }}> 0</code>); the little grids reshape the grid. Both are wired to
+            the sliders above, so they stay in sync.
+          </p>
 
           <label style={{ ...labelStyle, marginTop: 16 }}>Props</label>
           <pre style={{ fontFamily: mono, fontSize: 12, background: "#1a1a2e", color: "#e6e6f0", padding: 14, borderRadius: 10, overflowX: "auto", margin: 0 }}>

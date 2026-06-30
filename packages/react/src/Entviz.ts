@@ -4,7 +4,7 @@
  * or mobile UI. A thin wrapper over the certified @entviz/core renderer.
  */
 import React from "react";
-import { render, type RenderOptions } from "@entviz/core";
+import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
 
 export interface EntvizProps {
   /** The high-entropy value to visualize (key, hash, UUID, address, …). */
@@ -22,6 +22,19 @@ export interface EntvizProps {
   title?: string;
   /** Called with the error message if rendering throws (e.g. bad note). */
   onError?: (message: string) => void;
+  /** Show opt-in, suppressible size (font-size ladder) + reshape controls beside
+   *  the figure. Off by default — the bare component stays a pure render. */
+  controls?: boolean;
+  /** Whether the reshape (grid-shape) control is offered when `controls` is on
+   *  (default true). The comparator turns this off for a raster reference, which
+   *  can't be re-rendered into a different shape. */
+  reshapable?: boolean;
+  /** Resize handler. When given, font size is CONTROLLED (the parent owns it —
+   *  e.g. the comparator drives both figures); otherwise it is managed internally. */
+  onResize?: (fontSizePt: number) => void;
+  /** Reshape handler. When given, the aspect ratio is CONTROLLED; otherwise
+   *  managed internally. Receives the `targetAr` of the chosen grid shape. */
+  onReshape?: (targetAr: number) => void;
 }
 
 /**
@@ -36,9 +49,22 @@ export interface EntvizProps {
  * have. The root <svg> carries a viewBox, so the entviz scales responsively.
  */
 export function Entviz(props: EntvizProps): React.ReactElement {
-  const { value, targetAr, fontSizePt, note, className, style, title, onError } = props;
+  const { value, targetAr, fontSizePt, note, className, style, title, onError,
+    controls = false, reshapable = true, onResize, onReshape } = props;
+
+  // Opt-in resize/reshape state: CONTROLLED when the parent passes a handler (it
+  // owns the value — e.g. the comparator drives both figures), else managed
+  // internally. With controls off, fs/ar are exactly the props — the bare
+  // component is unchanged and pure.
+  const [stateFs, setStateFs] = React.useState(() => fontSizePt ?? DEFAULT_FONT_SIZE_PT);
+  const [stateAr, setStateAr] = React.useState(() => targetAr ?? 1);
+  const fsControlled = onResize !== undefined;
+  const arControlled = onReshape !== undefined;
+  const fs = controls ? (fsControlled ? (fontSizePt ?? DEFAULT_FONT_SIZE_PT) : stateFs) : fontSizePt;
+  const ar = controls ? (arControlled ? (targetAr ?? 1) : stateAr) : targetAr;
+
   const svg = React.useMemo(() => {
-    const opts: RenderOptions = { targetAr, fontSizePt, note };
+    const opts: RenderOptions = { targetAr: ar, fontSizePt: fs, note };
     try {
       return render(value, opts);
     } catch (e) {
@@ -46,7 +72,7 @@ export function Entviz(props: EntvizProps): React.ReactElement {
       if (onError) onError(msg);
       return null;
     }
-  }, [value, targetAr, fontSizePt, note, onError]);
+  }, [value, ar, fs, note, onError]);
 
   // PSY-JS-F3: fold the note into the default accessible label so a screen
   // reader conveys the caption a sighted user sees in the bottom strip. An
@@ -63,13 +89,111 @@ export function Entviz(props: EntvizProps): React.ReactElement {
       "aria-label": title ?? "entviz (render error)",
     });
   }
-  return React.createElement("span", {
-    className,
-    style,
+  const figure = React.createElement("span", {
+    ...(controls ? {} : { className, style }),
     role: "img",
     "aria-label": title ?? defaultLabel,
     dangerouslySetInnerHTML: { __html: svg },
   });
+
+  if (!controls) return figure;
+
+  // --- opt-in controls (size ladder + reshape picker), beside the figure ------
+  const h = React.createElement;
+  const curPt = fs ?? DEFAULT_FONT_SIZE_PT;
+  const setFs = (v: number) => (fsControlled ? onResize!(v) : setStateFs(v));
+  const setAr = (v: number) => (arControlled ? onReshape!(v) : setStateAr(v));
+  const ladderIdx = nearestLadderIndex(curPt);
+  const stepFs = (dir: number) =>
+    setFs(FONT_SIZE_LADDER[Math.max(0, Math.min(FONT_SIZE_LADDER.length - 1, ladderIdx + dir))]);
+  const reset = () => { setFs(fontSizePt ?? DEFAULT_FONT_SIZE_PT); setAr(targetAr ?? 1); };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (["+", "="].includes(e.key)) { e.preventDefault(); stepFs(1); }
+    else if (["-", "_"].includes(e.key)) { e.preventDefault(); stepFs(-1); }
+    else if (e.key === "0") { e.preventDefault(); reset(); }
+  };
+
+  const shapes = gridShapes(value);
+  const cur = describeChannels(value, { targetAr: ar, fontSizePt: fs, note });
+  const sizeGroup = h(
+    "div",
+    { role: "group", "aria-label": "size", style: ctlGroup },
+    h("button", { type: "button", onClick: () => stepFs(-1), disabled: ladderIdx === 0, "aria-label": "smaller", style: ctlBtn }, "−"),
+    h("span", { style: ctlValue }, `${curPt}pt`),
+    h("button", { type: "button", onClick: () => stepFs(1), disabled: ladderIdx === FONT_SIZE_LADDER.length - 1, "aria-label": "larger", style: ctlBtn }, "+"),
+  );
+  const reshapeGroup =
+    reshapable && shapes.length > 1
+      ? h(
+          "div",
+          { role: "group", "aria-label": "shape", style: ctlGroup },
+          shapes.map((s) => {
+            const active = s.cols === cur.cols && s.rows === cur.rows;
+            return h(
+              "button",
+              {
+                key: `${s.cols}x${s.rows}`, type: "button",
+                onClick: () => setAr(s.targetAr),
+                "aria-label": `${s.cols} by ${s.rows}`, "aria-pressed": active,
+                style: { ...thumbBtn, ...(active ? thumbActive : null) },
+              },
+              gridThumb(s.cols, s.rows),
+            );
+          }),
+        )
+      : null;
+
+  return h(
+    "div",
+    { className, style: { ...wrapperStyle, ...style }, onKeyDown, tabIndex: 0 },
+    figure,
+    h("div", { style: ctlStrip }, sizeGroup, reshapeGroup),
+  );
 }
+
+/** The clean font-size ladder the size control steps through (points). Bounded
+ *  to the spec's valid font-size range [6, 30]. */
+export const DEFAULT_FONT_SIZE_PT = 12;
+export const FONT_SIZE_LADDER = [6, 8, 10, 12, 14, 16, 20, 24, 30];
+
+function nearestLadderIndex(pt: number): number {
+  let best = 0, bestD = Infinity;
+  FONT_SIZE_LADDER.forEach((v, i) => {
+    const d = Math.abs(v - pt);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+
+// A tiny cols×rows grid icon for a reshape option (Google-Docs-table style).
+function gridThumb(cols: number, rows: number): React.ReactElement {
+  const cell = 3, gap = 1, pad = 1;
+  const w = pad * 2 + cols * cell + (cols - 1) * gap;
+  const hgt = pad * 2 + rows * cell + (rows - 1) * gap;
+  const cells: React.ReactElement[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push(React.createElement("rect", {
+        key: `${r}-${c}`, x: pad + c * (cell + gap), y: pad + r * (cell + gap),
+        width: cell, height: cell, fill: "currentColor",
+      }));
+    }
+  }
+  return React.createElement("svg", { width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`, "aria-hidden": true, style: { display: "block" } }, cells);
+}
+
+const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "flex-start" };
+const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
+const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
+const ctlBtn: React.CSSProperties = {
+  font: "inherit", fontSize: "0.85em", lineHeight: 1, minWidth: 22, padding: "2px 6px", borderRadius: 6, cursor: "pointer",
+  border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)",
+};
+const ctlValue: React.CSSProperties = { font: "inherit", fontSize: "0.8em", opacity: 0.8, minWidth: 34, textAlign: "center" };
+const thumbBtn: React.CSSProperties = {
+  display: "inline-flex", padding: 3, borderRadius: 6, cursor: "pointer",
+  border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
+};
+const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
 
 export default Entviz;
