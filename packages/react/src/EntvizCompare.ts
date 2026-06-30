@@ -354,25 +354,28 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     h(
       "div",
       { style: panelsStyle, "data-entviz-layout": layout },
-      // Yours — carries the shared size/reshape controls (drives both panels;
-      // suppressed during a walk so the focus ring overlays the figure cleanly).
-      // Reshape is disabled for a raster reference (an image can't be re-shaped).
+      // Yours — carries the shared size/reshape controls (drives both panels).
+      // During a walk the controls are suppressed and the bare figure goes in a
+      // figureBox so the focus ring overlays cleanly. NOTE: figureBox zeroes the
+      // font/line box (to kill the inline-svg gap), so it must wrap ONLY the bare
+      // figure — never the controls (their button text would vanish).
       h(
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.yours),
-        h(
-          "div",
-          { style: figureBox },
-          h(Entviz, {
-            value, targetAr: dispAr, fontSizePt: dispFs, note,
-            controls: !walking, reshapable: medium !== "raster",
-            onResize: setDispFs, onReshape: setDispAr,
-            style: panelEntviz,
-          }),
-          // The guided walk reuses THIS figure: ring the feature it's checking.
-          walking && walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
-        ),
+        walking
+          ? h(
+              "div",
+              { style: figureBox },
+              h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
+              walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
+            )
+          : h(Entviz, {
+              value, targetAr: dispAr, fontSizePt: dispFs, note,
+              controls: true, reshapable: medium !== "raster",
+              onResize: setDispFs, onReshape: setDispAr,
+              style: panelEntviz,
+            }),
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
       // figure (or a placeholder of the same footprint) sits DIRECTLY under the
@@ -382,18 +385,18 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
-        h(
-          "div",
-          { style: figureBox },
-          refDisplayValue !== null
-            ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
-            // Sized to OUR figure's exact footprint (tracks dispAr + dispFs), so
-            // the empty slot is the same size beside "Yours" and previews where the
-            // reference will land.
-            : h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder),
-          walking && walkStep && refDisplayValue !== null
-            ? ringOverlay(refModel, walkStep, "reference") : null,
-        ),
+        refDisplayValue === null
+          // empty slot, sized to OUR figure's footprint (NOT in figureBox — its
+          // placeholder text must stay visible)
+          ? h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder)
+          : walking
+            ? h(
+                "div",
+                { style: figureBox },
+                h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
+                walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
+              )
+            : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
         // Acquisition inputs hide during a walk (no mid-walk reference edits).
         walking ? null : acquisition,
         eff && refContent.trim()
