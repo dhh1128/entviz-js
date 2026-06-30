@@ -183,7 +183,8 @@ function gridThumb(cols: number, rows: number): React.ReactElement {
 }
 
 const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "flex-start" };
-const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
+// Single-row toolbar below the figure: size group + reshape group, never wrapped.
+const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
 const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
 const ctlBtn: React.CSSProperties = {
   font: "inherit", fontSize: "0.85em", lineHeight: 1, minWidth: 22, padding: "2px 6px", borderRadius: 6, cursor: "pointer",

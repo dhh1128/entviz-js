@@ -314,23 +314,39 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("Reference: provided")).toBeTruthy();
   });
 
-  test("offers a manual cell-walk for a value reference", () => {
+  test("offers Spot-check and Complete for a large value; only Complete for a small one", () => {
+    const MULTI = "0123456789abcdef".repeat(4); // large
+    const big = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    expect(screen.getByRole("button", { name: /spot-check/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /check \(complete\)/i })).toBeTruthy();
+    big.unmount();
+    // a small value: a spot-check is degenerate, so only Complete
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
-    fireEvent.click(screen.getByRole("button", { name: /walking the cells/i }));
-    expect(screen.getByText(/how do you want to check/i)).toBeTruthy(); // the walk's mode picker
+    expect(screen.queryByRole("button", { name: /spot-check/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /check \(complete\)/i })).toBeTruthy();
   });
 
-  test("the walk reuses the static figures (no second pair) and rings them", () => {
+  test("clicking Spot-check reuses the static figures (no second pair) and rings them", () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
     expect(screen.getAllByRole("img").length).toBe(2); // ours + reference
-    fireEvent.click(screen.getByRole("button", { name: /walking the cells/i }));
-    fireEvent.click(screen.getByRole("button", { name: /spot-check/i })); // spot-check mode
+    fireEvent.click(screen.getByRole("button", { name: /spot-check/i })); // straight into the walk
     expect(screen.getAllByRole("img").length).toBe(2); // STILL two — no duplicate pair
     // a focus-ring overlay is drawn on the existing figures (mask id from ringOverlay)
     expect(container.querySelector('[id^="entviz-walk-spot-"]')).toBeTruthy();
+  });
+
+  test("Complete launches a walk; finishing clears the focus ring", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    expect(screen.getByRole("button", { name: /looks the same/i })).toBeTruthy(); // walking
+    fireEvent.click(screen.getByRole("button", { name: /done — that's enough/i }));
+    expect(container.querySelector('[id^="entviz-walk-spot-"]')).toBeNull(); // ring cleared on finish
   });
 
   test("warns on secret material; RTL + messages override", () => {

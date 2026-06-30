@@ -184,7 +184,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [walking, setWalking] = useState(false);
+  // null = not walking (show the two entry buttons); otherwise the chosen mode.
+  const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
+  const walking = walkMode !== null;
   // The feature the guided walk is currently checking — the walk reports it (it
   // runs with externalFigures), and we ring it on OUR static figures (#reuse).
   const [walkStep, setWalkStep] = useState<WalkStep | null>(null);
@@ -202,6 +204,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     try { return describeChannels(value, dispOpts); } catch { return null; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, dispAr, dispFs, note]);
+  // A small value (≤6 filled cells) offers only Complete — a spot-check of a
+  // handful of cells is degenerate (§14.4).
+  const small = Boolean(ourModel) && !ourModel!.truncated && ourModel!.cells.filter((c) => !c.blank).length <= 6;
 
   // The empty reference placeholder matches OUR figure's footprint exactly (the
   // render model's viewBox W×H at the live size/shape), so the two boxes are the
@@ -372,11 +377,12 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
               h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
               walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
             )
+          // No fixed width — the controls wrapper hugs the figure at its intrinsic
+          // (font-driven) size, so resizing grows the panel and the row reflows (#2).
           : h(Entviz, {
               value, targetAr: dispAr, fontSizePt: dispFs, note,
               controls: true, reshapable: medium !== "raster",
               onResize: setDispFs, onReshape: setDispAr,
-              style: panelEntviz,
             }),
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
@@ -398,7 +404,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
                 h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
                 walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
               )
-            : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
+            : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureCell }),
         // Acquisition inputs hide during a walk (no mid-walk reference edits).
         walking ? null : acquisition,
         eff && refContent.trim()
@@ -418,6 +424,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     ),
     h("span", { style: caption }, m.recognitionNote),
     // Manual verification: available for a value reference (M2b walks value-vs-value).
+    // Two entry buttons up front (terse labels; hover explains) — Spot-check and
+    // Check (complete); a small value offers only Complete. Each launches the walk
+    // directly in that mode (no intermediate picker).
     medium === "text" && refContent.trim()
       ? walking
         ? h(EntvizWalk, {
@@ -427,14 +436,19 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             fontSizePt: dispFs,
             note,
             layout,
+            mode: walkMode!, // launch straight into the chosen mode
             externalFigures: true, // reuse our static figures; just report the step
             onStep: setWalkStep,
+            onComplete: () => setWalkStep(null),
             style: { marginTop: 4 },
           })
         : h(
-            "button",
-            { type: "button", onClick: () => setWalking(true), style: walkLaunchStyle },
-            m.walkLaunch,
+            "div",
+            { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+            small
+              ? null
+              : h("button", { type: "button", onClick: () => setWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
+            h("button", { type: "button", onClick: () => setWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
           )
       : null,
   );
@@ -449,7 +463,8 @@ const walkLaunchStyle: CSSProperties = {
 
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
-const panelEntviz: CSSProperties = { width: 180, display: "block" };
+// The reference figure hugs its intrinsic (font-driven) size so it tracks resize.
+const figureCell: CSSProperties = { display: "inline-block" };
 // Walk figures render at intrinsic size (no fixed width) so figureBox hugs them
 // and the ring overlay maps 1:1 in the entviz's own coordinate units.
 const figureFill: CSSProperties = { display: "block" };
