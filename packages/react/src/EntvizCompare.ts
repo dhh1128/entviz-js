@@ -367,7 +367,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           ? h(
               "div",
               { style: figureBox },
-              h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
+              // intrinsic size (NOT panelEntviz's fixed width) so figureBox hugs
+              // the figure and the overlay maps 1:1 — otherwise the ring scales off
+              h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
               walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
             )
           : h(Entviz, {
@@ -393,7 +395,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             ? h(
                 "div",
                 { style: figureBox },
-                h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
+                h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
                 walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
               )
             : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz }),
@@ -448,6 +450,9 @@ const walkLaunchStyle: CSSProperties = {
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const panelEntviz: CSSProperties = { width: 180, display: "block" };
+// Walk figures render at intrinsic size (no fixed width) so figureBox hugs them
+// and the ring overlay maps 1:1 in the entviz's own coordinate units.
+const figureFill: CSSProperties = { display: "block" };
 // An empty reference slot the same footprint as OUR figure (size from
 // placeholderSize), so both panels show a figure-sized box side-by-side (#3).
 const placeholderBox: CSSProperties = {
