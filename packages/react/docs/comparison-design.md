@@ -455,6 +455,18 @@ A walk executes a **check plan**: an **unpredictable, ordered subset** of featur
   peer can pre-empt it. *This unpredictability is the anti-habituation mechanism*: the user can't
   pre-load a rote answer, they must look at whatever the ring lands on. (It retires planted
   decoys for Quick/Good; see §14.6 for the Complete-only probe.)
+- **Weighted, not uniform — the gestalt dimensions are not fungible.** Per *Measuring the Glance*
+  §5–6 the channels differ markedly in discriminability under directed attention (comparison JNDs):
+  the ellipse ≈ 7 bits, the **local positional-CRC** channels (quartile marks, color-bar markers,
+  blank-map) several bits each *and missed by the parallel glance* (so a directed check buys the
+  most there), the color-bar order ≈ 4.6, the background only ≈ 2 (four values). Selection is
+  therefore **weighted-random by a per-channel weight** — `ellipse 7, quartile-marks 6,
+  colorbar-markers 5, blank-map 5, colorbar-pattern 4, blank-pattern 3, background 2` (modeled, not
+  measured on people; tunable) — *not* uniform: the ellipse/CRC channels are checked far more than
+  the background, while the order stays unpredictable. The channels are disjoint slices of the one
+  SHA-512 digest (derivationally independent — §7.3), so their bits **sum**; the additive total is a
+  conservative upper bound (perceptual coupling — overlay tint, crowding, masking — can only lower
+  the human's joint and is unmeasured, paper §10), so no coupling discount is applied.
 - The **familiar ends** (first/last cells) are **recognition-only, zero credit** — eligible for
   the random pool but never privileged, so an attacker who vanity-grinds the ends gains nothing.
 - For **>512-bit** inputs the **fingerprint-middle (Crockford) cells are the mandatory anchor** —
@@ -495,14 +507,20 @@ may *advise* — it never silently defaults.
   (head + tail recognition + the 96-bit fingerprint-middle) — it reaches **NO-DIFFERENCE**, never
   the lossless certainty of a small Complete. Quick / Good are lighter spot-checks of the same.
 
-The meter is a **coverage bar** (features checked of the plan), **not** a `1-in-2^N` probability;
-a conservative bit estimate lives in a tooltip only, labelled an upper bound before human-error
-discount. The three names are **anchors on a continuous scale** — the user may keep checking past
-Good (the meter shows where they are), so no fourth level is needed. **Quick caps at PENDING** ("a
-sanity look, not a verification"); **Good** and **Complete** reach **NO-DIFFERENCE**. **Credit is
-binary per feature and 0 for any non-locally-generated input cell** (a programmable / vanity value
-can't reach Good through its text — though a >512-bit one still can via the always-credited
-fingerprint-middle).
+The meter is a **bit-weighted coverage bar** — the fraction of the plan's *discriminability bits*
+confirmed, **not** a count of checks and **not** a `1-in-2^N` probability. Each feature advances it
+by its own weight (a confirmed ellipse moves it far more than a confirmed background; a text cell
+≈ 24 bits, §7.3), so the bar reflects *how much was actually covered*, not *how many operations
+ran*. It is a conservative upper bound, labelled as such (human-error and perceptual-coupling
+discounts are unmeasured). **Good is defined as reaching a bit target, not a fixed count of
+checks**: it takes the ≥ 2 lossless text cells (the backstop) and then **adds weighted gestalt
+until the gestalt bit target is met** — so a draw of high-discriminability channels needs fewer
+features and a draw of weak ones needs more, but the *coverage* is what's held constant. The three
+names are **anchors on a continuous scale** — the user may keep checking past Good (the meter shows
+where they are), so no fourth level is needed. **Quick caps at PENDING** ("a sanity look, not a
+verification"); **Good** and **Complete** reach **NO-DIFFERENCE**. **Credit is per-feature bits and
+0 for any non-locally-generated input cell** (a programmable / vanity value can't reach Good through
+its text — though a >512-bit one still can via the always-credited fingerprint-middle).
 
 ### 14.5 Reporting a check (by mode)
 

@@ -72,6 +72,31 @@ test("buildCheckPlan: a >512-bit value is huge; good anchors on the fingerprint-
   assert.equal(buildCheckPlan(BIG, {}, "complete", rngFrom(6)).hasProbe, true);
 });
 
+const GW: Record<string, number> = {
+  ellipse: 7, "quartile-marks": 6, "colorbar-markers": 5, "blank-map": 5,
+  "colorbar-pattern": 4, "blank-pattern": 3, background: 2,
+};
+
+test("buildCheckPlan: gestalt selection is weighted by discriminability (ellipse ≫ background)", () => {
+  const counts: Record<string, number> = {};
+  for (let seed = 1; seed <= 500; seed++) {
+    for (const s of buildCheckPlan(HEX512, {}, "good", rngFrom(seed)).steps) {
+      if (s.kind === "gestalt") counts[s.dimension] = (counts[s.dimension] ?? 0) + 1;
+    }
+  }
+  // not uniform: the 7-bit ellipse is picked far more than the 2-bit background
+  assert.ok((counts.ellipse ?? 0) > (counts.background ?? 0) * 1.5, JSON.stringify(counts));
+});
+
+test("buildCheckPlan: good's gestalt reaches the bit target (≥ 12), not a fixed count", () => {
+  for (let seed = 1; seed <= 80; seed++) {
+    const p = buildCheckPlan(HEX512, {}, "good", rngFrom(seed));
+    const bits = p.steps.filter((s) => s.kind === "gestalt")
+      .reduce((b, s) => b + GW[(s as { dimension: string }).dimension], 0);
+    assert.ok(bits >= 12, `seed ${seed}: only ${bits} gestalt bits`);
+  }
+});
+
 test("buildCheckPlan: deterministic for a fixed rng", () => {
   assert.deepEqual(
     buildCheckPlan(HEX512, {}, "complete", rngFrom(9)),
@@ -100,6 +125,18 @@ test("respond: all-match through an affirmative plan → no-difference", () => {
   s = respond(s, "match");
   s = respond(s, "match");
   assert.equal(s.status, "no-difference");
+  assert.equal(coverage(s), 1);
+});
+
+test("coverage: weighted by feature bits (an ellipse step advances more than background)", () => {
+  // background (2 bits) then ellipse (7) → after background, coverage = 2/9
+  let s = startWalk(planOf([
+    { kind: "gestalt", dimension: "background" },
+    { kind: "gestalt", dimension: "ellipse" },
+  ]));
+  s = respond(s, "match");
+  assert.ok(Math.abs(coverage(s) - 2 / 9) < 1e-9, `${coverage(s)}`);
+  s = respond(s, "match");
   assert.equal(coverage(s), 1);
 });
 

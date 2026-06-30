@@ -48,10 +48,35 @@ export interface CheckPlan {
 // Tunable knobs (comparison-design.md §14.2/§14.4) — composition, not soundness.
 const SMALL_MAX_CELLS = 6; // ≤ this many text cells ⇒ "small": Complete is the natural target
 const PROBE_MIN_CELLS = 12; // Complete on more displayed cells than this gets the probe
-const GOOD_TEXT = 3; // credited text cells in a Good plan (≥ 2 lossless backstop)
-const GOOD_GESTALT = 2; // gestalt dimensions in a Good plan
+const GOOD_TEXT = 2; // credited text cells in a Good plan (the ≥ 2 lossless backstop)
 const QUICK_TEXT = 1;
-const QUICK_GESTALT = 1;
+
+// Gestalt dimensions are NOT equally discriminatory, so the walk must not pick
+// them as if they were fungible. Each carries a weight = its effective
+// discriminability under directed attention (comparison JNDs), grounded in
+// *Measuring the Glance* §5–6: the local positional-CRC channels (quartiles,
+// markers, blank-map) and the salient ellipse are where a directed check buys the
+// most over the parallel glance; the background (4 values) is the weakest. Used
+// both to BIAS selection (weighted-random, so high-value features are favoured but
+// the order stays unpredictable) and to CREDIT coverage in bits. The channels are
+// disjoint slices of the one SHA-512 digest (derivationally independent), so their
+// bits sum; the additive total is a conservative upper bound (perceptual coupling
+// — overlay tint, crowding, masking — can only lower the human's joint, and is
+// unmeasured, §10). Modeled, not measured on people — tunable.
+const GESTALT_WEIGHT: Record<GestaltDimension, number> = {
+  ellipse: 7,
+  "quartile-marks": 6,
+  "colorbar-markers": 5,
+  "blank-map": 5,
+  "colorbar-pattern": 4,
+  "blank-pattern": 3,
+  background: 2,
+};
+const TEXT_BITS = 24; // a credited text cell's coverage (full hex/base64url token, §7.3)
+const GOOD_GESTALT_BITS = 12; // Good adds weighted gestalt until it has ≥ this many bits
+
+const stepWeight = (s: WalkStep): number =>
+  s.kind === "text" ? TEXT_BITS : s.kind === "gestalt" ? GESTALT_WEIGHT[s.dimension] : 0;
 
 // Deterministic Fisher–Yates using the supplied [0,1) source, so a seeded walk
 // (M3) and a CSPRNG walk (M2) share one code path and tests are reproducible.
@@ -66,6 +91,35 @@ function shuffle<T>(items: T[], rng: () => number): T[] {
 
 function take<T>(items: T[], n: number, rng: () => number): T[] {
   return shuffle(items, rng).slice(0, Math.max(0, Math.min(n, items.length)));
+}
+
+// Pick gestalt dimensions WITHOUT replacement, each with probability ∝ its
+// weight, until either `count` are chosen or their summed weight reaches
+// `bitTarget` (whichever the caller sets). Weighted-random keeps the order
+// unpredictable (anti-habituation) while favouring the more discriminatory
+// channels — so the ellipse/positional-CRC are checked far more than the
+// background, never uniformly.
+function weightedGestalt(
+  pool: GestaltDimension[],
+  rng: () => number,
+  limit: { count?: number; bitTarget?: number },
+): GestaltDimension[] {
+  const remaining = pool.slice();
+  const out: GestaltDimension[] = [];
+  let bits = 0;
+  const more = () =>
+    remaining.length > 0 &&
+    (limit.count !== undefined ? out.length < limit.count : bits < (limit.bitTarget ?? 0));
+  while (more()) {
+    const total = remaining.reduce((s, d) => s + GESTALT_WEIGHT[d], 0);
+    let r = rng() * total;
+    let i = 0;
+    while (i < remaining.length - 1 && (r -= GESTALT_WEIGHT[remaining[i]]) >= 0) i++;
+    const [picked] = remaining.splice(i, 1);
+    out.push(picked);
+    bits += GESTALT_WEIGHT[picked];
+  }
+  return out;
 }
 
 // The gestalt dimensions actually present for this value (background, color bar,
@@ -160,15 +214,18 @@ export function buildCheckPlan(
   if (preset === "quick") {
     const steps = [
       ...take(creditText, QUICK_TEXT, rng).map(textStep),
-      ...take(gestalt, QUICK_GESTALT, rng).map(gestaltStep),
+      ...weightedGestalt(gestalt, rng, { count: 1 }).map(gestaltStep),
     ];
     return { preset, steps: shuffle(steps, rng), affirmative: false, hasProbe: false, sizeClass };
   }
 
   if (preset === "good") {
+    // ≥2 lossless text cells (the backstop), then weighted gestalt added until the
+    // plan reaches the gestalt bit target — Good is "enough discriminating
+    // coverage", not a fixed count of checks.
     const steps = [
       ...take(creditText, Math.min(GOOD_TEXT, creditText.length), rng).map(textStep),
-      ...take(gestalt, GOOD_GESTALT, rng).map(gestaltStep),
+      ...weightedGestalt(gestalt, rng, { bitTarget: GOOD_GESTALT_BITS }).map(gestaltStep),
     ];
     return { preset, steps: shuffle(steps, rng), affirmative: true, hasProbe: false, sizeClass };
   }
@@ -204,9 +261,18 @@ export function startWalk(plan: CheckPlan): WalkState {
   return { plan, index: 0, status: "pending", probeResets: 0 };
 }
 
-/** Fraction of the plan completed (the coverage meter; never a probability). */
+/**
+ * Coverage meter: the fraction of the plan's *bits* confirmed so far — weighted
+ * by each feature's discriminability (a confirmed ellipse advances it far more
+ * than a confirmed background), never a probability. Reaches 1 when the whole
+ * plan is walked. (A probe step carries 0 bits, so it doesn't move the meter.)
+ */
 export function coverage(state: WalkState): number {
-  return state.plan.steps.length ? state.index / state.plan.steps.length : 0;
+  const steps = state.plan.steps;
+  const total = steps.reduce((s, st) => s + stepWeight(st), 0);
+  if (!total) return 0;
+  const done = steps.slice(0, state.index).reduce((s, st) => s + stepWeight(st), 0);
+  return done / total;
 }
 
 /**
