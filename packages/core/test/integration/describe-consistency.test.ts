@@ -102,3 +102,62 @@ for (const [name, value, opts] of CASES) {
     }
   });
 }
+
+// --- geometry: every feature rect matches the rendered SVG element ----------
+// The walk's focus rings come from describeChannels().geometry, NOT from parsing
+// the SVG; this proves the model geometry tracks the actual rendered coordinates.
+
+const APPROX = 0.06; // n() serializes coords to 3 decimals; this absorbs rounding
+const nums = (s: string): number[] => (s.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+type R = { x: number; y: number; w: number; h: number };
+function firstRect(region: string): R | null {
+  const m = region.match(/<rect\b[^>]*?\bx="([-\d.]+)"[^>]*?\by="([-\d.]+)"[^>]*?\bwidth="([-\d.]+)"[^>]*?\bheight="([-\d.]+)"/);
+  return m ? { x: +m[1], y: +m[2], w: +m[3], h: +m[4] } : null;
+}
+function approxRect(actual: R, expected: R, msg: string) {
+  for (const k of ["x", "y", "w", "h"] as const) {
+    assert.ok(Math.abs(actual[k] - expected[k]) <= APPROX, `${msg}.${k}: ${actual[k]} vs ${expected[k]}`);
+  }
+}
+
+for (const [name, value, opts] of CASES) {
+  test(`geometry: ${name}`, () => {
+    const svg = render(value, opts);
+    const g = describeChannels(value, opts).geometry;
+
+    // viewBox tracks the root SVG
+    const vb = nums(attr(svg, "viewBox") as string), gvb = nums(g.viewBox);
+    for (let i = 0; i < 4; i++) assert.ok(Math.abs(vb[i] - gvb[i]) <= APPROX, `viewBox[${i}]`);
+
+    // grid background rect
+    approxRect(firstRect(svg.split('data-channel="grid"')[1]) as R, g.gridRect, "gridRect");
+
+    // every cell's nucleus rect (first rect inside the cell group)
+    svg.split('<g data-channel="cell"').slice(1).forEach((chunk) => {
+      const body = chunk.split("data-channel=")[0];
+      const idx = Number(body.match(/data-cell-index="(\d+)"/)![1]);
+      approxRect(firstRect(body) as R, g.cellRects[idx], `cell ${idx}`);
+    });
+
+    // color bar: x≈1, y≈1, width = a real band's width, height = viewBox − 2
+    const bandRect = firstRect(svg.split('data-channel="color-bar"')[1]) as R;
+    assert.ok(Math.abs(g.colorBar.x - 1) <= APPROX && Math.abs(g.colorBar.y - 1) <= APPROX, "colorBar origin");
+    assert.ok(Math.abs(g.colorBar.w - bandRect.w) <= APPROX, "colorBar width = band width");
+    assert.ok(Math.abs(g.colorBar.h - (gvb[3] - 2)) <= APPROX, "colorBar height = viewBox−2");
+
+    // the two gutter marker discs (left, right), as bounding boxes
+    const discs = [...svg.matchAll(/<circle\b[^>]*?\bcx="([-\d.]+)"[^>]*?\bcy="([-\d.]+)"[^>]*?\br="([-\d.]+)"[^>]*?data-bar-marker="(left|right)"/g)];
+    const bySide: Record<string, R> = {};
+    for (const m of discs) {
+      const cx = +m[1], cy = +m[2], r = +m[3];
+      bySide[m[4]] = { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r };
+    }
+    approxRect(bySide.left, g.colorBarMarkers[0], "marker left");
+    approxRect(bySide.right, g.colorBarMarkers[1], "marker right");
+
+    // ellipse bounding box (rotation ignored, as the ring is axis-aligned)
+    const em = svg.match(/<ellipse\b[^>]*?\bcx="([-\d.]+)"[^>]*?\bcy="([-\d.]+)"[^>]*?\brx="([-\d.]+)"[^>]*?\bry="([-\d.]+)"/) as RegExpMatchArray;
+    const ecx = +em[1], ecy = +em[2], erx = +em[3], ery = +em[4];
+    approxRect({ x: ecx - erx, y: ecy - ery, w: 2 * erx, h: 2 * ery }, g.ellipse, "ellipse");
+  });
+}

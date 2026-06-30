@@ -13,8 +13,10 @@
  * unpredictability is the anti-habituation; the transparent planted probe is the
  * only added safeguard, and only for Complete on a large value.
  */
-import { describeChannels } from "./describe.ts";
+import { describeChannels, type Rect } from "./describe.ts";
 import type { RenderOptions } from "./entviz.ts";
+
+export type { Rect };
 
 export type WalkPreset = "quick" | "good" | "complete";
 
@@ -73,6 +75,58 @@ function gestaltPool(d: ReturnType<typeof describeChannels>): GestaltDimension[]
   if (d.markers.blankMap) pool.push("blank-pattern", "blank-map");
   if (d.quartiles.some((q) => q.cellIndex !== null)) pool.push("quartile-marks");
   return pool;
+}
+
+/**
+ * The viewBox + bounding rects (in the entviz's own user-units) to ring for a
+ * given walk step, taken straight from the core render model's geometry — so the
+ * React layer never parses the rendered SVG to recover coordinates (and never
+ * touches the closed-profile artifact). One feature may yield several rects
+ * (every blank cell, every quartile cell, both color-bar markers); a probe step
+ * has no figure rect (it shows a planted cell of its own — §14.7).
+ */
+export function featureRects(
+  value: string,
+  opts: RenderOptions,
+  step: WalkStep,
+): { viewBox: string; rects: Rect[] } {
+  const d = describeChannels(value, opts);
+  const g = d.geometry;
+  const rects: Rect[] = [];
+
+  if (step.kind === "text") {
+    const r = g.cellRects[step.cellIndex];
+    if (r) rects.push(r);
+  } else if (step.kind === "gestalt") {
+    switch (step.dimension) {
+      case "background":
+        rects.push(g.gridRect);
+        break;
+      case "ellipse":
+        rects.push(g.ellipse);
+        break;
+      case "colorbar-pattern":
+        rects.push(g.colorBar);
+        break;
+      case "colorbar-markers":
+        rects.push(...g.colorBarMarkers);
+        break;
+      case "blank-pattern":
+        for (const c of d.cells) if (c.blank) rects.push(g.cellRects[c.index]);
+        break;
+      case "quartile-marks":
+        for (const q of d.quartiles) if (q.cellIndex !== null) rects.push(g.cellRects[q.cellIndex]);
+        break;
+      case "blank-map": {
+        // the map is the lowest-indexed blank cell (render's mapCellIdx)
+        const map = d.cells.find((c) => c.blank);
+        if (map) rects.push(g.cellRects[map.index]);
+        break;
+      }
+    }
+  }
+  // probe: no figure rect
+  return { viewBox: g.viewBox, rects };
 }
 
 /**

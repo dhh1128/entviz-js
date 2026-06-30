@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
-import { render } from "@entviz/core";
-import { EntvizWalk, featureRects, mutate } from "../src/index.ts";
-import { rectOf } from "../src/EntvizWalk.ts";
+import { EntvizWalk, mutate } from "../src/index.ts";
 
 const UUID = "550e8400-e29b-41d4-a716-446655440000"; // 6 cells → small
 const HEX256 = "0123456789abcdef".repeat(4); // ~11 cells → large, no probe
@@ -32,40 +30,6 @@ function driveAlwaysMatch(max = 120) {
     fireEvent.click(match);
   }
 }
-
-// --- featureRects (pure) --------------------------------------------------
-
-describe("featureRects", () => {
-  const svg = render(HEX512); // has blanks, quartiles, all gestalt dimensions
-
-  test("text cell → one rect; viewBox present", () => {
-    const { viewBox, rects } = featureRects(svg, { kind: "text", cellIndex: 0 });
-    expect(viewBox).toMatch(/^0 0 /);
-    expect(rects.length).toBe(1);
-    expect(rects[0].w).toBeGreaterThan(0);
-  });
-
-  test("each gestalt dimension yields at least one rect", () => {
-    const dims = ["background", "colorbar-pattern", "colorbar-markers", "ellipse", "blank-pattern", "blank-map", "quartile-marks"] as const;
-    for (const dimension of dims) {
-      const { rects } = featureRects(svg, { kind: "gestalt", dimension });
-      expect(rects.length, dimension).toBeGreaterThan(0);
-    }
-  });
-
-  test("colorbar-pattern unions its bands into a single rect", () => {
-    expect(featureRects(svg, { kind: "gestalt", dimension: "colorbar-pattern" }).rects.length).toBe(1);
-  });
-
-  test("a probe step has no figure rect", () => {
-    expect(featureRects(svg, { kind: "probe" }).rects.length).toBe(0);
-  });
-
-  test("rectOf returns null for a non-shape element", () => {
-    const g = new DOMParser().parseFromString("<svg><g/></svg>", "image/svg+xml").querySelector("g")!;
-    expect(rectOf(g)).toBeNull();
-  });
-});
 
 describe("mutate", () => {
   test("changes the last character deterministically", () => {

@@ -4,8 +4,8 @@
  * comparison-design.md §14.
  *
  * The user declares a size-aware preset, then is walked one feature at a time:
- * a focus ring is drawn AROUND the feature on both figures (computed from our own
- * rendered SVG, never baked into it), and the user reports Matches / Differs. A
+ * a focus ring is drawn AROUND the feature on both figures (geometry from the core
+ * render model, never baked into the SVG), and the user reports Matches / Differs. A
  * `differs` gets a re-look prompt before the terminal verdict (retract → the step
  * is re-queued). The transparent planted probe (large Complete) shows a
  * deliberately-altered cell and asks the user to catch it. A walk yields
@@ -22,7 +22,7 @@ import {
   buildCheckPlan,
   coverage,
   describeChannels,
-  render,
+  featureRects,
   respond,
   startWalk,
   type RenderOptions,
@@ -46,71 +46,6 @@ export interface EntvizWalkProps {
   style?: CSSProperties;
 }
 
-interface Rect { x: number; y: number; w: number; h: number; }
-
-const num = (el: Element | null, a: string): number => Number(el?.getAttribute(a) ?? 0);
-
-export function rectOf(el: Element): Rect | null {
-  switch (el.tagName.toLowerCase()) {
-    case "rect":
-      return { x: num(el, "x"), y: num(el, "y"), w: num(el, "width"), h: num(el, "height") };
-    case "ellipse": {
-      const cx = num(el, "cx"), cy = num(el, "cy"), rx = num(el, "rx"), ry = num(el, "ry");
-      return { x: cx - rx, y: cy - ry, w: 2 * rx, h: 2 * ry };
-    }
-    case "circle": {
-      const cx = num(el, "cx"), cy = num(el, "cy"), r = num(el, "r");
-      return { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r };
-    }
-    default:
-      return null;
-  }
-}
-
-const union = (rects: Rect[]): Rect[] => {
-  if (rects.length <= 1) return rects;
-  const x = Math.min(...rects.map((r) => r.x));
-  const y = Math.min(...rects.map((r) => r.y));
-  const x2 = Math.max(...rects.map((r) => r.x + r.w));
-  const y2 = Math.max(...rects.map((r) => r.y + r.h));
-  return [{ x, y, w: x2 - x, h: y2 - y }];
-};
-
-/**
- * Pure: parse our own rendered SVG and return the viewBox + the bounding rects to
- * ring for a given walk feature. (No DOM layout needed — coordinates come straight
- * from the SVG's own user units, so the ring scales with the figure.)
- */
-export function featureRects(svg: string, step: WalkStep): { viewBox: string; rects: Rect[] } {
-  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-  const root = doc.querySelector("svg");
-  const viewBox = root?.getAttribute("viewBox") ?? "0 0 0 0";
-  const sel = (q: string) => [...doc.querySelectorAll(q)];
-  let els: Element[] = [];
-  let merge = false;
-
-  if (step.kind === "text") {
-    els = sel(`[data-cell-index="${step.cellIndex}"] rect`).slice(0, 1);
-  } else if (step.kind === "gestalt") {
-    switch (step.dimension) {
-      case "background": els = sel('[data-channel="grid"] > rect').slice(0, 1); break;
-      case "ellipse": els = sel('[data-channel="ellipse"] ellipse'); break;
-      case "colorbar-pattern": els = sel('[data-channel="color-bar"] rect'); merge = true; break;
-      case "colorbar-markers": els = sel("[data-bar-marker]"); break;
-      case "blank-pattern": els = sel('[data-cell-blank="true"] rect'); break;
-      case "quartile-marks": els = sel("[data-cell-quartile] rect"); break;
-      case "blank-map": {
-        const cell = doc.querySelector("[data-blank-map-min]")?.closest("[data-cell-index]");
-        els = cell ? [...cell.querySelectorAll("rect")].slice(0, 1) : [];
-        break;
-      }
-    }
-  }
-  // probe: no figure rect (it shows a planted cell of its own — §14.7)
-  const rects = els.map(rectOf).filter((r): r is Rect => r !== null);
-  return { viewBox, rects: merge ? union(rects) : rects };
-}
-
 const RING = "var(--entviz-walk-ring, #39ff14)"; // bright focus ring around the spotlight (§7.1)
 const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus is dimmed
 
@@ -121,14 +56,14 @@ const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus 
 // is drawn around the hole for definition. Both scrim and ring live in the
 // tool's own overlay SVG, never baked into the entviz (§7.1 closed profile).
 //
-// Geometry: the overlay shares the entviz's viewBox AND occupies the exact same
-// rendered rectangle (the figure renders at its intrinsic size, 1 user unit =
-// 1px, and the overlay fills that same box at scale 1.0). Earlier the figure was
-// forced to 200px while the overlay filled a 200px box but re-fit the viewBox
-// with `meet`, so the two layers shared a viewBox but sat at different scales/
-// offsets — that was the misaligned-ring bug.
-function ringOverlay(svg: string, step: WalkStep, idPrefix: string): ReactNode {
-  const { viewBox, rects } = featureRects(svg, step);
+// Geometry comes from the core render model (`featureRects`), not from parsing
+// the rendered SVG — and the overlay shares the entviz's viewBox AND occupies the
+// exact same rendered rectangle (the figure renders at its intrinsic size, 1 user
+// unit = 1px, and the overlay fills that same box at scale 1.0). Earlier the
+// figure was forced to 200px while the overlay re-fit the viewBox with `meet`, so
+// the layers shared a viewBox but sat at different scales — the misaligned-ring bug.
+function ringOverlay(value: string, opts: RenderOptions, step: WalkStep, idPrefix: string): ReactNode {
+  const { viewBox, rects } = featureRects(value, opts, step);
   if (!rects.length) return null;
   const [vx, vy, vw, vh] = viewBox.split(/\s+/).map(Number);
   const pad = 2;
@@ -162,7 +97,7 @@ function ringOverlay(svg: string, step: WalkStep, idPrefix: string): ReactNode {
 // focus overlay on top. The container hugs the figure (inline-block + zeroed
 // line box to kill the inline-svg descender gap) so the absolutely-positioned
 // overlay covers exactly the figure's box.
-function panel(label: string, value: string, opts: RenderOptions, svg: string, step: WalkStep | null): ReactNode {
+function panel(label: string, value: string, opts: RenderOptions, step: WalkStep | null): ReactNode {
   return h(
     "div",
     { style: panelStyle },
@@ -171,7 +106,7 @@ function panel(label: string, value: string, opts: RenderOptions, svg: string, s
       "div",
       { style: figureBox },
       h(Entviz, { value, ...opts, style: { display: "block" } }),
-      step ? ringOverlay(svg, step, label) : null,
+      step ? ringOverlay(value, opts, step, label) : null,
     ),
   );
 }
@@ -233,8 +168,6 @@ const isDone = (s: WalkState): boolean => s.status !== "pending" || s.index >= s
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   const { value, reference, targetAr, fontSizePt, note, preset, onComplete, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
-  const ourSvg = useMemo(() => safeRender(value, opts), [value, opts]);
-  const refSvg = useMemo(() => safeRender(reference, opts), [reference, opts]);
 
   // size class drives the preset menu (§14.4)
   const small = useMemo(() => {
@@ -330,8 +263,8 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
       : h(
           "div",
           { style: { display: "flex", gap: 16, flexWrap: "wrap" } },
-          panel("Yours", value, opts, ourSvg, step),
-          panel("Reference", reference, opts, refSvg, step),
+          panel("Yours", value, opts, step),
+          panel("Reference", reference, opts, step),
         ),
     h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, promptFor(step)),
     // controls
@@ -371,14 +304,6 @@ function probePanel(value: string, opts: RenderOptions, shown: string | null, re
 // Only called on a probe step of a valid large-value walk, so the value renders.
 function pickCellText(value: string, opts: RenderOptions): string {
   return describeChannels(value, opts).cells.find((x) => !x.blank)?.text ?? "0000";
-}
-
-function safeRender(value: string, opts: RenderOptions): string {
-  try {
-    return render(value, opts);
-  } catch {
-    return '<svg viewBox="0 0 1 1"></svg>';
-  }
 }
 
 // CSPRNG [0,1) source for the single-user walk.

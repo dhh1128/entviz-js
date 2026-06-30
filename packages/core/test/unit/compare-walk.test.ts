@@ -2,16 +2,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCheckPlan,
+  featureRects,
   startWalk,
   respond,
   coverage,
   type CheckPlan,
+  type GestaltDimension,
 } from "../../src/compare-walk.ts";
 import { describeChannels } from "../../src/describe.ts";
 
 const UUID = "550e8400-e29b-41d4-a716-446655440000"; // 6 cells → "small"
 const HEX512 = "0123456789abcdef".repeat(8); // 512 bits, ~22 cells, ≤512 → "large"
 const BIG = "0123456789abcdef".repeat(16); // >512 bits → "huge" (truncated)
+const TINY = "012345"; // few tokens ⇒ blanks + some null quartiles
 
 // Deterministic [0,1) source (LCG) so plans are reproducible in tests.
 function rngFrom(seed: number): () => number {
@@ -133,4 +136,51 @@ test("respond: the transparent probe — caught → advance; missed → reset; m
   s = respond(s, "match"); // text again
   s = respond(s, "match"); // probe missed again
   assert.equal(s.status, "inconclusive");
+});
+
+// --- featureRects (geometry from the render model) ------------------------
+
+test("featureRects: a text cell → one rect; viewBox present", () => {
+  const { viewBox, rects } = featureRects(HEX512, {}, { kind: "text", cellIndex: 0 });
+  assert.match(viewBox, /^0 0 /);
+  assert.equal(rects.length, 1);
+  assert.ok(rects[0].w > 0 && rects[0].h > 0);
+});
+
+test("featureRects: an out-of-range text cell → no rect", () => {
+  assert.equal(featureRects(HEX512, {}, { kind: "text", cellIndex: 9999 }).rects.length, 0);
+});
+
+test("featureRects: every gestalt dimension present in HEX512 yields ≥1 rect", () => {
+  const dims: GestaltDimension[] = [
+    "background", "colorbar-pattern", "colorbar-markers", "ellipse",
+    "blank-pattern", "blank-map", "quartile-marks",
+  ];
+  for (const dimension of dims) {
+    const { rects } = featureRects(HEX512, {}, { kind: "gestalt", dimension });
+    assert.ok(rects.length > 0, dimension);
+  }
+});
+
+test("featureRects: color-bar pattern is the single whole-bar rect; two markers", () => {
+  assert.equal(featureRects(HEX512, {}, { kind: "gestalt", dimension: "colorbar-pattern" }).rects.length, 1);
+  assert.equal(featureRects(HEX512, {}, { kind: "gestalt", dimension: "colorbar-markers" }).rects.length, 2);
+});
+
+test("featureRects: a probe step has no figure rect", () => {
+  assert.equal(featureRects(HEX512, {}, { kind: "probe" }).rects.length, 0);
+});
+
+test("featureRects: blank-map / quartile features degrade to empty when absent", () => {
+  // a value whose grid is exactly full has no blank map; a few-token value has
+  // some null quartile cells — both exercise the empty/null branches.
+  const noBlanks = describeChannels(UUID, {}).markers.blankMap === null;
+  assert.ok(noBlanks); // UUID fills its grid
+  assert.equal(featureRects(UUID, {}, { kind: "gestalt", dimension: "blank-map" }).rects.length, 0);
+  // TINY has blanks (so a blank-map cell) AND fewer than 4 quartile cells
+  const d = describeChannels(TINY, {});
+  assert.ok(d.quartiles.some((q) => q.cellIndex === null));
+  const qr = featureRects(TINY, {}, { kind: "gestalt", dimension: "quartile-marks" }).rects.length;
+  assert.equal(qr, d.quartiles.filter((q) => q.cellIndex !== null).length);
+  assert.equal(featureRects(TINY, {}, { kind: "gestalt", dimension: "blank-map" }).rects.length, 1);
 });

@@ -14,8 +14,9 @@
  *
  * This module COMPOSES the same exported stage functions `render()` uses, so its
  * output cannot drift from the SVG — `test/integration/describe-consistency`
- * cross-checks every field against a freshly rendered entviz. It computes no
- * pixels; it stops at the render *model*. Isomorphic (no Node built-ins, no DOM).
+ * cross-checks every field against a freshly rendered entviz. It also exposes the
+ * feature *geometry* (`ChannelDescription.geometry`) so the comparison walk can
+ * draw focus rings without parsing the SVG. Isomorphic (no Node built-ins, no DOM).
  */
 import {
   type RenderOptions,
@@ -36,6 +37,8 @@ import {
   twoBitFirstAppearance,
   fingerprintMiddleDigest,
   computeGeometry,
+  enumerateInteriorCorners,
+  enumerateExternalCorners,
   sanitizeNote,
   MAX_TOKENS,
   HEAD_TOKENS,
@@ -85,6 +88,36 @@ export interface MarkerDescription {
   colorBar: { slots: number; left: number; right: number };
 }
 
+/** An axis-aligned rectangle in the entviz's own user-units (the SVG viewBox
+ *  coordinate system). */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Pixel geometry of each highlightable feature, in viewBox user-units — so a
+ *  comparison/walk UI can draw a focus ring AROUND any feature without parsing
+ *  the rendered SVG (it never mutates the closed-profile artifact). Derived in
+ *  the same model pass as the structural channels, and cross-checked against a
+ *  freshly rendered SVG by `test/integration/describe-consistency`. */
+export interface LayoutGeometry {
+  /** The root SVG viewBox, "0 0 W H". */
+  viewBox: string;
+  /** Nucleus rect of each cell, in cell-index order (matches `cells`). */
+  cellRects: Rect[];
+  /** The grid background rect (the "background color" feature). */
+  gridRect: Rect;
+  /** The ellipse overlay's axis-aligned bounding box (rotation ignored, as the
+   *  ring is axis-aligned). Always present — the ellipse is always drawn. */
+  ellipse: Rect;
+  /** The whole color bar (the bands stack to fill it). */
+  colorBar: Rect;
+  /** The two color-bar gutter marker discs (left, right), as bounding rects. */
+  colorBarMarkers: Rect[];
+}
+
 export interface ChannelDescription {
   typeName: string;
   /** True for a >512-bit input (text channel is head + fingerprint-middle + tail). */
@@ -97,6 +130,9 @@ export interface ChannelDescription {
   colorBarLetters: string[];
   quartiles: QuartileDescription[];
   markers: MarkerDescription;
+  /** Pixel geometry of every highlightable feature (for the comparison walk's
+   *  focus rings) — see {@link LayoutGeometry}. */
+  geometry: LayoutGeometry;
 }
 
 // Recompute the render model (no geometry beyond what the color-bar markers
@@ -192,14 +228,16 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
   // a bottom strip is present). Matches drawColorBar's K and slot math exactly.
   const fontSizePt = opts.fontSizePt ?? 12;
   const hasBottom = Boolean(suffix) || Boolean(sanitizeNote(opts.note ?? null));
-  const { boundingH } = computeGeometry(fontSizePt, grid, hasBottom);
-  const barHeight = boundingH - 2;
+  const geom = computeGeometry(fontSizePt, grid, hasBottom);
+  const barHeight = geom.boundingH - 2;
   const slots = Math.max(4, Math.min(16, Math.floor(barHeight / 12)));
   const secondDigest = fingerprintMiddleDigest(core);
   const markers: MarkerDescription = {
     blankMap,
     colorBar: { slots, left: secondDigest[12] % slots, right: secondDigest[13] % slots },
   };
+
+  const geometry = computeLayoutGeometry(geom, grid, cells, markers, digest, slots);
 
   return {
     typeName,
@@ -210,6 +248,86 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
     colorBarLetters,
     quartiles,
     markers,
+    geometry,
+  };
+}
+
+// Pixel geometry of every highlightable feature, mirroring the placement math in
+// render()/drawColorBar()/drawEllipse() (the ellipse and color bar are always
+// drawn — their guards are unreachable for any real grid). Kept honest by
+// describe-consistency, which cross-checks every rect against a rendered SVG.
+function round3(x: number): number {
+  return Math.round(x * 1000) / 1000;
+}
+
+function computeLayoutGeometry(
+  geom: ReturnType<typeof computeGeometry>,
+  grid: { cols: number; rows: number },
+  cells: CellDescription[],
+  markers: MarkerDescription,
+  digest: Uint8Array,
+  slots: number,
+): LayoutGeometry {
+  const {
+    gridLeft, gridTop, gridW, gridH, cellWidth, cellHeight, boxWidth, boxHeight,
+    nucleusWidth, nucleusHeight, barWidth, boundingW, boundingH,
+  } = geom;
+
+  // Each cell's nucleus rect (filled cell nucleus and blank-cell pill share it).
+  const cellRects: Rect[] = cells.map((c) => ({
+    x: gridLeft + c.col * cellWidth + boxWidth,
+    y: gridTop + c.row * cellHeight + boxHeight,
+    w: nucleusWidth,
+    h: nucleusHeight,
+  }));
+
+  const gridRect: Rect = { x: gridLeft, y: gridTop, w: gridW, h: gridH };
+
+  // Color bar: the bands stack to fill the gutter, so the union is the whole bar.
+  const barLeft = 1, barTop = 1;
+  const colorBar: Rect = { x: barLeft, y: barTop, w: barWidth, h: boundingH - 2 };
+
+  // The two gutter marker discs (mirrors drawColorBar's slot/radius/inset math).
+  const slotH = (boundingH - 2) / slots;
+  const radius = barWidth * 0.17;
+  const inset = barWidth * 0.06;
+  const discRect = (slot: number, side: "left" | "right"): Rect => {
+    const cy = barTop + (slot + 0.5) * slotH;
+    const cx = side === "left" ? barLeft + inset + radius : barLeft + barWidth - inset - radius;
+    return { x: cx - radius, y: cy - radius, w: 2 * radius, h: 2 * radius };
+  };
+  const colorBarMarkers: Rect[] = [
+    discRect(markers.colorBar.left, "left"),
+    discRect(markers.colorBar.right, "right"),
+  ];
+
+  // Ellipse bounding box (mirrors drawEllipse; rotation ignored — the ring is
+  // axis-aligned — and the early-return guards never fire for a real grid).
+  const interior = (grid.cols - 1) * (grid.rows - 1);
+  const pts =
+    interior >= 6
+      ? enumerateInteriorCorners(grid.cols, grid.rows, cellWidth, cellHeight, gridLeft, gridTop)
+      : enumerateExternalCorners(grid.cols, grid.rows, cellWidth, cellHeight, gridLeft, gridTop);
+  const [ax, ay] = pts[digest[60] % pts.length];
+  const gridRight = gridLeft + gridW, gridBottom = gridTop + gridH;
+  let dFar = 0;
+  for (const [cx, cy] of [
+    [gridLeft, gridTop], [gridRight, gridTop], [gridLeft, gridBottom], [gridRight, gridBottom],
+  ] as [number, number][]) {
+    dFar = Math.max(dFar, Math.hypot(cx - ax, cy - ay));
+  }
+  const rMin = 0.22 * dFar, rMax = 0.58 * dFar;
+  const rx = rMin + ((digest[61] % 16) / 15) * (rMax - rMin);
+  const ry = rMin + ((digest[62] % 16) / 15) * (rMax - rMin);
+  const ellipse: Rect = { x: ax - rx, y: ay - ry, w: 2 * rx, h: 2 * ry };
+
+  return {
+    viewBox: `0 0 ${round3(boundingW)} ${round3(boundingH)}`,
+    cellRects,
+    gridRect,
+    ellipse,
+    colorBar,
+    colorBarMarkers,
   };
 }
 
