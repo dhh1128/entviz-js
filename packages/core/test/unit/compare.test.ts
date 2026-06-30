@@ -36,6 +36,42 @@ test("compareValues: different values verdict `different`", () => {
   assert.equal(compareValues("urn:isbn:abc", "urn:isbn:ABC").state, "different");
 });
 
+test("compareValues: a presentation prefix (0x) is normalized away → identical", () => {
+  // spec.md §presentation (:215/:220): "0x" is hex *notation* — it shows only in
+  // the label and enters NEITHER the cells NOR the fingerprint (prefixSemantic
+  // false). So 0x-prefixed and bare hex of the same value render the same entviz
+  // IDENTITY and must compare identical (matching compareSvg, which never reads
+  // the label). Regression: the text engine used to keep the 0x in identityKey
+  // and report `different`.
+  const bare = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeF";
+  assert.equal(compareValues(bare, "0x" + bare).state, "identical");
+  assert.equal(compareValues("0x" + bare, bare).state, "identical");
+});
+
+test("compareValues: a SEMANTIC prefix still distinguishes identity", () => {
+  // A bound prefix (DID method / URN NID — prefixSemantic true) IS folded into
+  // the fingerprint, so it is a genuinely different entviz and must stay distinct.
+  // (Guards the fix above from over-reaching.)
+  const uuid = "550e8400-e29b-41d4-a716-446655440000";
+  assert.equal(compareValues(uuid, "urn:uuid:" + uuid).state, "different");
+  assert.equal(compareValues("did:key:z6Mksample", "did:web:z6Mksample").state, "different");
+});
+
+test("compareValues: UUID delimiter/brace/case variants are identical (normalized core)", () => {
+  // Hyphens and {} are punctuation, normalized away in classifyInput — every
+  // form folds to the same core, so all compare identical. (Lock-in: a future
+  // normalization change must not silently split these.)
+  const canonical = "550e8400-e29b-41d4-a716-446655440000";
+  for (const v of [
+    "550e8400e29b41d4a716446655440000", // no hyphens (32 hex)
+    "{550e8400-e29b-41d4-a716-446655440000}", // braced
+    "{550e8400e29b41d4a716446655440000}", // braced, no hyphens
+    "550E8400-E29B-41D4-A716-446655440000", // uppercase
+  ]) {
+    assert.equal(compareValues(canonical, v).state, "identical", v);
+  }
+});
+
 test("compareValues: an unclassifiable input fails closed to `unknown`, never throws", () => {
   // Regression: editing a reference into a value classifyInput rejects (e.g. an
   // ETH address whose EIP-55 case checksum breaks when a hex digit's case is

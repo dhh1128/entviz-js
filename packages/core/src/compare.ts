@@ -33,7 +33,15 @@ export type Medium = "text" | "svg" | "raster" | "ambiguous";
 // `URN:ISBN:x`≡`urn:isbn:x`).
 function identityKey(value: string): string {
   const c = classifyInput(value.trim());
-  return JSON.stringify([c.core, c.alphabet.name, c.prefix, c.prefixSemantic]);
+  // A prefix bears identity ONLY when it is bound into the fingerprint, i.e.
+  // prefixSemantic (a DID method / URN NID); render's fingerprintCore folds in
+  // `prefix ‖ core` exactly then. A PRESENTATION prefix (prefixSemantic false —
+  // "0x" hex notation, a multibase selector, SSH/PEM framing) is normalized away:
+  // it shows only in the label and enters neither the cells nor the fingerprint
+  // (spec.md §presentation), so it must NOT distinguish identity — otherwise two
+  // inputs that render the same entviz would compare `different`.
+  const idPrefix = c.prefixSemantic ? c.prefix : null;
+  return JSON.stringify([c.core, c.alphabet.name, idPrefix]);
 }
 
 /**
