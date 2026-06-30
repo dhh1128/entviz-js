@@ -84,16 +84,23 @@ describe("EntvizCompare", () => {
     expect(screen.getAllByRole("img").length).toBe(2);
   });
 
-  test("the empty reference placeholder tracks the live target aspect ratio", () => {
+  test("the empty placeholder is figure-sized and tracks the live shape", () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
     const ph = () => screen.getByText(/reference will appear here/i) as HTMLElement;
-    const before = ph().style.aspectRatio;
+    expect(ph().style.width).toMatch(/px$/); // explicit footprint, not a bare aspect-ratio
+    const before = ph().style.width;
     const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
       (b) => b.getAttribute("aria-pressed") !== "true",
     ) as HTMLButtonElement;
     fireEvent.click(other); // reshape "Yours" while the reference is still empty
-    expect(ph().style.aspectRatio).not.toBe(before); // placeholder previews the new shape
+    expect(ph().style.width).not.toBe(before); // placeholder follows the new shape's footprint
+  });
+
+  test("placeholder falls back to a default size if our value can't be measured", () => {
+    rtlRender(<EntvizCompare value={HEX} note="toolongnote" />); // describeChannels throws
+    const ph = screen.getByText(/reference will appear here/i) as HTMLElement;
+    expect(ph.style.width).toBe("180px"); // graceful fallback footprint
   });
 
   test("resize on our figure drives BOTH panels", () => {

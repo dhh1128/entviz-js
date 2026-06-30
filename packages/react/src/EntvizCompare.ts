@@ -21,7 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
+import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, type EntvizLayout } from "./EntvizWalk.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
@@ -191,6 +191,20 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [dispFs, setDispFs] = useState(fontSizePt ?? 12);
   const [dispAr, setDispAr] = useState(targetAr ?? 1);
 
+  // The empty reference placeholder must match OUR figure's footprint exactly, so
+  // the two boxes are the same size side-by-side. Our figure renders at its
+  // intrinsic px size (= the render model's viewBox W×H at the live size/shape),
+  // NOT a fixed width — so size the placeholder to that.
+  const placeholderSize = useMemo(() => {
+    try {
+      const [, , w, hh] = describeChannels(value, { targetAr: dispAr, fontSizePt: dispFs, note })
+        .geometry.viewBox.split(/\s+/).map(Number);
+      return { width: w, height: hh };
+    } catch {
+      return { width: 180, height: 120 };
+    }
+  }, [value, dispAr, dispFs, note]);
+
   const provided = reference ? { content: reference.data, provenance: "provided" as Provenance, origin: "" } : null;
   const eff = provided ?? ref;
   const refContent = eff?.content ?? "";
@@ -348,10 +362,10 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         h("span", { style: panelLabel }, m.reference),
         refDisplayValue !== null
           ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
-          // Footprint tracks the live shared dispAr, so the empty slot previews
-          // the SHAPE the reference will take — reshaping "Yours" reshapes the
-          // placeholder too, and the real figure lands at the same shape (no jump).
-          : h("div", { style: { ...placeholderBox, aspectRatio: String(dispAr) }, "aria-hidden": true }, m.referencePlaceholder),
+          // Sized to OUR figure's exact footprint (tracks dispAr + dispFs), so
+          // the empty slot is the same size beside "Yours" and previews where the
+          // reference will land.
+          : h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder),
         acquisition,
         eff && refContent.trim()
           ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
@@ -400,12 +414,12 @@ const walkLaunchStyle: CSSProperties = {
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const panelEntviz: CSSProperties = { width: 180, display: "block" };
-// An empty reference slot the same footprint as the figure, so both panels show
-// a figure-sized box side-by-side from the start (#3).
+// An empty reference slot the same footprint as OUR figure (size from
+// placeholderSize), so both panels show a figure-sized box side-by-side (#3).
 const placeholderBox: CSSProperties = {
-  width: 180, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
+  boxSizing: "border-box", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
   border: "1px dashed var(--entviz-compare-placeholder, #d0d7de)", borderRadius: 8,
-  color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: "0.75em", textAlign: "center", padding: 8,
+  color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: "0.7em", textAlign: "center", padding: 8,
 };
 const textareaStyle: CSSProperties = {
   font: "0.85em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
