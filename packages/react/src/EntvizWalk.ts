@@ -13,6 +13,7 @@
  */
 import {
   createElement as h,
+  useEffect,
   useMemo,
   useState,
   type CSSProperties,
@@ -55,6 +56,13 @@ export interface EntvizWalkProps {
   preset?: WalkPreset;
   /** Figure arrangement (default "side-by-side"). */
   layout?: EntvizLayout;
+  /** When true, DON'T render the two figures — the host draws them and overlays
+   *  the rings itself (the comparator reuses its static pair). The walk still
+   *  renders its controls/probe/verdict and reports the current step via onStep. */
+  externalFigures?: boolean;
+  /** Reports the feature currently being checked (or null), so a host using
+   *  `externalFigures` can ring it on its own figures. */
+  onStep?: (step: WalkStep | null) => void;
   onComplete?: (status: WalkState["status"]) => void;
   className?: string;
   style?: CSSProperties;
@@ -76,7 +84,7 @@ const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus 
 // unit = 1px, and the overlay fills that same box at scale 1.0). Earlier the
 // figure was forced to 200px while the overlay re-fit the viewBox with `meet`, so
 // the layers shared a viewBox but sat at different scales — the misaligned-ring bug.
-function ringOverlay(value: string, opts: RenderOptions, step: WalkStep, idPrefix: string): ReactNode {
+export function ringOverlay(value: string, opts: RenderOptions, step: WalkStep, idPrefix: string): ReactNode {
   const { viewBox, rects } = featureRects(value, opts, step);
   if (!rects.length) return null;
   const [vx, vy, vw, vh] = viewBox.split(/\s+/).map(Number);
@@ -181,7 +189,7 @@ export function mutate(text: string): string {
 const isDone = (s: WalkState): boolean => s.status !== "pending" || s.index >= s.plan.steps.length;
 
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
-  const { value, reference, targetAr, fontSizePt, note, preset, layout = "side-by-side", onComplete, className, style } = props;
+  const { value, reference, targetAr, fontSizePt, note, preset, layout = "side-by-side", externalFigures = false, onStep, onComplete, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   // size class drives the preset menu (§14.4)
@@ -199,6 +207,15 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   );
   const [relook, setRelook] = useState(false);
   const [probeText, setProbeText] = useState<string | null>(null);
+
+  // Report the feature currently being checked so a host using externalFigures can
+  // ring it on its own figures; clear it when done/in the picker and on unmount.
+  useEffect(() => {
+    if (!onStep) return;
+    onStep(state && state.status === "pending" && state.index < state.plan.steps.length
+      ? state.plan.steps[state.index] : null);
+  }, [state, onStep]);
+  useEffect(() => () => onStep?.(null), [onStep]);
 
   const begin = (p: WalkPreset) => setState(startWalk(buildCheckPlan(value, opts, p, csprng)));
 
@@ -282,15 +299,17 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
       { style: meterTrack, role: "progressbar", "aria-valuenow": Math.round(coverage(state) * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
       h("div", { style: { ...meterFill, width: `${coverage(state) * 100}%` } }),
     ),
-    // the step
+    // the step — figures are suppressed when the host draws them (externalFigures)
     step.kind === "probe"
       ? probePanel(value, opts, probeText, onProbeReveal)
-      : h(
-          "div",
-          { style: layoutStyle(layout), "data-entviz-layout": layout },
-          panel("Yours", value, opts, step),
-          panel("Reference", reference, opts, step),
-        ),
+      : externalFigures
+        ? null
+        : h(
+            "div",
+            { style: layoutStyle(layout), "data-entviz-layout": layout },
+            panel("Yours", value, opts, step),
+            panel("Reference", reference, opts, step),
+          ),
     h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, promptFor(step)),
     // controls
     relook
@@ -341,7 +360,7 @@ function csprng(): number {
 const overlayStyle: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" };
 // hugs the intrinsic-size figure; zeroed line box removes the inline-svg gap so
 // the overlay aligns to the figure pixel-for-pixel.
-const figureBox: CSSProperties = { position: "relative", display: "inline-block", lineHeight: 0, fontSize: 0 };
+export const figureBox: CSSProperties = { position: "relative", display: "inline-block", lineHeight: 0, fontSize: 0 };
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 const hint: CSSProperties = { fontSize: "0.8em", opacity: 0.7, maxWidth: 420 };

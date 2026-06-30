@@ -317,6 +317,18 @@ describe("EntvizCompare", () => {
     expect(screen.getByText(/how thorough/i)).toBeTruthy(); // the walk's preset picker
   });
 
+  test("the walk reuses the static figures (no second pair) and rings them", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    expect(screen.getAllByRole("img").length).toBe(2); // ours + reference
+    fireEvent.click(screen.getByRole("button", { name: /walking the cells/i }));
+    fireEvent.click(screen.getByRole("button", { name: /strong spot-check/i })); // Good
+    expect(screen.getAllByRole("img").length).toBe(2); // STILL two — no duplicate pair
+    // a focus-ring overlay is drawn on the existing figures (mask id from ringOverlay)
+    expect(container.querySelector('[id^="entviz-walk-spot-"]')).toBeTruthy();
+  });
+
   test("warns on secret material; RTL + messages override", () => {
     const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
     const { container, rerender } = rtlRender(<EntvizCompare value={mnemonic} />);

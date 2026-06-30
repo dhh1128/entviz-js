@@ -21,9 +21,9 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict } from "@entviz/core";
+import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
-import { EntvizWalk, layoutStyle, type EntvizLayout } from "./EntvizWalk.ts";
+import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 
@@ -185,11 +185,15 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const [urlInput, setUrlInput] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [walking, setWalking] = useState(false);
+  // The feature the guided walk is currently checking — the walk reports it (it
+  // runs with externalFigures), and we ring it on OUR static figures (#reuse).
+  const [walkStep, setWalkStep] = useState<WalkStep | null>(null);
 
   // Shared display size/shape (#3): the resize/reshape controls live on OUR
   // figure and drive BOTH panels. Initialized from the host's render inputs.
   const [dispFs, setDispFs] = useState(fontSizePt ?? 12);
   const [dispAr, setDispAr] = useState(targetAr ?? 1);
+  const dispOpts = { targetAr: dispAr, fontSizePt: dispFs, note };
 
   // The empty reference placeholder must match OUR figure's footprint exactly, so
   // the two boxes are the same size side-by-side. Our figure renders at its
@@ -339,18 +343,25 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     h(
       "div",
       { style: panelsStyle, "data-entviz-layout": layout },
-      // Yours — carries the shared size/reshape controls (drives both panels).
+      // Yours — carries the shared size/reshape controls (drives both panels;
+      // suppressed during a walk so the focus ring overlays the figure cleanly).
       // Reshape is disabled for a raster reference (an image can't be re-shaped).
       h(
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.yours),
-        h(Entviz, {
-          value, targetAr: dispAr, fontSizePt: dispFs, note,
-          controls: true, reshapable: medium !== "raster",
-          onResize: setDispFs, onReshape: setDispAr,
-          style: panelEntviz,
-        }),
+        h(
+          "div",
+          { style: figureBox },
+          h(Entviz, {
+            value, targetAr: dispAr, fontSizePt: dispFs, note,
+            controls: !walking, reshapable: medium !== "raster",
+            onResize: setDispFs, onReshape: setDispAr,
+            style: panelEntviz,
+          }),
+          // The guided walk reuses THIS figure: ring the feature it's checking.
+          walking && walkStep ? ringOverlay(value, dispOpts, walkStep, "yours") : null,
+        ),
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
       // figure (or a placeholder of the same footprint) sits DIRECTLY under the
@@ -360,13 +371,20 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
-        refDisplayValue !== null
-          ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
-          // Sized to OUR figure's exact footprint (tracks dispAr + dispFs), so
-          // the empty slot is the same size beside "Yours" and previews where the
-          // reference will land.
-          : h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder),
-        acquisition,
+        h(
+          "div",
+          { style: figureBox },
+          refDisplayValue !== null
+            ? h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: panelEntviz })
+            // Sized to OUR figure's exact footprint (tracks dispAr + dispFs), so
+            // the empty slot is the same size beside "Yours" and previews where the
+            // reference will land.
+            : h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder),
+          walking && walkStep && refDisplayValue !== null
+            ? ringOverlay(refDisplayValue, dispOpts, walkStep, "reference") : null,
+        ),
+        // Acquisition inputs hide during a walk (no mid-walk reference edits).
+        walking ? null : acquisition,
         eff && refContent.trim()
           ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
           : null,
@@ -389,10 +407,12 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         ? h(EntvizWalk, {
             value,
             reference: refContent,
-            targetAr,
-            fontSizePt,
+            targetAr: dispAr,
+            fontSizePt: dispFs,
             note,
             layout,
+            externalFigures: true, // reuse our static figures; just report the step
+            onStep: setWalkStep,
             style: { marginTop: 4 },
           })
         : h(
