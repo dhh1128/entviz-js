@@ -34,7 +34,7 @@ import { classifyInput, type RenderOptions } from "./entviz.ts";
 export type CeremonyMode = "voice-only" | "paste-bind";
 
 /** The shape of the read-back the plan chose (§15.5). */
-export type ReadbackKind = "all-cells" | "row-or-column" | "fingerprint-cells" | "bind";
+export type ReadbackKind = "all-cells" | "consecutive" | "fingerprint-cells" | "bind";
 
 export type SizeClass = "small" | "medium" | "big";
 
@@ -58,11 +58,10 @@ export interface ReadbackPlan {
   mode: CeremonyMode;
   kind: ReadbackKind;
   cls: ValueClass;
-  /** ordered filled-cell indices the authenticator asks the reader to read aloud. */
+  /** ordered filled-cell indices the authenticator asks the reader to read aloud.
+   *  The UI names each by its grid address ("row 1, column 2") so the authenticator
+   *  can point the remote reader at it. */
   cells: number[];
-  /** for a row-or-column plan, which line was chosen (the UI labels it — "read me
-   *  the cells across row 2"); null for every other kind. */
-  line: { axis: "row" | "col"; index: number } | null;
   /** how many of `cells` were appended purely for §14.5 homoglyph compensation. */
   homoglyphExtra: number;
 }
@@ -70,7 +69,7 @@ export interface ReadbackPlan {
 // Tunable knobs (comparison-design.md §15.5) — composition, not soundness.
 const SMALL_MAX_CELLS = 6; // ≤ this many filled cells ⇒ "small" (matches the walk, §14.4)
 const BIND_CELLS = 2; // a paste-bind asks the reader for this many cells
-const READBACK_FLOOR = 2; // a line needs ≥ this many filled cells to be a candidate
+const SAMPLE_CELLS = 4; // a medium-constrained read-back samples this many consecutive cells
 
 // Deterministic Fisher–Yates over a [0,1) source, so a CSPRNG-driven ceremony (the
 // UI) and a seeded one (tests) share one path. The authenticator's *live* choice is
@@ -108,24 +107,6 @@ export function classifyValue(value: string, opts: RenderOptions = {}): ValueCla
   return classify(model, alphabet.name, typeName);
 }
 
-const lineCells = (model: ChannelDescription, axis: "row" | "col", index: number): number[] =>
-  model.cells
-    .filter((c) => !c.blank && (axis === "row" ? c.row : c.col) === index)
-    .map((c) => c.index);
-
-// Every row and column carrying ≥ READBACK_FLOOR filled cells is a candidate the
-// authenticator could pick; the live choice among them is unpredictable to the reader.
-function candidateLines(model: ChannelDescription): { axis: "row" | "col"; index: number }[] {
-  const lines: { axis: "row" | "col"; index: number }[] = [];
-  for (let r = 0; r < model.rows; r++) {
-    if (lineCells(model, "row", r).length >= READBACK_FLOOR) lines.push({ axis: "row", index: r });
-  }
-  for (let c = 0; c < model.cols; c++) {
-    if (lineCells(model, "col", c).length >= READBACK_FLOOR) lines.push({ axis: "col", index: c });
-  }
-  return lines;
-}
-
 /**
  * Build the authenticator's read-back plan for a value and mode (§15.5). `rng` is
  * a [0,1) source — the platform CSPRNG in the UI, a seeded LCG in tests — standing
@@ -135,11 +116,12 @@ function candidateLines(model: ChannelDescription): { axis: "row" | "col"; index
  *  - **big** (>512-bit): the hash-derived **fingerprint-middle** cells (avalanche,
  *    homoglyph-clean) — all of them voice-only, a couple to bind after a paste.
  *  - **small**, or **medium programmable**: **all cells** (no sound sample exists).
- *  - **medium constrained**: an authenticator-chosen **row or column**.
+ *  - **medium constrained**: a run of **consecutive cells** from a random start (in
+ *    reading order, so it may span rows) — robust where a single row is too narrow.
  *  - **paste-bind** on a constrained value: a couple of cells to bind the machine's
  *    exhaustive compare to the live reader (a fingerprint cell if big).
  *
- * A sampled plan (row-or-column, bind) on a confusable alphabet gets **one extra
+ * A sampled plan (consecutive, bind) on a confusable alphabet gets **one extra
  * cell** for homoglyph compensation (§14.5); an all-cells or fingerprint plan does not.
  */
 export function buildReadbackPlan(
@@ -157,7 +139,6 @@ export function buildReadbackPlan(
 
   let kind: ReadbackKind;
   let cells: number[];
-  let line: ReadbackPlan["line"] = null;
 
   if (mode === "paste-bind") {
     // The machine already compared the whole pasted value; bind it to the live
@@ -177,32 +158,29 @@ export function buildReadbackPlan(
   } else if (cls.sizeClass === "big") {
     kind = "fingerprint-cells";
     cells = fingerprintIdx.slice();
+  } else if (cls.sizeClass === "medium" && cls.constrained) {
+    // A run of consecutive filled cells from an unpredictable start (§15.5). Medium
+    // ⇒ > SMALL_MAX_CELLS filled, so there are always enough for a full run.
+    kind = "consecutive";
+    const n = Math.min(SAMPLE_CELLS, filledIdx.length);
+    const start = Math.floor(rng() * (filledIdx.length - n + 1));
+    cells = filledIdx.slice(start, start + n);
   } else {
-    // medium constrained → an authenticator-chosen row/column; anything else (small
-    // of any type, medium programmable, or a degenerate medium grid with no line of
-    // ≥2 filled cells) → read every cell (§15.5). A genuine medium grid always has a
-    // usable line, so the empty-`lines` case is the fail-safe, not the norm.
-    const lines = cls.sizeClass === "medium" && cls.constrained ? candidateLines(model) : [];
-    if (lines.length) {
-      line = sample(lines, 1, rng)[0];
-      kind = "row-or-column";
-      cells = lineCells(model, line.axis, line.index);
-    } else {
-      kind = "all-cells";
-      cells = filledIdx;
-    }
+    // small (any type), or medium programmable: read every cell (§15.5).
+    kind = "all-cells";
+    cells = filledIdx;
   }
 
   // §14.5 homoglyph compensation: only a *sampled* plan on a confusable alphabet
   // (an all-cells read already covers everything; the Crockford fingerprint is clean).
   let homoglyphExtra = 0;
-  if (cls.homoglyphProne && (kind === "row-or-column" || kind === "bind")) {
+  if (cls.homoglyphProne && (kind === "consecutive" || kind === "bind")) {
     const extra = sample(filledIdx.filter((i) => !cells.includes(i)), 1, rng);
     cells = [...cells, ...extra];
     homoglyphExtra = extra.length;
   }
 
-  return { mode, kind, cls, cells, line, homoglyphExtra };
+  return { mode, kind, cls, cells, homoglyphExtra };
 }
 
 // --- the ceremony reducer (§15.7, reusing the §14.6 discipline) -----------

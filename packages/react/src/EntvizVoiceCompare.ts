@@ -29,7 +29,6 @@ import {
   buildReadbackPlan,
   ceremonyCoverage as coverage,
   describeChannels,
-  ceremonyFinish as finish,
   ceremonyRespond as respond,
   startCeremony,
   type CeremonyMode,
@@ -70,10 +69,12 @@ export interface EntvizVoiceCompareProps {
 const M = {
   title: "Compare by voice",
   // The channel-authentication affirmation (§15.1): the tool asserts the
-  // requirement; it cannot verify it, so the human affirms it explicitly.
+  // requirement; it cannot verify it, so the human affirms it explicitly. This is
+  // an expectation-setter, NOT an identity affirmation (§15.10): the ceremony proves
+  // value-equality over the voice channel, not who the other party is.
   affirmPrompt:
-    "Are you on a live voice or video call with the other person, and do you recognize them — their voice or face, not just a name on a screen?",
-  affirmYes: "Yes — start",
+    "Comparing by voice checks one thing: whether the person on your call is looking at the same value as you. It can't tell you who they are — that's for you to judge — and it can only rule out a man-in-the-middle if your voice channel itself has integrity.",
+  affirmYes: "Proceed",
   // Per-strategy instruction for what to ask the reader to read (§15.5).
   hintAllCells: "Have them read each highlighted cell aloud, one at a time.",
   hintFingerprint:
@@ -81,28 +82,26 @@ const M = {
   hintBind:
     "The pasted value already matched by machine. Now have them read these cells aloud to confirm it's really theirs.",
   homoglyphNote: "One extra cell was added because this alphabet has look-alike characters.",
-  stepPrompt: "Ask them to read the highlighted cell aloud. Does it match what you see?",
   match: "Matches",
   differ: "Doesn't match",
-  done: "Done — enough read",
   relook: "Are you sure? Have them read it once more.",
   relookYes: "Yes, different",
   relookNo: "No, my mistake",
-  // final verdicts (§15.7 — cap at no-difference; always carry the conditional)
+  // final verdicts (§15.7 — cap at no-difference; the §15.10 conditional is about
+  // voice-channel integrity, NOT the reader's identity)
   noDifferenceVoice:
-    "No difference found across what they read — a strong check over a channel you authenticated. Valid only if the person you're speaking with is who you believe. Only a machine seeing both values in full can certify an exact match.",
+    "No difference found across what they read — they're looking at the same value as you, as long as your voice channel wasn't tampered with. This says nothing about who they are. Only a machine seeing both values in full can certify an exact match.",
   noDifferenceBind:
-    "Confirmed — the pasted value machine-matched yours, and they read it back as their own over your authenticated channel. Valid only if the person you're speaking with is who you believe.",
+    "Confirmed — the pasted value machine-matched yours, and they read it back as their own. They're looking at the same value as you, as long as your voice channel wasn't tampered with.",
   different: "Different — what they read does not match your value.",
-  pendingDone: "Stopped early — too little was read to conclude. This proves nothing on its own.",
-  recognitionNote: "A match means equal to their value; it does not vouch for who they are.",
+  recognitionNote: "A match means they hold the same value; it does not tell you who they are.",
   again: "Start over",
 };
 
 // The instruction line for a plan's read-back strategy.
 const HINT: Record<string, string> = {
   "all-cells": M.hintAllCells,
-  "row-or-column": M.hintAllCells, // the ring walks the line's cells one at a time
+  consecutive: M.hintAllCells, // the ring walks the run's cells one at a time, by address
   "fingerprint-cells": M.hintFingerprint,
   bind: M.hintBind,
 };
@@ -170,14 +169,14 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     );
   }
 
-  // --- ended: the verdict ---
+  // --- ended: the verdict (no-difference or different — the ceremony runs the whole
+  // plan; there is no early "Done", so PENDING is never a final state) ---
   if (state.ended) {
     const msg =
       state.status === "no-difference"
         ? state.plan.mode === "paste-bind" ? M.noDifferenceBind : M.noDifferenceVoice
-        : state.status === "different" ? M.different
-        : M.pendingDone;
-    const tone = state.status === "no-difference" ? "#1a7f37" : state.status === "different" ? "#c4314b" : "#57606a";
+        : M.different;
+    const tone = state.status === "no-difference" ? "#1a7f37" : "#c4314b";
     return h(
       "div",
       { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", ...style } },
@@ -187,7 +186,11 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     );
   }
 
-  // --- reading, one cell at a time ---
+  // --- reading, one cell at a time. In the reading state `step`/`model` are
+  // guaranteed non-null (a built plan means the value rendered). We name the cell by
+  // its 1-based grid address so the authenticator can point the reader at it (§15.5). ---
+  const cell = model!.cells[step!.cellIndex];
+  const address = `row ${cell.row + 1}, column ${cell.col + 1}`;
   const readOf = `${state.index + 1} / ${state.plan.cells.length}`;
   return h(
     "div",
@@ -210,7 +213,8 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
           ),
         ),
     h("span", { style: { fontSize: "0.85em", opacity: 0.7 } }, readOf),
-    h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, M.stepPrompt),
+    // name the exact cell so the authenticator can direct the remote reader to it
+    h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, `Have them read ${address} aloud. Does it match what you see?`),
     relook
       ? h(
           "div",
@@ -224,7 +228,6 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
           { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
           h("button", { type: "button", style: btn, onClick: () => apply((s) => respond(s, "match")) }, M.match),
           h("button", { type: "button", style: btnBad, onClick: () => setRelook(true) }, M.differ),
-          h("button", { type: "button", style: btnGhost, onClick: () => apply(finish) }, M.done),
         ),
   );
 }

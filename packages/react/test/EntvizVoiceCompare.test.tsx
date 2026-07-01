@@ -19,10 +19,9 @@ function rngFrom(seed: number): () => number {
 
 const click = (name: RegExp) => fireEvent.click(screen.getByRole("button", { name }));
 const maybe = (name: RegExp) => screen.queryByRole("button", { name });
-const START = /^yes.*start$/i;
+const START = /^proceed$/i;
 const MATCH = /^matches$/i;
 const DIFFER = /^doesn.t match$/i;
-const DONE = /^done.*read$/i;
 
 const affirm = () => click(START);
 function driveMatchAll(max = 100) {
@@ -36,7 +35,7 @@ function driveMatchAll(max = 100) {
 describe("EntvizVoiceCompare: the affirmation gate", () => {
   test("shows the channel-authentication affirmation before crediting anything", () => {
     render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} />);
-    expect(screen.getByText(/live voice or video call/i)).toBeTruthy();
+    expect(screen.getByText(/same value as you/i)).toBeTruthy();
     // no read-back controls until affirmed
     expect(maybe(MATCH)).toBeNull();
     affirm();
@@ -50,8 +49,9 @@ describe("EntvizVoiceCompare: verdicts", () => {
     affirm();
     driveMatchAll();
     expect(screen.getByText(/no difference found across what they read/i)).toBeTruthy();
-    // the §15.1 conditional is always present
-    expect(screen.getByText(/valid only if the person/i)).toBeTruthy();
+    // the §15.10 conditional (voice-channel integrity, NOT identity) is always present
+    expect(screen.getByText(/voice channel wasn.t tampered with/i)).toBeTruthy();
+    expect(screen.getByText(/says nothing about who they are/i)).toBeTruthy();
   });
 
   test("one differ, after a re-look, is a certain DIFFERENT", () => {
@@ -71,11 +71,12 @@ describe("EntvizVoiceCompare: verdicts", () => {
     expect(maybe(MATCH)).toBeTruthy();
   });
 
-  test("stopping early freezes PENDING ('proves nothing')", () => {
-    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} />);
+  test("names the exact cell by grid address so the reader can be pointed at it", () => {
+    render(<EntvizVoiceCompare value={HEX512} rng={rngFrom(4)} />);
     affirm();
-    click(DONE);
-    expect(screen.getByText(/stopped early/i)).toBeTruthy();
+    expect(screen.getByText(/have them read row \d+, column \d+/i)).toBeTruthy();
+    // there is no early "Done" affordance in the voice ceremony
+    expect(screen.queryByRole("button", { name: /done/i })).toBeNull();
   });
 
   test("big value: reads the fingerprint-middle cells", () => {
@@ -131,7 +132,7 @@ describe("EntvizVoiceCompare: wiring", () => {
     affirm();
     driveMatchAll();
     click(/^start over$/i);
-    expect(screen.getByText(/live voice or video call/i)).toBeTruthy();
+    expect(screen.getByText(/same value as you/i)).toBeTruthy();
   });
 
   test("with the default CSPRNG (no rng prop) a sampling plan still completes", () => {
@@ -146,6 +147,6 @@ describe("EntvizVoiceCompare: wiring", () => {
     // over the input cap ⇒ describeChannels throws ⇒ safeDescribe returns null; the
     // affirmation gate still renders (we never build a plan until it's affirmed).
     render(<EntvizVoiceCompare value={"!".repeat(65537)} rng={rngFrom(1)} />);
-    expect(screen.getByText(/live voice or video call/i)).toBeTruthy();
+    expect(screen.getByText(/same value as you/i)).toBeTruthy();
   });
 });

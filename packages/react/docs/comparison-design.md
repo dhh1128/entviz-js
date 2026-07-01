@@ -631,14 +631,23 @@ assumption §8 left implicit. Read §15.9 for exactly how it relates to §8.
   assume of the reader is that they can read glyphs off that artifact aloud.** They cannot compute,
   commit, generate entropy, or run a protocol. This is the assumption §8 left implicit, and it is
   what forces everything below.
-- **Voice/video is the one authenticated channel** — authenticated by *human recognition* (you know
-  their voice/face). Any digital channel between the parties (SMS, chat, email, a paste) is a **fat
-  but unauthenticated pipe**: an attacker can modify what crosses it. Confidentiality is not required.
-- **The live threat is a substitution/relay on the digital channel** (the reader's value is swapped
-  in transit so the machine compare passes against a value that is not theirs). A **dishonest reader
-  who lies about their own artifact** is *out of scope* — that is the endpoint-trust / reference-
-  authenticity limit (§2.5, §2.4); the ceremony is sound only *conditioned on* the reader honestly
-  reading what they see, which is exactly the "you recognize and trust the person" assumption.
+- **What the ceremony proves is narrow and precise: *the party on the other end of this voice channel
+  is looking at the same value I am.*** It does **not** bind that value to a *human identity*, and it
+  does not require the reader to be someone the authenticator knows — or even to be a human. *Who* holds
+  the matching value is a separate question the authenticator answers with additional context
+  (recognizing a voice, a credential, a prior relationship); the protocol supplies the equality, not
+  the identity. (This corrects an earlier framing that gated the ceremony on "do you recognize them" —
+  an identity claim the protocol cannot make. See §15.10.)
+- **The voice channel carries the whole guarantee, so its integrity is the load-bearing assumption.**
+  Any digital channel between the parties (SMS, chat, email, a paste) is a **fat but unauthenticated
+  pipe** an attacker can modify. A man-in-the-middle is ruled out only to the extent the **voice
+  channel itself has integrity** — a MITM would have to control **both** the voice channel **and** the
+  channel that delivered the reference value. Confidentiality is not required.
+- **The live threat is a substitution/relay** (a value swapped in transit, or read-back injected on the
+  voice channel, so the check passes against a value that is not the reader's). A **dishonest reader
+  who lies about their own artifact** is *out of scope* — the endpoint-trust / reference-authenticity
+  limit (§2.5, §2.4); the ceremony is sound only *conditioned on* the reader honestly reading what they
+  see, and on the voice channel not being silently substituted.
 
 ### 15.2 What the ceremony does NOT contain — and why
 
@@ -692,7 +701,7 @@ routed to the paste path. The tool already distinguishes constrained from progra
 | value | read-back |
 |---|---|
 | **small** (≤ ~6 cells, any type) | read **all cells** (also the only sound option — nothing to sample) |
-| **medium, constrained** | read an **authenticator-chosen row or column**, live/unpredictable |
+| **medium, constrained** | read a run of **4 consecutive cells** from a live/unpredictable start (reading order, may span rows — robust where a single row is too narrow), each named by its grid address ("row 1, column 2") |
 | **medium, programmable** | read **all cells** (or paste + machine) — no sound sample exists |
 | **big** (>512-bit, any type) | read the **fingerprint-middle Crockford cells** (hash-anchored, single-case, homoglyph-clean) |
 | **paste available** (any) | machine does the exhaustive compare; authenticator asks for **1–2 cells** to bind it to the live person (a fingerprint cell if the value is programmable) |
@@ -725,21 +734,21 @@ Both modes anchor authentication on the voice channel; they differ only in how m
   NO-DIFFERENCE and never reaches IDENTICAL** — even in paste-accelerated mode, where the machine
   reports IDENTICAL for the *pasted* value, the load-bearing claim ("that pasted value is the reader's
   real value") rests on a human read-back, so the ceremony's affirmative is coverage, never `=`.
-- Verdict copy keeps the §3 discipline and always carries the §15.1 conditional (*valid only if the
-  person you're speaking to is who you believe*).
+- Verdict copy keeps the §3 discipline and always carries the §15.1 conditional — scoped to what the
+  protocol actually promises: *the other party is looking at the same value; this says nothing about
+  who they are, and holds only if your voice channel has integrity.*
 
-### 15.8 UI surface (proposal — the one open item)
+### 15.8 UI surface
 
 The remote ceremony is a **top-level situational choice** peer to "I have something to check against"
-(§4), and its voice-only mode has **no reference to acquire** — so the trigger should **not** be a
-third icon inside the reference-acquisition row (whose semantics are "supply a reference," and which
-hides when a reference is host-provided). Proposed: a **distinct, labeled entry** — an inline-SVG
-*person-with-speech-bubble* glyph plus a terse **"Compare by voice"** label (hover explains: *"The
-other person reads their value to you over a call you trust"*), placed as a sibling of the walk-launch
-buttons and visible in **both** the empty state (voice-only entry) and the pasted state (the binding
-challenges). Clicking it enters a guided ceremony mode that takes over the surface like the walk does.
-*(Icon note: a person speaking, not a bare speaker — a speaker glyph reads as audio playback.)*
-**Confirm placement before the UI slice; it does not block the core primitive.**
+(§4). It is presented as one of **two tabs** at the top of `<EntvizCompare>` — **"Compare
+visualizations"** (the machine/reference path + guided walk) and **"Compare by voice"** (this
+ceremony) — so the two situations read as equal siblings, both always reachable, sharing the one
+"Yours" value and its size/shape toolbar. (An earlier draft put voice as a labeled button below the
+acquisition field; tabs model the peer choice better and keep the voice path visible even with no
+reference.) The voice tab opens on the §15.10 expectation-setting gate, then runs the guided read-back
+(reusing the walk's focus-ring overlay on our own figure). `paste-bind` is selected automatically when
+a pasted reference already machine-matched as `identical`; otherwise `voice-only`.
 
 ### 15.9 Relationship to §8 (scoping, not reversing)
 
@@ -751,3 +760,30 @@ shipped ceremony is the **unilateral, authenticator-directed** one above, which 
 threat *by construction* (no joint seed) rather than by commitment. The symmetric walk-together mode
 with its §8 commitment default remains available as a future option, deferred; nothing here weakens
 it.
+
+### 15.10 Equality, not identity (the refined guarantee)
+
+A second refinement (recorded 2026-07) sharpens *what the ceremony claims*. It proves exactly one
+thing: **the party on the other end of the voice channel is looking at the same value as the
+authenticator.** It deliberately does **not**:
+
+- **bind that value to a human identity** — the reader need not be known to the authenticator, need not
+  appear on video, need not even be a human. *Who* holds the matching value is the authenticator's own
+  judgment from outside context (a recognized voice, a credential, a prior relationship); the protocol
+  supplies equality, and the human supplies identity.
+- **rule out a man-in-the-middle unconditionally** — a MITM is excluded only insofar as the **voice
+  channel has integrity**, because defeating the check requires controlling *both* the voice channel
+  *and* the channel that delivered the reference value.
+
+This retired the earlier **"do you recognize them — voice or face?" affirmation gate**, which
+overclaimed: it dressed an identity assertion the protocol can't make as a precondition, coaching false
+confidence. The gate is replaced by an **expectation-setter** that states the guarantee and its two
+limits plainly, then asks only to *proceed*:
+
+> *Comparing by voice checks one thing: whether the person on your call is looking at the same value as
+> you. It can't tell you who they are — that's for you to judge — and it can only rule out a
+> man-in-the-middle if your voice channel itself has integrity. Proceed?*
+
+Practically this also **widens applicability**: the ceremony is meaningful over a voice-only call, with
+a stranger, or with an automated reader, so long as the authenticator understands it is checking value
+equality — not vouching for the other party.

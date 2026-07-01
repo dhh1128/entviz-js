@@ -61,17 +61,14 @@ test("voice-only, small: read all cells", () => {
   assert.equal(p.homoglyphExtra, 0);
 });
 
-test("voice-only, medium constrained: read a chosen row or column", () => {
+test("voice-only, medium constrained: read a run of consecutive cells", () => {
   const p = buildReadbackPlan(HEX512, {}, "voice-only", rngFrom(4));
-  assert.equal(p.kind, "row-or-column");
-  assert.ok(p.line);
-  assert.ok(p.cells.length >= 2);
-  // every chosen cell really lies on that line
-  const d = describeChannels(HEX512, {});
-  for (const ci of p.cells) {
-    const c = d.cells[ci];
-    assert.equal(p.line!.axis === "row" ? c.row : c.col, p.line!.index);
-  }
+  assert.equal(p.kind, "consecutive");
+  assert.equal(p.cells.length, 4);
+  // the run is consecutive filled cells in reading order (a contiguous slice)
+  const fi = filled(HEX512);
+  const start = fi.indexOf(p.cells[0]);
+  assert.deepEqual(p.cells, fi.slice(start, start + 4));
 });
 
 test("voice-only, medium programmable: read all cells (no sound sample)", () => {
@@ -92,7 +89,7 @@ test("voice-only, big: read the fingerprint-middle cells only", () => {
 
 test("voice-only, medium constrained + confusable alphabet: one extra compensation cell", () => {
   const p = buildReadbackPlan(B64URL, {}, "voice-only", rngFrom(7));
-  assert.equal(p.kind, "row-or-column");
+  assert.equal(p.kind, "consecutive");
   assert.equal(p.homoglyphExtra, 1);
   // the extra cell is distinct from the line cells and still a filled cell
   assert.equal(new Set(p.cells).size, p.cells.length);
@@ -186,7 +183,7 @@ test("coverage: an empty plan reports 0 and never affirms", () => {
   const empty: ReadbackPlan = {
     mode: "voice-only", kind: "all-cells",
     cls: { sizeClass: "small", constrained: true, homoglyphProne: false, filledCells: 0 },
-    cells: [], line: null, homoglyphExtra: 0,
+    cells: [], homoglyphExtra: 0,
   };
   const s = startCeremony(empty);
   assert.equal(coverage(s), 0);
