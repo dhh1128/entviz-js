@@ -329,6 +329,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const cssVar = (name: string, fallback: string) => `var(--entviz-pill-${name}, ${fallback})`;
 
   // --- badge ---
+  // The badge is the pill's leading cap: a square color swatch bled over the
+  // pill's 1px border on the top, bottom, and leading edge (via negative margins)
+  // so its color runs flush to the pill's outer edge with a crisp square corner.
+  // The pill's own leading corners are squared to match (pillBody, below).
   const badge = showIcon
     ? h(
         "span",
@@ -338,12 +342,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
             display: "inline-grid",
             gridTemplateColumns: "1fr 1fr",
             gridTemplateRows: "1fr 1fr",
-            width: "1em",
-            height: "1em",
-            borderRadius: 2,
+            width: "calc(1em + 1px)",
+            height: "calc(1em + 2px)",
+            marginBlock: "-1px",
+            marginInlineStart: "-1px",
             overflow: "hidden",
             flex: "0 0 auto",
-            border: cssVar("badge-border", "0.5px solid color-mix(in srgb, currentColor 45%, transparent)"),
           },
         },
         BADGE.map((c) => h("span", { key: c, style: { background: c } })),
@@ -425,8 +429,16 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "currentColor",
         // Zero vertical padding + a tight line box so the pill hugs its content and
-        // doesn't inflate the line it sits in.
-        padding: "0 0.4em", borderRadius: cssVar("radius", "0.6em"),
+        // doesn't inflate the line it sits in. With a badge, the inline-start
+        // padding is dropped so the badge fills the pill's leading cap (clipped to
+        // the corner via its own leading radius, above).
+        paddingBlock: 0,
+        paddingInlineStart: showIcon ? 0 : "0.4em",
+        paddingInlineEnd: "0.4em",
+        borderRadius: cssVar("radius", "0.6em"),
+        // With a badge capping the leading edge, square the pill's leading corners
+        // so the badge swatch's square corner meets the pill's outer edge cleanly.
+        ...(showIcon ? { borderStartStartRadius: 0, borderEndStartRadius: 0 } : null),
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
         whiteSpace: "nowrap", maxWidth, lineHeight: 1,
