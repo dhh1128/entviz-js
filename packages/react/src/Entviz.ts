@@ -305,7 +305,10 @@ function nearestLadderIndex(pt: number): number {
 // entviz's real shape — a 2×3 reads square, a 3×2 reads wide, as they actually
 // render (a square cell made a near-square 2×3 look portrait).
 function gridThumb(cols: number, rows: number): React.ReactElement {
-  const cw = 3, ch = 2, gapX = 0.6, gapY = 0.4, pad = 1; // cell w:h = 3:2
+  // Gaps ≈ 1px→1.5px lines between cells for clearer separation; kept in the
+  // cell's 3:2 ratio (gapX:gapY = 1.5:1) so the thumbnail's overall shape still
+  // reads true. 1 SVG unit renders as 1px here (width = viewBox width).
+  const cw = 3, ch = 2, gapX = 1.5, gapY = 1, pad = 1; // cell w:h = 3:2
   const w = pad * 2 + cols * cw + (cols - 1) * gapX;
   const hgt = pad * 2 + rows * ch + (rows - 1) * gapY;
   const cells: React.ReactElement[] = [];
