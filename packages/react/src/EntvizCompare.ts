@@ -319,9 +319,21 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           h(
             "label",
             { style: fileLabel, title: m.pickFile },
-            // Terse upload glyph; the wordy "Choose a file…" lives in the tooltip
-            // (and the input's accessible name), per the terse-label + hover rule.
-            h("span", { "aria-hidden": true, style: { fontSize: "1.3em", lineHeight: 1 } }, "↥"),
+            // A standard inline-SVG upload glyph (tray + up arrow, à la Feather/
+            // Material) drawn in currentColor — no icon-library dependency. The
+            // wordy "Choose a file…" lives in the tooltip + the input's accessible
+            // name, per the terse-label + hover rule.
+            h(
+              "svg",
+              {
+                "aria-hidden": true, width: "1.15em", height: "1.15em", viewBox: "0 0 24 24",
+                fill: "none", stroke: "currentColor", strokeWidth: 2,
+                strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block" },
+              },
+              h("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
+              h("polyline", { points: "17 8 12 3 7 8" }),
+              h("line", { x1: 12, y1: 3, x2: 12, y2: 15 }),
+            ),
             h("input", {
               type: "file",
               accept: ".svg,image/svg+xml,image/*",
