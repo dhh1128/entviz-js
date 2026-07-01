@@ -183,9 +183,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     h("span", { style: ctlValue }, `${curPt}pt`),
     h("button", { type: "button", onClick: () => stepFs(1), disabled: ladderIdx === FONT_SIZE_LADDER.length - 1, "aria-label": "larger", style: ctlBtn }, "+"),
   );
-  // Reshape control: a single dropdown button showing the CURRENT shape (a
-  // dropdown caret in its corner) that opens a menu of the achievable shapes.
-  // One button's width instead of one-per-shape — the toolbar stays compact.
+  // Reshape control: a single dropdown button showing the CURRENT shape beside a
+  // dropdown caret, opening a menu of the achievable shapes. One button's width
+  // instead of one-per-shape — the toolbar stays compact.
   const activeShape = shapes.find((s) => s.cols === cur.cols && s.rows === cur.rows) ?? shapes[0];
   const reshapeGroup =
     reshapable && shapes.length > 1
@@ -202,7 +202,12 @@ export function Entviz(props: EntvizProps): React.ReactElement {
               },
               "aria-haspopup": "menu", "aria-expanded": openMenu === "shape",
               "aria-controls": openMenu === "shape" ? shapeMenuId : undefined, "aria-label": "shape",
-              style: { ...thumbBtn, position: "relative", color: "var(--entviz-ctl-active, #3b34b0)" },
+              style: {
+                ...thumbBtn, alignItems: "center", gap: 5, boxSizing: "border-box",
+                // Never shorter than the −/+ / kebab buttons (0.85em text + 4px pad + 2px border).
+                minHeight: "calc(0.85em + 6px)",
+                color: "var(--entviz-ctl-active, #3b34b0)",
+              },
             },
             gridThumb(activeShape.cols, activeShape.rows),
             h("span", { "aria-hidden": true, style: shapeCaret }, "▾"),
@@ -329,9 +334,10 @@ const thumbBtn: React.CSSProperties = {
   border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
 };
 const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
-// A small dropdown caret tucked into the shape button's bottom-leading corner.
+// The dropdown caret: to the trailing side of the thumbnail, vertically centered
+// (the button's alignItems), and large enough to read clearly as a menu affordance.
 const shapeCaret: React.CSSProperties = {
-  position: "absolute", bottom: -2, insetInlineStart: 0, fontSize: 9, lineHeight: 1, opacity: 0.75,
+  fontSize: "1.05em", lineHeight: 1, opacity: 0.8, marginInlineStart: "auto",
 };
 // The shape picker's dropdown: the achievable shapes as a small wrapped palette.
 const shapeMenuStyle: React.CSSProperties = {
