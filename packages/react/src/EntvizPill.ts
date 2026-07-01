@@ -342,8 +342,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
             display: "inline-grid",
             gridTemplateColumns: "1fr 1fr",
             gridTemplateRows: "1fr 1fr",
-            width: "calc(1em + 1px)",
-            height: "calc(1em + 2px)",
+            // Fill the pill's inner height (whatever the text's line box works out
+            // to, including descender room) with a fixed-width swatch; bleed -1px
+            // over the top/bottom/leading border so it's flush to the outer edge.
+            // (aspect-ratio + stretch collapses an empty grid item's width, so the
+            // width is set explicitly rather than derived from the height.)
+            alignSelf: "stretch",
+            width: "1.3em",
             marginBlock: "-1px",
             marginInlineStart: "-1px",
             overflow: "hidden",
@@ -358,7 +363,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const textBlock = shownParts.length
     ? h(
         "span",
-        { style: { display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap" } },
+        // paddingBlock keeps descenders (g, y, p) inside the overflow:hidden clip
+      // box — a tight lineHeight:1 box would otherwise shear them off.
+      { style: { display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap", paddingBlock: "0.16em" } },
         showType && type
           ? h(
               "span",
@@ -435,7 +442,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         paddingBlock: 0,
         paddingInlineStart: showIcon ? 0 : "0.4em",
         paddingInlineEnd: "0.4em",
-        borderRadius: cssVar("radius", "0.6em"),
+        borderRadius: cssVar("radius", "0.2em"),
         // With a badge capping the leading edge, square the pill's leading corners
         // so the badge swatch's square corner meets the pill's outer edge cleanly.
         ...(showIcon ? { borderStartStartRadius: 0, borderEndStartRadius: 0 } : null),
