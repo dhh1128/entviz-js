@@ -610,3 +610,144 @@ The **committed seed + reveal**, the **channel-authentication affirmation** (wha
 treat the out-of-band channel as authenticated), and the **copy/paste-vs-voice routing** for the
 *remote* ceremony are M3. This section specifies the single-user walk and the shared mechanics
 (plan, focus, presets, state machine) the ceremony reuses.
+
+---
+
+## 15. M3 — the remote voice ceremony (pinned specification)
+
+This section pins the two-party remote ceremony for implementation. It is the outcome of a
+first-principles re-derivation (recorded 2026-07) that **scopes §8 down substantially** — it does
+**not** reverse any adjudicated decision, but it dissolves most of §8's machinery by correcting an
+assumption §8 left implicit. Read §15.9 for exactly how it relates to §8.
+
+### 15.1 Scope and threat posture (what changed from §8)
+
+- **One-way authentication only.** The ceremony answers a single question for **one** party — *"does
+  the value I hold match the value the person on the call actually has?"* Mutual confirmation is that
+  same ceremony run twice, once in each direction; there is no joint protocol. The party running our
+  tool is the **authenticator**; the other party is the **reader**.
+- **The reader may have no software.** We assume only that the reader *has an entviz in front of
+  them* — our render, a third-party render, a screenshot, or a printout. The **sole capability we can
+  assume of the reader is that they can read glyphs off that artifact aloud.** They cannot compute,
+  commit, generate entropy, or run a protocol. This is the assumption §8 left implicit, and it is
+  what forces everything below.
+- **Voice/video is the one authenticated channel** — authenticated by *human recognition* (you know
+  their voice/face). Any digital channel between the parties (SMS, chat, email, a paste) is a **fat
+  but unauthenticated pipe**: an attacker can modify what crosses it. Confidentiality is not required.
+- **The live threat is a substitution/relay on the digital channel** (the reader's value is swapped
+  in transit so the machine compare passes against a value that is not theirs). A **dishonest reader
+  who lies about their own artifact** is *out of scope* — that is the endpoint-trust / reference-
+  authenticity limit (§2.5, §2.4); the ceremony is sound only *conditioned on* the reader honestly
+  reading what they see, which is exactly the "you recognize and trust the person" assumption.
+
+### 15.2 What the ceremony does NOT contain — and why
+
+Three pieces of §8 are **removed**, each for a concrete reason:
+
+- **No seed.** The seed's only security job was to defeat a **last-mover steering** a *jointly-seeded*
+  check-order. When only the authenticator selects checks, there is no joint seed and no last mover —
+  the threat §8 named does not arise. The residual "unpredictability" (so the reader can't pre-forge
+  the sampled cells) is supplied by the **authenticator freely choosing which cells to ask for, live**
+  — selection-unpredictability need not survive a hostile *local* tool (unlike a value's entropy), so
+  a human choice suffices.
+- **No commit-and-reveal.** Commitment binds *two* contributions to one seed; with no joint seed there
+  is nothing to commit. (It survives only for the hypothetical symmetric "walk-together" mode of
+  §15.9, which we are not building.)
+- **No synthetic SAS.** An earlier design carried a short Crockford *digest* read aloud. A digest is
+  SHA-derived — **not printed on the entviz** — so reading it requires the reader to *compute* it,
+  which a human with a picture cannot do. It is inapplicable to the baseline of §15.1 and is dropped
+  entirely. Its job is done instead by reading **rendered** features (§15.3).
+
+### 15.3 The primitive: authenticator-directed read-back of visible features
+
+> The authenticator points at a **rendered feature**; the reader reads it aloud; the authenticator
+> compares it to their own value. The machine covers the rest when a paste is available.
+
+Everything the reader ever does is read glyphs off the artifact in front of them — **never** a gestalt
+characterization ("which corners have triangles, what colors" is unusable over voice) and **never** a
+computed value. The authenticator selects features **live and unpredictably** (their free human
+choice is the anti-pre-forge mechanism). The paste never authenticates anything — it is an efficiency
+accelerator (§15.6); the authentication is **100% the voice channel**.
+
+### 15.4 When sampling is sound (the governing rule)
+
+Reading a *subset* (a row, a column, the fingerprint cells) is sound **only when a difference cannot
+hide in the cells not read.** That holds in exactly two situations, and nowhere else:
+
+1. **Constrained values** (keys, hashes, CESR, UUIDs, safety-numbers, `did:key` — the common,
+   security-critical case). Two distinct *usable* values differ in **~all** cells (forging a cell is
+   the 2²⁰–2²⁴ partial preimage of §2.3/§7.3), so any sample catches a substitution.
+2. **Hash-derived anchor cells** (the fingerprint-middle Crockford cells on >512-bit inputs). They are
+   SHA-512 of the whole value, so **any** difference avalanches into them — a sample of them catches
+   even a single-character near-collision.
+
+Sampling is **unsound** for **programmable / attacker-authored values** that lack a hash anchor
+(arbitrary text, a `did:web` domain, a URL): there an attacker can craft a one-cell near-collision
+(`example.com` vs `examp1e.com`) that a sampled row/column misses. Those must be **read in full** or
+routed to the paste path. The tool already distinguishes constrained from programmable by the
+**parser-derived type** (the same signal that credits programmable cells 0 in the meter, §7.3).
+
+### 15.5 Read-back strategy (size × type)
+
+| value | read-back |
+|---|---|
+| **small** (≤ ~6 cells, any type) | read **all cells** (also the only sound option — nothing to sample) |
+| **medium, constrained** | read an **authenticator-chosen row or column**, live/unpredictable |
+| **medium, programmable** | read **all cells** (or paste + machine) — no sound sample exists |
+| **big** (>512-bit, any type) | read the **fingerprint-middle Crockford cells** (hash-anchored, single-case, homoglyph-clean) |
+| **paste available** (any) | machine does the exhaustive compare; authenticator asks for **1–2 cells** to bind it to the live person (a fingerprint cell if the value is programmable) |
+
+Homoglyph handling follows §14.5: voice read-back **tolerates** confusables and compensates with
+**one extra credited base64url cell** when the plan contains base64url cells; the Crockford anchors
+and homoglyph-safe alphabets need no compensation.
+
+### 15.6 The two modes
+
+Both modes anchor authentication on the voice channel; they differ only in how much crosses it.
+
+- **Paste-accelerated** (the reader can transmit their value as *text* over any digital channel):
+  the authenticator pastes it into the existing acquisition field (§5), the machine does the exact,
+  homoglyph-free whole-value compare, and the authenticator then issues **1–2 live voice challenges**
+  to bind the pasted bytes to the reader's real artifact (hash-anchored feature if programmable).
+  Strictly better than reading everything aloud — but *not* "paste and done": without the voice
+  binding, a substituted paste (§15.1) passes the machine compare undetected.
+- **Voice-only** (the reader has only a picture, or only a voice call): the value itself must cross
+  voice, so the reader reads the features of §15.5 aloud and the authenticator checks each against
+  their own value.
+
+### 15.7 Roles, verdict, and evidence
+
+- **Local-only evidence** (§8): the verdict lives **only on the authenticator's endpoint**. Because
+  the ceremony is one-way, we surface **no peer verdict at all** — there is nothing to be tempted to
+  trust from the other screen.
+- **Verdict states reuse §14.6**: DIFFERENT (a confirmed mismatch, terminal, certain) · PENDING ·
+  **NO-DIFFERENCE** (coverage-driven, affirmative-but-probabilistic). The ceremony **caps at
+  NO-DIFFERENCE and never reaches IDENTICAL** — even in paste-accelerated mode, where the machine
+  reports IDENTICAL for the *pasted* value, the load-bearing claim ("that pasted value is the reader's
+  real value") rests on a human read-back, so the ceremony's affirmative is coverage, never `=`.
+- Verdict copy keeps the §3 discipline and always carries the §15.1 conditional (*valid only if the
+  person you're speaking to is who you believe*).
+
+### 15.8 UI surface (proposal — the one open item)
+
+The remote ceremony is a **top-level situational choice** peer to "I have something to check against"
+(§4), and its voice-only mode has **no reference to acquire** — so the trigger should **not** be a
+third icon inside the reference-acquisition row (whose semantics are "supply a reference," and which
+hides when a reference is host-provided). Proposed: a **distinct, labeled entry** — an inline-SVG
+*person-with-speech-bubble* glyph plus a terse **"Compare by voice"** label (hover explains: *"The
+other person reads their value to you over a call you trust"*), placed as a sibling of the walk-launch
+buttons and visible in **both** the empty state (voice-only entry) and the pasted state (the binding
+challenges). Clicking it enters a guided ceremony mode that takes over the surface like the walk does.
+*(Icon note: a person speaking, not a bare speaker — a speaker glyph reads as audio playback.)*
+**Confirm placement before the UI slice; it does not block the core primitive.**
+
+### 15.9 Relationship to §8 (scoping, not reversing)
+
+§8's "commit-and-reveal is the default" is **correct for a symmetric, jointly-seeded "walk-together"
+ceremony** — one shared check-order both parties follow in lockstep, where a last-mover genuinely can
+steer. This addendum observes that such a ceremony (a) is impossible when the reader has no software
+and (b) is the only topology that needs the heavy machinery — so it is **not the primitive.** The
+shipped ceremony is the **unilateral, authenticator-directed** one above, which removes the steering
+threat *by construction* (no joint seed) rather than by commitment. The symmetric walk-together mode
+with its §8 commitment default remains available as a future option, deferred; nothing here weakens
+it.
