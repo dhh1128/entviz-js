@@ -481,9 +481,19 @@ const placeholderBox: CSSProperties = {
 const textareaStyle: CSSProperties = {
   font: "0.85em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
   border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical",
-  flex: "1 1 auto", minWidth: 0, boxSizing: "border-box", // span the full comparator width (#5)
+  // basis 0 (not auto): the textarea takes the space LEFT OVER by the fixed-width
+  // buttons instead of imposing its own intrinsic width — so the row never
+  // overflows the comparator and the file button stays inside the panel range.
+  flex: "1 1 0", minWidth: 0, boxSizing: "border-box",
 };
-const fileLabel: CSSProperties = { fontSize: "0.8em", color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer", whiteSpace: "nowrap", alignSelf: "center" };
+// The file picker is a bordered icon button, sized to match the fetch button and
+// kept within the acquisition row (flex 0 0 auto — never grows past the edge).
+const fileLabel: CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto",
+  fontSize: "0.8em", lineHeight: 1, color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer",
+  border: "1px solid var(--entviz-compare-action, #3b34b0)", borderRadius: 6, padding: "5px 9px",
+  background: "none", whiteSpace: "nowrap",
+};
 const fetchBtn: CSSProperties = {
   font: "inherit", fontSize: "0.8em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-compare-action, #3b34b0)", color: "var(--entviz-compare-action, #3b34b0)", background: "none",
