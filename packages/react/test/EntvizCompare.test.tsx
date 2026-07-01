@@ -237,7 +237,40 @@ describe("EntvizCompare", () => {
       expect(onVerdict).toHaveBeenCalled();
     }, RWAIT);
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
-    expect(screen.queryAllByRole("img").length).toBe(1); // no reference panel for a raster
+    // the raster reference is now shown as an image beside our figure
+    expect(screen.queryAllByRole("img").length).toBe(2); // ours + the reference image
+    expect((screen.getByRole("textbox", { name: /paste/i }) as HTMLTextAreaElement).value).toBe("[image]");
+  });
+
+  test("pasting a raster image sets it as the reference, shows [image], and renders it", async () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const ta = screen.getByRole("textbox", { name: /paste/i }) as HTMLTextAreaElement;
+    const png = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
+    fireEvent.paste(ta, { clipboardData: { files: [png] } });
+    await waitFor(() => expect(ta.value).toBe("[image]"), RWAIT);
+    const refImg = container.querySelector('img[alt="Pasted reference image"]') as HTMLImageElement;
+    expect(refImg).toBeTruthy();
+    expect(refImg.getAttribute("src")).toMatch(/^data:/); // a data URL, sized into the panel
+    expect(screen.getByText("Reference: pasted")).toBeTruthy();
+  });
+
+  test("pasting non-image content falls through to the normal text paste", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    const ta = screen.getByRole("textbox", { name: /paste/i }) as HTMLTextAreaElement;
+    fireEvent.paste(ta, { clipboardData: { files: [] } }); // no image → handler is a no-op
+    expect(ta.value).toBe("");
+    expect(screen.queryByAltText("Pasted reference image")).toBeNull();
+  });
+
+  test("typing over the [image] marker replaces the image with a text value", async () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    const ta = screen.getByRole("textbox", { name: /paste/i }) as HTMLTextAreaElement;
+    const png = new File([new Uint8Array([1])], "s.png", { type: "image/png" });
+    fireEvent.paste(ta, { clipboardData: { files: [png] } });
+    await waitFor(() => expect(ta.value).toBe("[image]"), RWAIT);
+    fireEvent.change(ta, { target: { value: "[image]" + HEX } }); // user types the value after the marker
+    await waitFor(() => expect(status()).toContain("Identical"), RWAIT);
+    expect(ta.value).toBe(HEX); // marker stripped, image replaced
   });
 
   test("a reference image that fails to decode is unknown", async () => {

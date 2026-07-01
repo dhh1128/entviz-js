@@ -306,9 +306,23 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           "div",
           { style: { display: "flex", gap: 6, alignItems: "flex-start", width: "100%" } },
           h("textarea", {
-            value: eff?.provenance === "pasted" ? refContent : "",
+            // A raster reference (pasted/dropped/picked image) shows an "[image]"
+            // marker rather than its data URL; a pasted text value shows itself.
+            value: medium === "raster" ? m.imagePasted : eff?.provenance === "pasted" ? refContent : "",
+            // Editing over the marker drops it, so typing replaces the image with text.
             onChange: (e: { target: { value: string } }) =>
-              setRef({ content: e.target.value, provenance: "pasted", origin: "" }),
+              setRef({ content: e.target.value.replace(m.imagePasted, ""), provenance: "pasted", origin: "" }),
+            // A pasted raster image (screenshot) becomes the reference — read it as
+            // a file (data URL → raster engine) instead of the default text paste.
+            onPaste: (e: {
+              preventDefault: () => void;
+              clipboardData: { files: FileList | File[] };
+            }) => {
+              const img = [...(e.clipboardData?.files ?? [])].find(
+                (f) => /^image\//i.test(f.type) && !/svg/i.test(f.type),
+              );
+              if (img) { e.preventDefault(); onPick(img, "pasted"); }
+            },
             "aria-label": m.pastePrompt,
             placeholder: m.pastePrompt,
             spellCheck: false,
@@ -408,7 +422,15 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         "div",
         { style: panelStyle },
         h("span", { style: panelLabel }, m.reference),
-        refDisplayValue === null
+        medium === "raster"
+          // A pasted/dropped/picked raster reference: show the image itself,
+          // sized (object-fit: contain) into OUR figure's footprint so the two
+          // panels stay the same size side-by-side.
+          ? h("img", {
+              src: refContent, alt: m.imageAlt,
+              style: { ...placeholderSize, objectFit: "contain", display: "block", borderRadius: 8, background: "#fff", border: "1px solid var(--entviz-compare-placeholder, #d0d7de)" },
+            })
+          : refDisplayValue === null
           // empty slot, sized to OUR figure's footprint (NOT in figureBox — its
           // placeholder text must stay visible)
           ? h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder)

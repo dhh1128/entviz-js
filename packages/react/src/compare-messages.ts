@@ -15,6 +15,8 @@ export interface CompareMessages {
   provenanceDropped: string;
   provenanceProvided: string;
   pickFile: string;
+  imagePasted: string; // the marker shown in the input when a raster image is the reference
+  imageAlt: string; // alt text for the pasted/dropped reference image
   dropHint: string;
   urlPlaceholder: string;
   fetchButton: string;
@@ -48,6 +50,8 @@ export const defaultCompareMessages: CompareMessages = {
   provenanceDropped: "Reference: dropped",
   provenanceProvided: "Reference: provided",
   pickFile: "Choose a file…",
+  imagePasted: "[image]",
+  imageAlt: "Pasted reference image",
   dropHint: "…or drop an entviz SVG / file here",
   urlPlaceholder: "https://… (URL of an entviz SVG)",
   fetchButton: "Fetch",
