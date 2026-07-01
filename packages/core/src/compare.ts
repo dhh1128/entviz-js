@@ -19,7 +19,10 @@ import { describeChannels } from "./describe.ts";
 export type Verdict =
   | { state: "identical" }
   | { state: "different" }
-  | { state: "unknown"; reason: string }
+  // `similar` marks the specific raster case where the images matched pixel-wise
+  // but an image can't prove value equality (vs a couldn't-read/align unknown) —
+  // so the UI can say "look similar, couldn't check text" rather than a failure.
+  | { state: "unknown"; reason: string; similar?: boolean }
   | { state: "pending" };
 
 export type Medium = "text" | "svg" | "raster" | "ambiguous";
@@ -333,5 +336,5 @@ export function rasterDisprove(reference: Raster, ours: Raster): Verdict {
   const frac = pixelDiffFraction(reference.rgba, ours.rgba, reference.w * reference.h);
   return frac > 0.02
     ? { state: "different" }
-    : { state: "unknown", reason: "the images look alike, but an image cannot prove two values are equal" };
+    : { state: "unknown", similar: true, reason: "the images look alike, but an image cannot prove two values are equal" };
 }

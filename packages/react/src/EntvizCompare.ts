@@ -151,6 +151,8 @@ function chipFor(result: CompareResult, m: CompareMessages): Chip {
       const v = result.verdict as Exclude<Verdict, { state: "pending" }>;
       if (v.state === "identical") return { symbol: "=", label: m.identical, tone: "good" };
       if (v.state === "different") return { symbol: "≠", label: m.different, tone: "bad" };
+      // A raster look-alike: pixels matched but text can't be read from an image.
+      if (v.state === "unknown" && v.similar) return { symbol: "≈", label: m.unknownRasterSimilar, tone: "warn" };
       // unknown (e.g. a >512-bit or non-self-consistent SVG reference)
       return { symbol: "?", label: fmt(m.unknownReason, { reason: v.reason }), tone: "warn" };
     }
@@ -425,11 +427,14 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         medium === "raster"
           // A pasted/dropped/picked raster reference: show the image itself,
           // sized (object-fit: contain) into OUR figure's footprint so the two
-          // panels stay the same size side-by-side.
-          ? h("img", {
-              src: refContent, alt: m.imageAlt,
-              style: { ...placeholderSize, objectFit: "contain", display: "block", borderRadius: 8, background: "#fff", border: "1px solid var(--entviz-compare-placeholder, #d0d7de)" },
-            })
+          // panels stay the same size side-by-side. During a walk, ring the same
+          // feature on it using OUR geometry (the image shares our layout).
+          ? h(
+              "div",
+              { style: figureBox },
+              h("img", { src: refContent, alt: m.imageAlt, style: { ...placeholderSize, ...rasterRefStyle } }),
+              walking && walkStep ? ringOverlay(ourModel, walkStep, "reference") : null,
+            )
           : refDisplayValue === null
           // empty slot, sized to OUR figure's footprint (NOT in figureBox — its
           // placeholder text must stay visible)
@@ -464,11 +469,14 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     // Two entry buttons up front (terse labels; hover explains) — Spot-check and
     // Check (complete); a small value offers only Complete. Each launches the walk
     // directly in that mode (no intermediate picker).
-    medium === "text" && refContent.trim()
+    // A value reference walks value-vs-value; a raster reference walks OUR figure
+    // against the pasted image by eye (the walk plan is built from our value; with
+    // externalFigures it renders no figures of its own, so it needs no ref value).
+    (medium === "text" || medium === "raster") && refContent.trim()
       ? walking
         ? h(EntvizWalk, {
             value,
-            reference: refContent,
+            reference: medium === "raster" ? "" : refContent,
             targetAr: dispAr,
             fontSizePt: dispFs,
             note,
@@ -502,6 +510,11 @@ const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", ga
 const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
 // The reference figure hugs its intrinsic (font-driven) size so it tracks resize.
 const figureCell: CSSProperties = { display: "inline-block" };
+// A raster reference image, sized (with placeholderSize) into our figure's footprint.
+const rasterRefStyle: CSSProperties = {
+  objectFit: "contain", display: "block", borderRadius: 8, background: "#fff",
+  border: "1px solid var(--entviz-compare-placeholder, #d0d7de)",
+};
 // Walk figures render at intrinsic size (no fixed width) so figureBox hugs them
 // and the ring overlay maps 1:1 in the entviz's own coordinate units.
 const figureFill: CSSProperties = { display: "block" };

@@ -33,6 +33,7 @@ export interface CompareMessages {
   unknownAmbiguous: string;
   unknownRaster: string;
   unknownReason: string; // "{reason}" — a machine reason for an `unknown` verdict
+  unknownRasterSimilar: string; // the raster look-alike verdict (pixels matched, text unchecked)
   secretWarning: string;
   recognitionNote: string;
   referencePlaceholder: string; // the empty reference slot, before a value is given
@@ -63,6 +64,7 @@ export const defaultCompareMessages: CompareMessages = {
   unknownAmbiguous: "Couldn’t recognize that — paste a reference value or entviz SVG",
   unknownRaster: "Comparing the image…",
   unknownReason: "Couldn’t confirm a match — {reason}",
+  unknownRasterSimilar: "Images look very similar. Couldn’t prove a difference, but also couldn’t check text.",
   walkSpotCheck: "Spot-check",
   walkSpotCheckHint: "Sample features in a surprising order; stop when you're satisfied",
   walkComplete: "Check (complete)",

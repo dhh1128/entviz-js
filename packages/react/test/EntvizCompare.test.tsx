@@ -221,7 +221,7 @@ describe("EntvizCompare", () => {
     // a raster file runs the raster engine → never identical (mocked clean rasters
     // are look-alikes, so: unknown — an image cannot prove equality)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
-    await waitFor(() => expect(status()).toMatch(/cannot prove|look alike/i), RWAIT);
+    await waitFor(() => expect(status()).toMatch(/look very similar/i), RWAIT);
     // an empty file list is a no-op
     fireEvent.change(file, { target: { files: [] } });
   });
@@ -233,7 +233,7 @@ describe("EntvizCompare", () => {
     // retry BOTH conditions together — the async decode resolves the verdict and
     // the onVerdict callback on the same render, but over separate microtask ticks.
     await waitFor(() => {
-      expect(status()).toMatch(/cannot prove|look alike/i);
+      expect(status()).toMatch(/look very similar/i);
       expect(onVerdict).toHaveBeenCalled();
     }, RWAIT);
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
@@ -381,6 +381,19 @@ describe("EntvizCompare", () => {
     expect(screen.getByRole("button", { name: /looks the same/i })).toBeTruthy(); // walking
     fireEvent.click(screen.getByRole("button", { name: /done — that's enough/i }));
     expect(container.querySelector('[id^="entviz-walk-spot-"]')).toBeNull(); // ring cleared on finish
+  });
+
+  test("a pasted raster image can be verified with the guided walk (rings both figures)", async () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    const png = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
+    fireEvent.paste(screen.getByRole("textbox", { name: /paste/i }), { clipboardData: { files: [png] } });
+    await waitFor(() => expect(screen.queryAllByAltText("Pasted reference image").length).toBe(1), RWAIT);
+    // the guided walk is offered for a raster reference too
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    // the current feature is ringed on BOTH our figure and the pasted image
+    await waitFor(() => expect(container.querySelectorAll('[id^="entviz-walk-spot-"]').length).toBe(2), RWAIT);
+    expect(screen.getByAltText("Pasted reference image")).toBeTruthy(); // image still shown during the walk
   });
 
   test("warns on secret material; RTL + messages override", () => {
