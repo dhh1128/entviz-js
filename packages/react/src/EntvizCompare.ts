@@ -318,11 +318,14 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           }),
           h(
             "label",
-            { style: fileLabel },
-            m.pickFile,
+            { style: fileLabel, title: m.pickFile },
+            // Terse upload glyph; the wordy "Choose a file…" lives in the tooltip
+            // (and the input's accessible name), per the terse-label + hover rule.
+            h("span", { "aria-hidden": true, style: { fontSize: "1.3em", lineHeight: 1 } }, "↥"),
             h("input", {
               type: "file",
               accept: ".svg,image/svg+xml,image/*",
+              "aria-label": m.pickFile,
               onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
               style: { display: "none" },
             }),
