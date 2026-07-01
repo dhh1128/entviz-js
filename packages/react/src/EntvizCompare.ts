@@ -490,7 +490,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         : h(
             "div",
             { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-            small
+            // A raster reference offers ONLY Complete: the machine already pixel-
+            // compared the gestalt (for zero authentication credit, §6.3/S10), so
+            // the human's job is the exhaustive text read — a spot-check would just
+            // re-check gestalt the machine covered. (Same suppression as a small value.)
+            small || medium === "raster"
               ? null
               : h("button", { type: "button", onClick: () => setWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
             h("button", { type: "button", onClick: () => setWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),

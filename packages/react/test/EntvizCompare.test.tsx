@@ -389,7 +389,9 @@ describe("EntvizCompare", () => {
     const png = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
     fireEvent.paste(screen.getByRole("textbox", { name: /paste/i }), { clipboardData: { files: [png] } });
     await waitFor(() => expect(screen.queryAllByAltText("Pasted reference image").length).toBe(1), RWAIT);
-    // the guided walk is offered for a raster reference too
+    // a raster reference offers ONLY Complete (the human does the exhaustive text
+    // read; the machine already pixel-compared the gestalt, §6.3/S10) — no spot-check
+    expect(screen.queryByRole("button", { name: /spot-check/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
     // the current feature is ringed on BOTH our figure and the pasted image
     await waitFor(() => expect(container.querySelectorAll('[id^="entviz-walk-spot-"]').length).toBe(2), RWAIT);
