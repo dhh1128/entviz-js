@@ -5,6 +5,7 @@
  */
 import React from "react";
 import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
+import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 
 export interface EntvizProps {
   /** The high-entropy value to visualize (key, hash, UUID, address, …). */
@@ -63,6 +64,34 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const fs = controls ? (fsControlled ? (fontSizePt ?? DEFAULT_FONT_SIZE_PT) : stateFs) : fontSizePt;
   const ar = controls ? (arControlled ? (targetAr ?? 1) : stateAr) : targetAr;
 
+  // Copy/export affordance state (the toolbar kebab). Hooks run for every
+  // instance to satisfy the rules of hooks; they no-op until the menu opens.
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const menuWrapRef = React.useRef<HTMLDivElement>(null);
+  const kebabRef = React.useRef<HTMLButtonElement>(null);
+  const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuId = React.useId();
+  React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  // Dismiss the menu on Escape (focus returns to the kebab) and outside-click.
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMenuOpen(false); kebabRef.current?.focus(); } };
+    const onDown = (e: MouseEvent) => {
+      if (menuWrapRef.current && !menuWrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
+  }, [menuOpen]);
+  // Move focus to the first item when the menu opens (ARIA menu pattern).
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const id = requestAnimationFrame(() =>
+      menuWrapRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [menuOpen]);
+
   const svg = React.useMemo(() => {
     const opts: RenderOptions = { targetAr: ar, fontSizePt: fs, note };
     try {
@@ -107,8 +136,33 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const stepFs = (dir: number) =>
     setFs(FONT_SIZE_LADDER[Math.max(0, Math.min(FONT_SIZE_LADDER.length - 1, ladderIdx + dir))]);
   const reset = () => { setFs(fontSizePt ?? DEFAULT_FONT_SIZE_PT); setAr(targetAr ?? 1); };
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
+  };
+  const doCopy = async (kind: CopyKind) => {
+    setMenuOpen(false);
+    try {
+      await copyEntviz(kind, { value, opts: { targetAr: ar, fontSizePt: fs, note }, svg });
+      flash(COPY_TOAST[kind]);
+    } catch {
+      flash(COPY_FAILED);
+    }
+  };
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const items = [...(menuWrapRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (["+", "="].includes(e.key)) { e.preventDefault(); stepFs(1); }
+    if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
+    else if (["+", "="].includes(e.key)) { e.preventDefault(); stepFs(1); }
     else if (["-", "_"].includes(e.key)) { e.preventDefault(); stepFs(-1); }
     else if (e.key === "0") { e.preventDefault(); reset(); }
   };
@@ -143,13 +197,56 @@ export function Entviz(props: EntvizProps): React.ReactElement {
         )
       : null;
 
+  // Kebab + copy/export menu, at the trailing edge of the toolbar (after reshape).
+  const kebab = h(
+    "div",
+    { ref: menuWrapRef, style: { position: "relative", display: "inline-flex" } },
+    h(
+      "button",
+      {
+        ref: kebabRef, type: "button",
+        onClick: () => setMenuOpen((o) => !o),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setMenuOpen(true); }
+        },
+        "aria-haspopup": "menu", "aria-expanded": menuOpen,
+        "aria-controls": menuOpen ? menuId : undefined, "aria-label": "actions",
+        style: { ...ctlBtn, lineHeight: 1 },
+      },
+      "⋮",
+    ),
+    menuOpen
+      ? h(
+          "div",
+          { id: menuId, role: "menu", "aria-label": "actions", onKeyDown: onMenuKey, style: copyMenuStyle },
+          COPY_ACTIONS.map(([kind, label]) =>
+            h("button", { key: kind, role: "menuitem", type: "button", onClick: () => doCopy(kind), style: copyMenuItemStyle }, label),
+          ),
+        )
+      : null,
+  );
+
   return h(
     "div",
-    { className, style: { ...wrapperStyle, ...style }, onKeyDown, tabIndex: 0 },
+    { className, style: { ...wrapperStyle, position: "relative", ...style }, onKeyDown, tabIndex: 0 },
     figure,
-    h("div", { style: ctlStrip }, sizeGroup, reshapeGroup),
+    h("div", { style: ctlStrip }, sizeGroup, reshapeGroup, kebab),
+    h("span", { "aria-live": "polite", style: srOnly }, toast),
+    toast ? h("span", { style: copyToastStyle }, toast) : null,
   );
 }
+
+// Copy/export menu content (English — matches the toolbar's other English chrome).
+const COPY_ACTIONS: [CopyKind, string][] = [
+  ["value", "Copy value"],
+  ["comparison", "Copy comparison text"],
+  ["image", "Copy image"],
+  ["svg", "Copy SVG"],
+];
+const COPY_TOAST: Record<CopyKind, string> = {
+  value: "Copied value", comparison: "Copied comparison text", image: "Copied image", svg: "Copied SVG",
+};
+const COPY_FAILED = "Copy failed";
 
 /** The clean font-size ladder the size control steps through (points). Bounded
  *  to the spec's valid font-size range [6, 30]. */
@@ -200,5 +297,24 @@ const thumbBtn: React.CSSProperties = {
   border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
 };
 const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
+const copyMenuStyle: React.CSSProperties = {
+  position: "absolute", top: "calc(100% + 4px)", insetInlineEnd: 0, zIndex: 20,
+  display: "flex", flexDirection: "column", minWidth: 180,
+  background: "var(--entviz-menu-bg, #fff)", color: "var(--entviz-menu-fg, #1a1a2e)",
+  border: "var(--entviz-menu-border, 1px solid #ddd)", borderRadius: 8,
+  boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 4, font: "13px system-ui, sans-serif",
+};
+const copyMenuItemStyle: React.CSSProperties = {
+  textAlign: "start", background: "none", border: "none", borderRadius: 6,
+  padding: "7px 10px", cursor: "pointer", font: "inherit", color: "inherit", whiteSpace: "nowrap",
+};
+const copyToastStyle: React.CSSProperties = {
+  position: "absolute", top: "100%", insetInlineEnd: 0, marginTop: 6, zIndex: 25,
+  background: "var(--entviz-toast-bg, #1a1a2e)", color: "var(--entviz-toast-fg, #fff)",
+  borderRadius: 6, padding: "5px 9px", fontSize: 11, whiteSpace: "nowrap", font: "11px system-ui, sans-serif",
+};
+const srOnly: React.CSSProperties = {
+  position: "absolute", clip: "rect(0 0 0 0)", width: 1, height: 1, overflow: "hidden",
+};
 
 export default Entviz;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Entviz } from "../src/index.ts";
 
 // Migrated from node:test + react-dom/server to Vitest + Testing Library + jsdom:
@@ -144,5 +144,123 @@ describe("Entviz controls", () => {
     expect(off.container.querySelector('[aria-label="size"]')).toBeTruthy(); // size still there
     const single = render(<Entviz value={SINGLE} controls />);
     expect(single.container.querySelector('[aria-label="shape"]')).toBeNull(); // only one arrangement
+  });
+});
+
+// --- copy/export menu (the toolbar kebab) ----------------------------------
+
+const clip = () => navigator.clipboard as { writeText: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn> };
+const kebab = (c: HTMLElement) => c.querySelector('button[aria-label="actions"]') as HTMLButtonElement;
+const openMenu = (c: HTMLElement) => {
+  fireEvent.click(kebab(c));
+  return c.querySelector('[role="menu"]') as HTMLElement;
+};
+
+describe("Entviz controls — copy menu", () => {
+  afterEach(() => { clip().writeText.mockClear(); clip().write.mockClear(); });
+
+  test("the kebab is present with controls, toggles the menu, and opens on arrow keys", () => {
+    const { container } = render(<Entviz value={MULTI} controls />);
+    const k = kebab(container);
+    expect(k).toBeTruthy();
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    fireEvent.click(k);
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    fireEvent.click(k); // toggle closed
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    fireEvent.keyDown(k, { key: "ArrowDown" });
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    fireEvent.keyDown(k, { key: "ArrowUp" }); // also opens (stays open)
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    fireEvent.keyDown(k, { key: "x" }); // unrelated key ignored
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+  });
+
+  test("each menu item copies the right representation and confirms with a toast", async () => {
+    const { container } = render(<Entviz value={MULTI} controls />);
+
+    openMenu(container);
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    expect((await screen.findAllByText("Copied value")).length).toBeGreaterThan(0);
+    expect(clip().writeText).toHaveBeenLastCalledWith(MULTI);
+
+    openMenu(container);
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy comparison text/i }));
+    expect((await screen.findAllByText("Copied comparison text")).length).toBeGreaterThan(0);
+
+    openMenu(container);
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy svg/i }));
+    expect((await screen.findAllByText("Copied SVG")).length).toBeGreaterThan(0);
+    expect((clip().writeText.mock.calls.at(-1)![0] as string).startsWith("<svg")).toBe(true);
+
+    openMenu(container);
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy image/i }));
+    expect((await screen.findAllByText("Copied image")).length).toBeGreaterThan(0);
+    expect(clip().write).toHaveBeenCalled();
+  });
+
+  test("a clipboard failure surfaces 'Copy failed'", async () => {
+    clip().writeText.mockRejectedValueOnce(new Error("denied"));
+    const { container } = render(<Entviz value={MULTI} controls />);
+    openMenu(container);
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    expect((await screen.findAllByText("Copy failed")).length).toBeGreaterThan(0);
+  });
+
+  test("Ctrl/⌘-C on the toolbar copies the value", async () => {
+    const { container } = render(<Entviz value={MULTI} controls />);
+    const wrap = container.querySelector('div[tabindex="0"]') as HTMLElement;
+    fireEvent.keyDown(wrap, { key: "c", ctrlKey: true });
+    expect((await screen.findAllByText("Copied value")).length).toBeGreaterThan(0);
+    expect(clip().writeText).toHaveBeenLastCalledWith(MULTI);
+  });
+
+  test("menu keyboard: Arrow/Home/End move focus; Escape closes and refocuses the kebab", async () => {
+    const { container } = render(<Entviz value={MULTI} controls />);
+    const k = kebab(container);
+    const menu = openMenu(container);
+    const items = [...menu.querySelectorAll('[role="menuitem"]')] as HTMLElement[];
+    // menu auto-focuses its first item when it opens
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(menu, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    fireEvent.keyDown(menu, { key: "Home" });
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(menu, { key: "x" }); // ignored
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(k);
+  });
+
+  test("an outside click closes the menu", () => {
+    const { container } = render(<Entviz value={MULTI} controls />);
+    openMenu(container);
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  test("the copy toast auto-dismisses after its timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<Entviz value={MULTI} controls />);
+      openMenu(container);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+        await vi.advanceTimersByTimeAsync(1); // resolve the clipboard write + run flash()
+      });
+      expect(screen.getAllByText("Copied value").length).toBeGreaterThan(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2400); // fire the dismiss timer
+      });
+      expect(screen.queryByText("Copied value")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
