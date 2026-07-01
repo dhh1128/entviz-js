@@ -17,7 +17,7 @@ export interface CompareMessages {
   pickFile: string;
   imagePasted: string; // the marker shown in the input when a raster image is the reference
   imageAlt: string; // alt text for the pasted/dropped reference image
-  dropHint: string;
+  dropHint: string; // shown in the empty reference slot — it doubles as a drop target
   urlPlaceholder: string;
   fetchButton: string;
   fetchHint: string; // "Will fetch from {origin}"
@@ -36,12 +36,8 @@ export interface CompareMessages {
   unknownRasterSimilar: string; // the raster look-alike verdict (pixels matched, text unchecked)
   secretWarning: string;
   recognitionNote: string;
-  referencePlaceholder: string; // the empty reference slot, before a value is given
   machineCheck: string; // label prefixing the verdict — it's the machine's determination
-  orDivider: string; // between the two situational choices (reference vs. voice)
-  voiceLaunch: string; // the "Compare by voice" entry label
-  voiceHint: string; // hover text explaining the live voice ceremony
-  voiceBack: string; // leave the voice ceremony, back to the comparator
+  voiceLaunch: string; // the "Compare by voice" tab label
 }
 
 export const defaultCompareMessages: CompareMessages = {
@@ -57,7 +53,7 @@ export const defaultCompareMessages: CompareMessages = {
   pickFile: "Choose a file…",
   imagePasted: "[image]",
   imageAlt: "Pasted reference image",
-  dropHint: "…or drop an entviz SVG / file here",
+  dropHint: "Drop an entviz SVG or image here",
   urlPlaceholder: "https://… (URL of an entviz SVG)",
   fetchButton: "Fetch",
   fetchHint: "Will fetch from {origin}",
@@ -78,10 +74,6 @@ export const defaultCompareMessages: CompareMessages = {
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:
     "A match means the two values are equal; it does not vouch for the reference being the one you should trust.",
-  referencePlaceholder: "The reference will appear here",
   machineCheck: "Machine check",
-  orDivider: "— or —",
   voiceLaunch: "Compare by voice",
-  voiceHint: "The other person reads their value to you over a call you trust",
-  voiceBack: "‹ Back to comparison",
 };

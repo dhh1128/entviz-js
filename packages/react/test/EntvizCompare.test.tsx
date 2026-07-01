@@ -69,25 +69,26 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("Compare visualizations")).toBeTruthy();
     expect(screen.getAllByRole("img").length).toBe(1);
     expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy(); // paste box
-    expect(status()).toContain("Paste");
+    // no verdict chip while merely pending — that pill just restated the placeholder (#3)
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   test("reference: a placeholder holds the slot until a value is given; inputs sit below the figure", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    const placeholder = screen.getByText(/reference will appear here/i);
+    const placeholder = screen.getByText(/drop an entviz svg or image here/i);
     const textarea = screen.getByRole("textbox", { name: /paste/i });
     // figure-sized placeholder comes BEFORE the inputs (horizontal line-of-sight)
     expect(placeholder.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // once a value arrives, the placeholder gives way to the re-rendered figure
     fireEvent.change(textarea, { target: { value: HEX } });
-    expect(screen.queryByText(/reference will appear here/i)).toBeNull();
+    expect(screen.queryByText(/drop an entviz svg or image here/i)).toBeNull();
     expect(screen.getAllByRole("img").length).toBe(2);
   });
 
   test("the empty placeholder is figure-sized and tracks the live shape", () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
-    const ph = () => screen.getByText(/reference will appear here/i) as HTMLElement;
+    const ph = () => screen.getByText(/drop an entviz svg or image here/i) as HTMLElement;
     expect(ph().style.width).toMatch(/px$/); // explicit footprint, not a bare aspect-ratio
     const before = ph().style.width;
     fireEvent.click(container.querySelector('button[aria-label="shape"]') as HTMLButtonElement); // open the shape dropdown
@@ -100,7 +101,7 @@ describe("EntvizCompare", () => {
 
   test("placeholder falls back to a default size if our value can't be measured", () => {
     rtlRender(<EntvizCompare value={HEX} note="toolongnote" />); // describeChannels throws
-    const ph = screen.getByText(/reference will appear here/i) as HTMLElement;
+    const ph = screen.getByText(/drop an entviz svg or image here/i) as HTMLElement;
     expect(ph.style.width).toBe("180px"); // graceful fallback footprint
   });
 
@@ -167,9 +168,9 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("≠");
   });
 
-  test("the verdict is labeled as the machine's check (but not while pending)", () => {
+  test("the verdict is labeled as the machine's check (and there's no chip while pending)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    expect(status()).not.toContain("Machine check"); // pending is an instruction, not a result
+    expect(screen.queryByRole("status")).toBeNull(); // pending shows no chip at all (#3)
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
     expect(status()).toContain("Machine check");
     expect(status()).toContain("Identical");
@@ -408,24 +409,25 @@ describe("EntvizCompare", () => {
   });
 });
 
-describe("EntvizCompare: the voice ceremony entry (§15.8)", () => {
-  const voiceBtn = () => screen.queryByRole("button", { name: /compare by voice/i });
+describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
+  const voiceTab = () => screen.queryByRole("tab", { name: /compare by voice/i });
+  const refTab = () => screen.getByRole("tab", { name: /compare visualizations/i });
 
-  test("offers 'Compare by voice' as a second situational choice, and it launches the ceremony", () => {
+  test("presents the two situational choices as tabs; the voice tab launches the ceremony", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    expect(voiceBtn()).toBeTruthy();
-    fireEvent.click(voiceBtn()!);
+    expect(voiceTab()).toBeTruthy();
+    fireEvent.click(voiceTab()!);
     // the affirmation gate takes over the surface
-    expect(screen.getByText(/live voice or video call/i)).toBeTruthy();
-    // …and Back returns to the comparator
-    fireEvent.click(screen.getByRole("button", { name: /back to comparison/i }));
+    expect(screen.getByText(/same value as you/i)).toBeTruthy();
+    // the reference tab switches back to the comparator
+    fireEvent.click(refTab());
     expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy();
   });
 
   test("with no reference it runs voice-only (read the cells)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    fireEvent.click(voiceBtn()!);
-    fireEvent.click(screen.getByRole("button", { name: /yes.*start/i }));
+    fireEvent.click(voiceTab()!);
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
     expect(screen.getByText(/read each highlighted cell/i)).toBeTruthy();
   });
 
@@ -433,21 +435,16 @@ describe("EntvizCompare: the voice ceremony entry (§15.8)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
     expect(status()).toMatch(/identical/i);
-    fireEvent.click(voiceBtn()!);
-    fireEvent.click(screen.getByRole("button", { name: /yes.*start/i }));
+    fireEvent.click(voiceTab()!);
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
     expect(screen.getByText(/pasted value already matched by machine/i)).toBeTruthy();
   });
 
-  test("the entry is hidden for a host-provided reference and during a walk", () => {
-    // host-controlled reference ⇒ no voice entry
-    const provided = rtlRender(<EntvizCompare value={HEX} reference={{ kind: "text", data: HEX }} />);
-    expect(voiceBtn()).toBeNull();
-    provided.unmount();
-    cleanup();
-    // mid-walk ⇒ no voice entry
-    rtlRender(<EntvizCompare value={HEX} />);
-    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
-    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
-    expect(voiceBtn()).toBeNull();
+  test("a host-provided reference renders directly, with no tabs", () => {
+    rtlRender(<EntvizCompare value={HEX} reference={{ kind: "text", data: HEX }} />);
+    expect(voiceTab()).toBeNull();
+    // a plain heading instead of a tablist
+    expect(screen.getByText("Compare visualizations")).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
   });
 });
