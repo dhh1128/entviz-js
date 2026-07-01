@@ -338,8 +338,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
             display: "inline-grid",
             gridTemplateColumns: "1fr 1fr",
             gridTemplateRows: "1fr 1fr",
-            width: "0.95em",
-            height: "0.95em",
+            width: "1em",
+            height: "1em",
             borderRadius: 2,
             overflow: "hidden",
             flex: "0 0 auto",
@@ -424,10 +424,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       style: {
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "currentColor",
-        padding: "0.1em 0.45em", borderRadius: cssVar("radius", "0.6em"),
+        // Zero vertical padding + a tight line box so the pill hugs its content and
+        // doesn't inflate the line it sits in.
+        padding: "0 0.4em", borderRadius: cssVar("radius", "0.6em"),
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
-        whiteSpace: "nowrap", maxWidth, lineHeight: 1.3,
+        whiteSpace: "nowrap", maxWidth, lineHeight: 1,
       },
     },
     pillButton,
@@ -477,7 +479,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       ref: wrapRef,
       dir: dirAttr,
       className,
-      style: { position: "relative", display: "inline-flex", verticalAlign: "baseline", ...style },
+      // "middle" vertically centers the pill on the line (baseline sat it low).
+      style: { position: "relative", display: "inline-flex", verticalAlign: "middle", ...style },
       onMouseEnter: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.add("entviz-pill--hover"),
       onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.remove("entviz-pill--hover"),
     },
