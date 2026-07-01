@@ -32,6 +32,7 @@ import {
   selectVisualStyle,
   assignCellIndices,
   minMaxFtokCells,
+  nucleusColors,
   blankCellIndices,
   twoBitUsage,
   twoBitFirstAppearance,
@@ -69,6 +70,10 @@ export interface CellDescription {
   blank: boolean;
   /** A >512-bit input's neutralised Crockford "fingerprint-middle" cell. */
   fingerprint: boolean;
+  /** The rendered nucleus fill (`#rrggbb`), or null for a blank cell — the color
+   *  the raster engine samples and compares (§6.3). A fingerprint-middle cell's
+   *  nucleus is the neutralised entviz background. */
+  nucleusColor: string | null;
   /** The cell's 24-bit surround pattern (the fingerprint token's quant, =
    *  `data-surround-bits`); 0 for a blank cell. Geometry-independent per token, so
    *  it gives a strong self-consistency check when comparing two entvizes. */
@@ -128,8 +133,13 @@ export interface ChannelDescription {
   rows: number;
   /** Every grid cell in reading order (index 0 → cols*rows-1). */
   cells: CellDescription[];
+  /** The grid background color (`#rrggbb`, an entviz palette color, never black). */
+  bgColor: string;
   /** Color-bar band letters, top → bottom, lowercase (the rendered glyphs). */
   colorBarLetters: string[];
+  /** Color-bar bands, top → bottom: the exact band color + its usage count (band
+   *  height is a function of the count). For the raster color-bar check (§6.3). */
+  colorBarBands: { color: string; count: number }[];
   quartiles: QuartileDescription[];
   markers: MarkerDescription;
   /** Pixel geometry of every highlightable feature (for the comparison walk's
@@ -168,12 +178,17 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
 
   const textByCell = new Map<number, string>();
   const surroundByCell = new Map<number, number>();
+  const nucleusByCell = new Map<number, string>();
   for (const t of tokens) {
     const ci = cellIndices.get(t.index) as number;
     textByCell.set(ci, t.text);
     // The surround pattern is the fingerprint token's 24-bit quant (= the cell's
     // declared data-surround-bits in the SVG).
     surroundByCell.set(ci, usedFtoks[t.index].quant);
+    // The nucleus fill: the entropy token's quant as a color, EXCEPT a >512-bit
+    // fingerprint-middle cell, whose nucleus is neutralised to the entviz bg
+    // (mirrors render()'s nucleusBg pick).
+    nucleusByCell.set(ci, fpMiddleCells.has(ci) ? style.bgColor : nucleusColors(t.quant)[0]);
   }
 
   const cells: CellDescription[] = [];
@@ -186,6 +201,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
       text: blank ? null : (textByCell.get(ci) as string),
       blank,
       fingerprint: fpMiddleCells.has(ci),
+      nucleusColor: blank ? null : (nucleusByCell.get(ci) as string),
       surroundBits: blank ? 0 : (surroundByCell.get(ci) as number),
     });
   }
@@ -209,6 +225,7 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
       (paletteOrder.get(a[0]) as number) - (paletteOrder.get(b[0]) as number),
   );
   const colorBarLetters = usedBands.map(([c]) => BAND_LETTER[c].toLowerCase());
+  const colorBarBands = usedBands.map(([color, count]) => ({ color, count }));
 
   // A non-null quartile ftok's index is always one of the placed tokens, so its
   // cell is always known; a null ftok (fewer than 4 tokens) yields a null cell.
@@ -247,7 +264,9 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
     cols: grid.cols,
     rows: grid.rows,
     cells,
+    bgColor: style.bgColor,
     colorBarLetters,
+    colorBarBands,
     quartiles,
     markers,
     geometry,
