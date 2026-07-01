@@ -38,6 +38,10 @@ export interface CompareMessages {
   recognitionNote: string;
   referencePlaceholder: string; // the empty reference slot, before a value is given
   machineCheck: string; // label prefixing the verdict — it's the machine's determination
+  orDivider: string; // between the two situational choices (reference vs. voice)
+  voiceLaunch: string; // the "Compare by voice" entry label
+  voiceHint: string; // hover text explaining the live voice ceremony
+  voiceBack: string; // leave the voice ceremony, back to the comparator
 }
 
 export const defaultCompareMessages: CompareMessages = {
@@ -76,4 +80,8 @@ export const defaultCompareMessages: CompareMessages = {
     "A match means the two values are equal; it does not vouch for the reference being the one you should trust.",
   referencePlaceholder: "The reference will appear here",
   machineCheck: "Machine check",
+  orDivider: "— or —",
+  voiceLaunch: "Compare by voice",
+  voiceHint: "The other person reads their value to you over a call you trust",
+  voiceBack: "‹ Back to comparison",
 };

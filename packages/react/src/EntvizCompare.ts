@@ -24,6 +24,7 @@ import {
 import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
+import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 
@@ -188,6 +189,8 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // null = not walking (show the two entry buttons); otherwise the chosen mode.
   const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
   const walking = walkMode !== null;
+  // The live voice ceremony (§15) takes over the whole surface when active.
+  const [voice, setVoice] = useState(false);
   // The feature the guided walk is currently checking — the walk reports it (it
   // runs with externalFigures), and we ring it on OUR static figures (#reuse).
   const [walkStep, setWalkStep] = useState<WalkStep | null>(null);
@@ -367,6 +370,24 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         h("span", { style: hint }, m.dropHint),
       );
 
+  // The live voice ceremony takes over the whole surface (§15.8). paste-bind when a
+  // text reference is already machine-`identical` (the reader transmitted their
+  // value and it matched); otherwise voice-only (they read their own copy aloud).
+  if (voice) {
+    const canPasteBind = medium === "text" && result.kind === "verdict" && result.verdict.state === "identical";
+    return h(
+      "div",
+      { dir: rtl ? "rtl" : undefined, className, style: { display: "inline-flex", flexDirection: "column", gap: 10, font: "inherit", ...style } },
+      h("strong", { style: { fontSize: "0.95em" } }, m.heading),
+      h("button", { type: "button", onClick: () => setVoice(false), style: voiceBackStyle }, m.voiceBack),
+      h(EntvizVoiceCompare, {
+        value, targetAr: dispAr, fontSizePt: dispFs, note,
+        mode: canPasteBind ? "paste-bind" : "voice-only",
+        layout,
+      }),
+    );
+  }
+
   return h(
     "div",
     {
@@ -454,6 +475,23 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     ),
     // The acquisition field spans the WHOLE comparator, below both figures (#5).
     acquisition,
+    // §15.8: the SECOND situational choice — "I'm comparing live with a person" —
+    // as a distinct labeled entry below the acquisition field (NOT a third
+    // reference-acquisition icon), visible in both the empty and pasted states.
+    // Hidden for a host-controlled reference and during a walk.
+    provided || walking
+      ? null
+      : h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 6, alignItems: "center", alignSelf: "stretch" } },
+          h("span", { style: { ...hint, opacity: 0.5 } }, m.orDivider),
+          h(
+            "button",
+            { type: "button", onClick: () => setVoice(true), title: m.voiceHint, style: voiceLaunchStyle },
+            personSpeakingIcon(),
+            h("span", null, m.voiceLaunch),
+          ),
+        ),
     h(
       "span",
       { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
@@ -503,6 +541,34 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   );
 }
 
+// A person with speech waves (a person *speaking*, not a bare speaker — §15.8),
+// inline-SVG in currentColor so there's no icon-library dependency.
+function personSpeakingIcon(): ReactNode {
+  return h(
+    "svg",
+    {
+      "aria-hidden": true, width: "1.1em", height: "1.1em", viewBox: "0 0 24 24",
+      fill: "none", stroke: "currentColor", strokeWidth: 2,
+      strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block" },
+    },
+    h("circle", { cx: 8.5, cy: 7, r: 3 }),
+    h("path", { d: "M3 20v-1a5 5 0 0 1 5-5h1a5 5 0 0 1 3.5 1.5" }),
+    h("path", { d: "M16.5 8a4 4 0 0 1 0 6" }),
+    h("path", { d: "M19 5.5a7 7 0 0 1 0 11" }),
+  );
+}
+
+const voiceLaunchStyle: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 7, alignSelf: "center",
+  font: "inherit", fontSize: "0.85em", padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+  border: "1px solid var(--entviz-compare-action, #3b34b0)",
+  color: "var(--entviz-compare-action, #3b34b0)", background: "none",
+};
+const voiceBackStyle: CSSProperties = {
+  alignSelf: "flex-start", font: "inherit", fontSize: "0.8em", padding: "2px 4px",
+  border: "none", background: "none", cursor: "pointer",
+  color: "var(--entviz-compare-action, #3b34b0)",
+};
 const walkLaunchStyle: CSSProperties = {
   alignSelf: "flex-start", font: "inherit", fontSize: "0.85em", padding: "5px 11px",
   borderRadius: 8, cursor: "pointer",

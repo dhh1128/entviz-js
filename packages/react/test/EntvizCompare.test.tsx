@@ -407,3 +407,47 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("مقارنة")).toBeTruthy();
   });
 });
+
+describe("EntvizCompare: the voice ceremony entry (§15.8)", () => {
+  const voiceBtn = () => screen.queryByRole("button", { name: /compare by voice/i });
+
+  test("offers 'Compare by voice' as a second situational choice, and it launches the ceremony", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    expect(voiceBtn()).toBeTruthy();
+    fireEvent.click(voiceBtn()!);
+    // the affirmation gate takes over the surface
+    expect(screen.getByText(/live voice or video call/i)).toBeTruthy();
+    // …and Back returns to the comparator
+    fireEvent.click(screen.getByRole("button", { name: /back to comparison/i }));
+    expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy();
+  });
+
+  test("with no reference it runs voice-only (read the cells)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.click(voiceBtn()!);
+    fireEvent.click(screen.getByRole("button", { name: /yes.*start/i }));
+    expect(screen.getByText(/read each highlighted cell/i)).toBeTruthy();
+  });
+
+  test("after an identical machine match it runs paste-bind (bind a couple of cells)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    expect(status()).toMatch(/identical/i);
+    fireEvent.click(voiceBtn()!);
+    fireEvent.click(screen.getByRole("button", { name: /yes.*start/i }));
+    expect(screen.getByText(/pasted value already matched by machine/i)).toBeTruthy();
+  });
+
+  test("the entry is hidden for a host-provided reference and during a walk", () => {
+    // host-controlled reference ⇒ no voice entry
+    const provided = rtlRender(<EntvizCompare value={HEX} reference={{ kind: "text", data: HEX }} />);
+    expect(voiceBtn()).toBeNull();
+    provided.unmount();
+    cleanup();
+    // mid-walk ⇒ no voice entry
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    expect(voiceBtn()).toBeNull();
+  });
+});
