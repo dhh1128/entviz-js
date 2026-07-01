@@ -343,14 +343,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
             gridTemplateColumns: "1fr 1fr",
             gridTemplateRows: "1fr 1fr",
             // Fill the pill's inner height (whatever the text's line box works out
-            // to, including descender room) with a fixed-width swatch; bleed -1px
-            // over the top/bottom/leading border so it's flush to the outer edge.
+            // to, including descender room) with a fixed-width swatch. The pill's
+            // overflow:hidden clips the swatch's leading corners to the pill radius.
             // (aspect-ratio + stretch collapses an empty grid item's width, so the
             // width is set explicitly rather than derived from the height.)
             alignSelf: "stretch",
             width: "1.3em",
-            marginBlock: "-1px",
-            marginInlineStart: "-1px",
             overflow: "hidden",
             flex: "0 0 auto",
           },
@@ -442,10 +440,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         paddingBlock: 0,
         paddingInlineStart: showIcon ? 0 : "0.4em",
         paddingInlineEnd: "0.4em",
-        borderRadius: cssVar("radius", "0.2em"),
-        // With a badge capping the leading edge, square the pill's leading corners
-        // so the badge swatch's square corner meets the pill's outer edge cleanly.
-        ...(showIcon ? { borderStartStartRadius: 0, borderEndStartRadius: 0 } : null),
+        borderRadius: cssVar("radius", "0.3em"),
+        // Clip the badge swatch's leading corners to the pill radius.
+        overflow: "hidden",
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
         whiteSpace: "nowrap", maxWidth, lineHeight: 1,
