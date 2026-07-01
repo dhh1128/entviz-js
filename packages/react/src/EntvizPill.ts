@@ -27,14 +27,16 @@ import {
 } from "react";
 import {
   classifyInput,
-  comparisonText,
   describeChannels,
   render,
   type ChannelDescription,
   type RenderOptions,
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
+import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { fmt, isRtlLocale, resolveMessages, type Messages } from "./pill-messages.ts";
+
+export type { CopyKind };
 
 export interface EntvizPillProps {
   // --- entviz render inputs (deterministic, context-free) ---
@@ -59,8 +61,6 @@ export interface EntvizPillProps {
   onCopy?: (kind: CopyKind) => void;
   onError?: (message: string) => void;
 }
-
-export type CopyKind = "value" | "comparison" | "image" | "svg";
 
 // 2×2 row-major: gold + blue on top, black + red on bottom — keeps the two dark
 // cells off the bottom row so the badge doesn't read as bottom-heavy. Constant
@@ -118,33 +118,6 @@ export function a11yDescription(channels: ChannelDescription, m: Messages): stri
     bright: channels.markers.colorBar.right,
     bslots: channels.markers.colorBar.slots,
   });
-}
-
-async function rasterizeToPng(svg: string): Promise<Blob> {
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  try {
-    const img = new Image();
-    await new Promise<void>((res, rej) => {
-      img.onload = () => res();
-      img.onerror = () => rej(new Error("image decode failed"));
-      img.src = url;
-    });
-    const w = img.naturalWidth || 200;
-    const hgt = img.naturalHeight || 200;
-    const scale = 2;
-    const canvas = document.createElement("canvas");
-    canvas.width = w * scale;
-    canvas.height = hgt * scale;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("no 2d context");
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0);
-    return await new Promise<Blob>((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/png"),
-    );
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 // position:fixed so it's measured against the viewport and never clipped under
@@ -276,25 +249,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
     try {
-      if (kind === "value") {
-        await navigator.clipboard.writeText(value);
-        flash(fmt(m.copiedValue, { n: value.length, unit: copyUnit(type) }));
-      } else if (kind === "comparison") {
-        if (!channels) throw new Error("no render");
-        const text = comparisonText(value, opts);
-        const n = channels.cells.filter((c) => !c.blank).length;
-        await navigator.clipboard.writeText(text);
-        flash(fmt(m.copiedComparison, { n }));
-      } else if (kind === "svg") {
-        if (!svg) throw new Error("no render");
-        await navigator.clipboard.writeText(svg);
-        flash(m.copiedSvg);
-      } else {
-        if (!svg) throw new Error("no render");
-        const blob = await rasterizeToPng(svg);
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        flash(m.copiedImage);
-      }
+      await copyEntviz(kind, { value, opts, svg });
+      if (kind === "value") flash(fmt(m.copiedValue, { n: value.length, unit: copyUnit(type) }));
+      else if (kind === "comparison")
+        flash(fmt(m.copiedComparison, { n: channels ? channels.cells.filter((c) => !c.blank).length : 0 }));
+      else if (kind === "svg") flash(m.copiedSvg);
+      else flash(m.copiedImage);
       onCopy?.(kind);
     } catch {
       flash(m.copyFailed);
