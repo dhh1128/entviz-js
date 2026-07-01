@@ -194,7 +194,7 @@ export function App() {
           </p>
 
           <label style={{ ...labelStyle, marginTop: 16 }}>
-            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— check a reference value, entviz SVG, or image against yours (machine path · M1c)</span>
+            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— check a reference against yours by machine, a guided walk, or a live voice ceremony (M1–M3)</span>
           </label>
           <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe" }}>
             <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
