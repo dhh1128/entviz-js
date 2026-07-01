@@ -288,9 +288,12 @@ export function buildCheckPlan(
     };
   }
 
-  // complete: read all text; small Complete is full lossless (no gestalt, no probe);
-  // large/huge Complete adds the gestalt CRC and a transparent probe.
-  const includeGestalt = sizeClass !== "small";
+  // complete: read every cell. Gestalt is REDUNDANT at ≤512 bits — the text is
+  // lossless there, so verifying all filled cells already determines the whole
+  // value (blanks and every gestalt dimension follow by construction). It only
+  // adds coverage for a >512-bit value, whose displayed text is not lossless. The
+  // transparent probe still guards the long read (large or huge).
+  const includeGestalt = d.truncated;
   const hasProbe = sizeClass !== "small" && allText.length > PROBE_MIN_CELLS;
   const body = shuffle(
     [...allText.map(textStep), ...(includeGestalt ? gestalt.map(gestaltStep) : [])],

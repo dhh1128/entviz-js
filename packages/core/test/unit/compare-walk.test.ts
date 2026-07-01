@@ -74,12 +74,14 @@ test("buildCheckPlan: complete on a small value reads all text, no gestalt, no p
   assert.equal(p.steps.length, 6); // every filled cell
 });
 
-test("buildCheckPlan: complete on a large value adds the gestalt CRC and one probe", () => {
+test("buildCheckPlan: complete on a large ≤512 value reads all cells + probe, NO redundant gestalt", () => {
   const p = buildCheckPlan(HEX512, {}, "complete", rngFrom(4));
   assert.equal(p.sizeClass, "large");
   assert.equal(p.hasProbe, true);
   assert.equal(kinds(p).filter((k) => k === "probe").length, 1);
-  assert.ok(kinds(p).includes("gestalt"));
+  // text is lossless at ≤512 bits, so gestalt is redundant in a full read
+  assert.ok(!kinds(p).includes("gestalt"));
+  assert.ok(p.steps.every((s) => s.kind === "text" || s.kind === "probe"));
 });
 
 test("buildCheckPlan: a >512-bit value is huge; spot-check text anchors on the fingerprint-middle cells", () => {
@@ -88,7 +90,10 @@ test("buildCheckPlan: a >512-bit value is huge; spot-check text anchors on the f
   const p = buildCheckPlan(BIG, {}, "spot-check", rngFrom(5));
   assert.equal(p.sizeClass, "huge");
   for (const s of p.steps) if (s.kind === "text") assert.ok(fp.has(s.cellIndex));
-  assert.equal(buildCheckPlan(BIG, {}, "complete", rngFrom(6)).hasProbe, true);
+  // a >512-bit Complete DOES keep the gestalt CRC (its displayed text is not lossless)
+  const cp = buildCheckPlan(BIG, {}, "complete", rngFrom(6));
+  assert.equal(cp.hasProbe, true);
+  assert.ok(kinds(cp).includes("gestalt"));
 });
 
 test("buildCheckPlan: deterministic for a fixed rng", () => {

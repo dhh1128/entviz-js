@@ -500,7 +500,11 @@ scale** the user watches themselves cross.
   coverage or presses **Done** to stop. (Anti-habituation = the unpredictable order; **no probe**.)
 - **Complete** — the deliberate exhaustive read of **every cell, in order**, plus the **planted
   probe** on a large value (§14.7). Distinct from "a spot-check taken to 100%": only Complete
-  guarantees every text cell *and* the probe. Small → lossless certainty; large/huge → strongest read.
+  guarantees every text cell *and* the probe. **It checks NO gestalt dimensions at ≤512 bits** — the
+  text is lossless there, so verifying every filled cell already determines the whole value (its
+  blanks and every gestalt dimension follow by construction); checking them would be busywork. A
+  **>512-bit** Complete *does* add the gestalt CRC, because its displayed text is not lossless.
+  Small → lossless certainty; large ≤512 → lossless read of all cells; huge → strongest possible read.
 - **Size-aware:** a **small** value (≤ ~6 cells) offers **only Complete** — a spot-check of a handful
   of cells is degenerate (a subset is nearly the whole). Large/huge offer both.
 
