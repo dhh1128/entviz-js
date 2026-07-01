@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describeChannels } from "@entviz/core";
 import { EntvizPill } from "../src/index.ts";
 import { a11yDescription, copyUnit, placeFloater, prettyType } from "../src/EntvizPill.ts";
@@ -168,7 +168,7 @@ describe("EntvizPill rendering", () => {
 // --- expand / dismiss -----------------------------------------------------
 
 describe("EntvizPill expand + dismiss", () => {
-  test("click expands to a popover with the entviz, a11y description, and copy buttons; click again collapses", () => {
+  test("click expands to a popover with a STANDARD entviz + toolbar (copy actions in its kebab); click again collapses", () => {
     render(<EntvizPill value={HEX} onExpand={vi.fn()} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
     fireEvent.click(pill);
@@ -178,7 +178,15 @@ describe("EntvizPill expand + dismiss", () => {
     const descId = dialog.getAttribute("aria-describedby");
     expect(descId).toBeTruthy();
     expect(document.getElementById(descId!)?.textContent).toContain("012345"); // first cell text
-    expect(dialog.querySelectorAll("button").length).toBe(4); // value/comparison/image/svg
+    // the expanded view is a standard <Entviz controls>: size ladder + a copy
+    // kebab, NOT a row of bespoke copy buttons.
+    const dlg = within(dialog);
+    expect(dlg.getByRole("button", { name: /smaller/i })).toBeTruthy();
+    expect(dlg.getByRole("button", { name: /larger/i })).toBeTruthy();
+    const kebab = dlg.getByRole("button", { name: /actions/i });
+    fireEvent.click(kebab);
+    expect(dlg.getByRole("menuitem", { name: /copy value/i })).toBeTruthy();
+    expect(dlg.getByRole("menuitem", { name: /copy svg/i })).toBeTruthy();
     fireEvent.click(pill);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
