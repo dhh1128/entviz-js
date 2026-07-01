@@ -160,16 +160,65 @@ not a demonstrated bug). The engine MUST:
    (gestalt = SHA-512 of its own cells; glyphs = `<text>`);
 4. reject any inconsistency → route to the human walk, never IDENTICAL.
 
-### 6.3 Raster → disprove-only, fidelity-probed
-A raster **can never reach EQUAL** — color and text are unbound in an attacker-authored image,
-and we do not OCR. It may only **DIFFERENT** or **UNKNOWN**. A **fidelity self-probe** (sample
-the input-independent constants: bounding fill `#ffffff`, borders `#808080`, color-bar bands =
-exact palette entries) decides whether sampling is trustworthy enough to **disprove** on
-mismatch; if degraded/lossy/screen-shared, exclude the nucleus channel and bail to the human.
-**A passed probe credits zero comparison evidence** — it licenses disproof, not authentication;
-an UNKNOWN resets any subsequent human walk to **zero** credited bits (adjudicated S10). Surface
-"couldn't read the reference" distinctly from "DIFFERENT" to deny the false-DIFFERENT social
-lever (S18).
+### 6.3 Raster → structural predict-and-sample (disprove-only, geometry-anchored)
+
+> **This supersedes an earlier whole-image pixel-diff sketch** that rasterized our own SVG,
+> *stretched* it onto the reference's pixel box, and thresholded an aggregate pixel difference. That
+> was a defect: it compared a distorted image, silently absorbed aspect-ratio differences into the
+> stretch, and returned a reassuring "look very similar" for a coarse, near-meaningless signal. The
+> engine below instead **anchors on the entviz's real geometry and samples predicted feature colors.**
+
+**What it proves, and what it can't.** A raster **can never reach IDENTICAL** — we cannot OCR the cell
+text, and a nucleus color encodes only a token's few *quant* bits, so matching every sampled color
+still does not prove the values equal. It is **disprove-only**: it can reach **DIFFERENT** (a predicted
+color is wrong) or, at best, **"no visible difference found (text unread)"**, which is surfaced as
+`unknown`/`similar` and **credits zero authentication** (S10) — a raster reference still offers only the
+**Complete human walk**, whose text read is the real check. "Couldn't analyze" is surfaced **distinctly
+from DIFFERENT** to deny the false-DIFFERENT social lever (S18).
+
+**Why it is nonetheless useful.** The color bar, quartile cells, and blank map are all **SHA-derived**,
+so a genuinely different value **avalanches** them — the engine disproves a different value with high
+probability. It is *blind* only to a difference that changes cell **text** without changing any sampled
+(coarse) color — exactly the residual the human text walk covers. **Disprove-capable, never blessing.**
+
+**Ground truth (the real pixel structure — `entviz.ts` render).** White bounding fill (`:1553`); a thin
+**`#808080`** frame — four outer borders + a left divider (`:1713–1717`, `borderLine :1882`), **not
+black**; a full-height **left color-bar gutter** (grid sits to its right; geometry `:1281–1285`); a white
+**top label strip** (height `nucleusHeight`, type/prefix); grid background ∈ **{white, gold `#e7be00`,
+red `#ff3f2f`, blue `#2f3fbf`}** (black excluded); an **optional bottom strip** (note *or* suffix); nuclei
+= colored sub-rects with centered text; the **ellipse sits *behind* the nuclei** (never tints a nucleus,
+only its surround); quartile marks = triangles in cell **corners**; blank cells filled, black-stroked.
+
+The engine leans on `describeChannels(value, shape)`, which already yields the exact expected
+**geometry** (viewBox units) and expected **color** of every feature. Five stages:
+
+0. **Decode** — the React layer rasterizes the pasted image to RGBA; core (isomorphic) takes RGBA + the
+   render model. Core never rasterizes our own SVG.
+1. **Locate** — probe vertical scan-lines at x = 25% / 50% / 75% of the image width; find the first
+   validated axis-aligned **`#808080` rectangle** with **white directly below its top edge** (the label
+   strip). Three probes tolerate a screenshot with surrounding chrome. **No valid rectangle → `unknown`**
+   ("couldn't find an entviz to analyze — check by eye"). Best-effort; never guesses.
+2. **Normalize & gate size** — the left gutter + divider and the top strip fix the **grid's pixel
+   rectangle**; **detect and exclude a bottom note/suffix strip** so two values differing only by a note
+   compare equivalent; `scale = gridPixelWidth / model.gridW`. Below the **empirically-calibrated minimum
+   size** (where fractional-pixel blur corrupts color sampling — set by a calibration test, not guessed)
+   → `unknown`.
+3. **Shape gate (phase 1)** — the image's grid aspect must match ours within a high tolerance (~98–99%),
+   else `unknown` ("a different shape — can't compare"). *(Phase 2: search the value's achievable shapes
+   for an aspect match and re-render at it, reaching parity with the shape-independent SVG engine.)*
+4. **Verify structure** — the color-bar bands must be **exactly and only** the expected palette colors,
+   in the expected order and ~ratio (fingerprint-derived, so this is already value-discriminating); frame
+   and top strip present.
+5. **Sample the value channels** — map each `cellRects[i]` to pixels and sample the **nucleus at
+   horizontal-center near its upper/lower edge** (clear of the centered text and the corner quartile
+   marks); likewise sample **quartile-mark corners** and **blank-cell fills**; compare each to the model's
+   expected color. **Any mismatch beyond tolerance → `different`.** All match → "no visible difference
+   found (text unread)" (`unknown`/`similar`, zero credit).
+
+**Phasing & calibration.** Phase 1 (now): same-shape required. Phase 2 (later): shape-tolerant, for SVG
+parity. The minimum-size threshold and the per-channel color tolerances are **set from a calibration
+test** that renders known values at shrinking pixel sizes and finds where sampling begins to
+misclassify — never from a guessed constant.
 
 ---
 
