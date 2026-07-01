@@ -115,27 +115,64 @@ describe("Entviz controls", () => {
     expect(container.textContent).toContain("12pt"); // controlled: unchanged until the prop updates
   });
 
-  test("reshape: offers the achievable shapes; one is active; picking re-shapes (uncontrolled)", () => {
+  const shapeBtn = (c: HTMLElement) => c.querySelector('button[aria-label="shape"]') as HTMLButtonElement;
+  const shapeOptions = (c: HTMLElement) =>
+    [...c.querySelectorAll('[role="menu"][aria-label="shape"] [role="menuitem"]')] as HTMLButtonElement[];
+
+  test("reshape: a single dropdown button opens a menu of the achievable shapes; one is active", () => {
     const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
-    const shapes = [...container.querySelectorAll('[aria-label="shape"] button')] as HTMLButtonElement[];
-    expect(shapes.length).toBeGreaterThan(1);
-    expect(shapes.filter((b) => b.getAttribute("aria-pressed") === "true").length).toBe(1);
+    const b = shapeBtn(container);
+    expect(b).toBeTruthy();
+    expect(b.getAttribute("aria-expanded")).toBe("false");
+    expect(shapeOptions(container).length).toBe(0); // closed
+    fireEvent.click(b);
+    expect(b.getAttribute("aria-expanded")).toBe("true");
+    const options = shapeOptions(container);
+    expect(options.length).toBeGreaterThan(1);
+    expect(options.filter((o) => o.getAttribute("aria-pressed") === "true").length).toBe(1);
+    fireEvent.click(b); // toggle closed
+    expect(shapeOptions(container).length).toBe(0);
+    fireEvent.keyDown(b, { key: "ArrowDown" }); // arrow also opens
+    expect(shapeOptions(container).length).toBeGreaterThan(1);
+  });
+
+  test("reshape: picking a shape re-shapes the figure and closes the menu (uncontrolled)", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    fireEvent.click(shapeBtn(container));
     const before = figW(container);
-    const other = shapes.find((b) => b.getAttribute("aria-pressed") !== "true")!;
+    const other = shapeOptions(container).find((o) => o.getAttribute("aria-pressed") !== "true")!;
     fireEvent.click(other);
-    expect(other.getAttribute("aria-pressed")).toBe("true"); // now active
+    expect(shapeOptions(container).length).toBe(0); // menu closed after a pick
     expect(figW(container)).not.toBe(before); // figure re-shaped
   });
 
   test("reshape: controlled — onReshape fires with the shape's targetAr", () => {
     const onReshape = vi.fn();
     const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} onReshape={onReshape} />);
-    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
-      (b) => b.getAttribute("aria-pressed") !== "true",
-    ) as HTMLButtonElement;
+    fireEvent.click(shapeBtn(container));
+    const other = shapeOptions(container).find((o) => o.getAttribute("aria-pressed") !== "true") as HTMLButtonElement;
     fireEvent.click(other);
     expect(onReshape).toHaveBeenCalledTimes(1);
     expect(typeof onReshape.mock.calls[0][0]).toBe("number");
+  });
+
+  test("reshape: Escape closes the shape menu and refocuses the button", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    const b = shapeBtn(container);
+    fireEvent.click(b);
+    expect(shapeOptions(container).length).toBeGreaterThan(1);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(shapeOptions(container).length).toBe(0);
+    expect(document.activeElement).toBe(b);
+  });
+
+  test("reshape: opening the shape menu closes the copy menu (mutually exclusive)", () => {
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
+    fireEvent.click(container.querySelector('button[aria-label="actions"]') as HTMLButtonElement);
+    expect(container.querySelector('[role="menu"][aria-label="actions"]')).toBeTruthy();
+    fireEvent.click(shapeBtn(container));
+    expect(container.querySelector('[role="menu"][aria-label="actions"]')).toBeNull(); // copy closed
+    expect(shapeOptions(container).length).toBeGreaterThan(1); // shape open
   });
 
   test("reshape: suppressed when reshapable=false, or when only one shape exists", () => {

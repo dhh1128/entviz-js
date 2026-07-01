@@ -64,33 +64,39 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const fs = controls ? (fsControlled ? (fontSizePt ?? DEFAULT_FONT_SIZE_PT) : stateFs) : fontSizePt;
   const ar = controls ? (arControlled ? (targetAr ?? 1) : stateAr) : targetAr;
 
-  // Copy/export affordance state (the toolbar kebab). Hooks run for every
-  // instance to satisfy the rules of hooks; they no-op until the menu opens.
-  const [menuOpen, setMenuOpen] = React.useState(false);
+  // Toolbar popup state — the shape picker and the copy/export kebab are both
+  // dropdowns; at most one is open. Hooks run for every instance (rules of
+  // hooks) but no-op until a menu opens.
+  const [openMenu, setOpenMenu] = React.useState<null | "shape" | "copy">(null);
   const [toast, setToast] = React.useState<string | null>(null);
-  const menuWrapRef = React.useRef<HTMLDivElement>(null);
+  const shapeWrapRef = React.useRef<HTMLDivElement>(null);
+  const shapeBtnRef = React.useRef<HTMLButtonElement>(null);
+  const copyWrapRef = React.useRef<HTMLDivElement>(null);
   const kebabRef = React.useRef<HTMLButtonElement>(null);
   const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const menuId = React.useId();
+  const shapeMenuId = React.useId();
+  const copyMenuId = React.useId();
+  const openWrapRef = openMenu === "copy" ? copyWrapRef : shapeWrapRef;
+  const openTriggerRef = openMenu === "copy" ? kebabRef : shapeBtnRef;
   React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
-  // Dismiss the menu on Escape (focus returns to the kebab) and outside-click.
+  // Dismiss the open menu on Escape (focus returns to its trigger) and outside-click.
   React.useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMenuOpen(false); kebabRef.current?.focus(); } };
+    if (!openMenu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpenMenu(null); openTriggerRef.current?.focus(); } };
     const onDown = (e: MouseEvent) => {
-      if (menuWrapRef.current && !menuWrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (openWrapRef.current && !openWrapRef.current.contains(e.target as Node)) setOpenMenu(null);
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
-  }, [menuOpen]);
-  // Move focus to the first item when the menu opens (ARIA menu pattern).
+  }, [openMenu, openWrapRef, openTriggerRef]);
+  // Move focus to the first item when a menu opens (ARIA menu pattern).
   React.useEffect(() => {
-    if (!menuOpen) return;
+    if (!openMenu) return;
     const id = requestAnimationFrame(() =>
-      menuWrapRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
+      openWrapRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
     return () => cancelAnimationFrame(id);
-  }, [menuOpen]);
+  }, [openMenu, openWrapRef]);
 
   const svg = React.useMemo(() => {
     const opts: RenderOptions = { targetAr: ar, fontSizePt: fs, note };
@@ -143,7 +149,7 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     toastTimer.current = setTimeout(() => setToast(null), 2400);
   };
   const doCopy = async (kind: CopyKind) => {
-    setMenuOpen(false);
+    setOpenMenu(null);
     try {
       await copyEntviz(kind, { value, opts: { targetAr: ar, fontSizePt: fs, note }, svg });
       flash(COPY_TOAST[kind]);
@@ -151,8 +157,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
       flash(COPY_FAILED);
     }
   };
+  // Roving focus within whichever menu received the key (its element is currentTarget).
   const onMenuKey = (e: React.KeyboardEvent) => {
-    const items = [...(menuWrapRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+    const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]')];
     const i = items.indexOf(document.activeElement as HTMLElement);
     if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
@@ -176,49 +183,74 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     h("span", { style: ctlValue }, `${curPt}pt`),
     h("button", { type: "button", onClick: () => stepFs(1), disabled: ladderIdx === FONT_SIZE_LADDER.length - 1, "aria-label": "larger", style: ctlBtn }, "+"),
   );
+  // Reshape control: a single dropdown button showing the CURRENT shape (a
+  // dropdown caret in its corner) that opens a menu of the achievable shapes.
+  // One button's width instead of one-per-shape — the toolbar stays compact.
+  const activeShape = shapes.find((s) => s.cols === cur.cols && s.rows === cur.rows) ?? shapes[0];
   const reshapeGroup =
     reshapable && shapes.length > 1
       ? h(
           "div",
-          { role: "group", "aria-label": "shape", style: ctlGroup },
-          shapes.map((s) => {
-            const active = s.cols === cur.cols && s.rows === cur.rows;
-            return h(
-              "button",
-              {
-                key: `${s.cols}x${s.rows}`, type: "button",
-                onClick: () => setAr(s.targetAr),
-                "aria-label": `${s.cols} by ${s.rows}`, "aria-pressed": active,
-                style: { ...thumbBtn, ...(active ? thumbActive : null) },
+          { ref: shapeWrapRef, style: { position: "relative", display: "inline-flex" } },
+          h(
+            "button",
+            {
+              ref: shapeBtnRef, type: "button",
+              onClick: () => setOpenMenu((o) => (o === "shape" ? null : "shape")),
+              onKeyDown: (e: React.KeyboardEvent) => {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpenMenu("shape"); }
               },
-              gridThumb(s.cols, s.rows),
-            );
-          }),
+              "aria-haspopup": "menu", "aria-expanded": openMenu === "shape",
+              "aria-controls": openMenu === "shape" ? shapeMenuId : undefined, "aria-label": "shape",
+              style: { ...thumbBtn, position: "relative", color: "var(--entviz-ctl-active, #3b34b0)" },
+            },
+            gridThumb(activeShape.cols, activeShape.rows),
+            h("span", { "aria-hidden": true, style: shapeCaret }, "▾"),
+          ),
+          openMenu === "shape"
+            ? h(
+                "div",
+                { id: shapeMenuId, role: "menu", "aria-label": "shape", onKeyDown: onMenuKey, style: shapeMenuStyle },
+                shapes.map((s) => {
+                  const active = s.cols === cur.cols && s.rows === cur.rows;
+                  return h(
+                    "button",
+                    {
+                      key: `${s.cols}x${s.rows}`, role: "menuitem", type: "button",
+                      onClick: () => { setAr(s.targetAr); setOpenMenu(null); shapeBtnRef.current?.focus(); },
+                      "aria-label": `${s.cols} by ${s.rows}`, "aria-pressed": active,
+                      style: { ...thumbBtn, ...(active ? thumbActive : null) },
+                    },
+                    gridThumb(s.cols, s.rows),
+                  );
+                }),
+              )
+            : null,
         )
       : null;
 
   // Kebab + copy/export menu, at the trailing edge of the toolbar (after reshape).
   const kebab = h(
     "div",
-    { ref: menuWrapRef, style: { position: "relative", display: "inline-flex" } },
+    { ref: copyWrapRef, style: { position: "relative", display: "inline-flex" } },
     h(
       "button",
       {
         ref: kebabRef, type: "button",
-        onClick: () => setMenuOpen((o) => !o),
+        onClick: () => setOpenMenu((o) => (o === "copy" ? null : "copy")),
         onKeyDown: (e: React.KeyboardEvent) => {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setMenuOpen(true); }
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpenMenu("copy"); }
         },
-        "aria-haspopup": "menu", "aria-expanded": menuOpen,
-        "aria-controls": menuOpen ? menuId : undefined, "aria-label": "actions",
+        "aria-haspopup": "menu", "aria-expanded": openMenu === "copy",
+        "aria-controls": openMenu === "copy" ? copyMenuId : undefined, "aria-label": "actions",
         style: { ...ctlBtn, lineHeight: 1 },
       },
       "⋮",
     ),
-    menuOpen
+    openMenu === "copy"
       ? h(
           "div",
-          { id: menuId, role: "menu", "aria-label": "actions", onKeyDown: onMenuKey, style: copyMenuStyle },
+          { id: copyMenuId, role: "menu", "aria-label": "actions", onKeyDown: onMenuKey, style: copyMenuStyle },
           COPY_ACTIONS.map(([kind, label]) =>
             h("button", { key: kind, role: "menuitem", type: "button", onClick: () => doCopy(kind), style: copyMenuItemStyle }, label),
           ),
@@ -297,6 +329,17 @@ const thumbBtn: React.CSSProperties = {
   border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
 };
 const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
+// A small dropdown caret tucked into the shape button's bottom-leading corner.
+const shapeCaret: React.CSSProperties = {
+  position: "absolute", bottom: -2, insetInlineStart: 0, fontSize: 9, lineHeight: 1, opacity: 0.75,
+};
+// The shape picker's dropdown: the achievable shapes as a small wrapped palette.
+const shapeMenuStyle: React.CSSProperties = {
+  position: "absolute", top: "calc(100% + 4px)", insetInlineStart: 0, zIndex: 20,
+  display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 180,
+  background: "var(--entviz-menu-bg, #fff)", border: "var(--entviz-menu-border, 1px solid #ddd)",
+  borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 6,
+};
 const copyMenuStyle: React.CSSProperties = {
   position: "absolute", top: "calc(100% + 4px)", insetInlineEnd: 0, zIndex: 20,
   display: "flex", flexDirection: "column", minWidth: 180,

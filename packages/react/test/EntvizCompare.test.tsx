@@ -90,7 +90,8 @@ describe("EntvizCompare", () => {
     const ph = () => screen.getByText(/reference will appear here/i) as HTMLElement;
     expect(ph().style.width).toMatch(/px$/); // explicit footprint, not a bare aspect-ratio
     const before = ph().style.width;
-    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
+    fireEvent.click(container.querySelector('button[aria-label="shape"]') as HTMLButtonElement); // open the shape dropdown
+    const other = [...container.querySelectorAll('[role="menu"][aria-label="shape"] [role="menuitem"]')].find(
       (b) => b.getAttribute("aria-pressed") !== "true",
     ) as HTMLButtonElement;
     fireEvent.click(other); // reshape "Yours" while the reference is still empty
@@ -124,7 +125,8 @@ describe("EntvizCompare", () => {
         (s) => `${s.getAttribute("width")}x${s.getAttribute("height")}`,
       );
     const before = dims();
-    const other = [...container.querySelectorAll('[aria-label="shape"] button')].find(
+    fireEvent.click(container.querySelector('button[aria-label="shape"]') as HTMLButtonElement); // open the shape dropdown
+    const other = [...container.querySelectorAll('[role="menu"][aria-label="shape"] [role="menuitem"]')].find(
       (b) => b.getAttribute("aria-pressed") !== "true",
     ) as HTMLButtonElement;
     fireEvent.click(other);
