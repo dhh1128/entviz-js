@@ -6,3 +6,6 @@ __pycache__/
 
 /.tick
 .tick.lock
+
+# Generated TypeDoc API reference (run: npm run docs)
+docs/api/

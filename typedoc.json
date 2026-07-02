@@ -1,0 +1,11 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["packages/core/src/entviz.ts", "packages/react/src/index.ts"],
+  "tsconfig": "tsconfig.typedoc.json",
+  "out": "docs/api",
+  "name": "entviz — @entviz/core & @entviz/react API",
+  "readme": "packages/react/docs/integration.md",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "hideGenerator": true
+}

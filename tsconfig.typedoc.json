@@ -1,0 +1,16 @@
+{
+  "//": "Dedicated tsconfig for TypeDoc only (see typedoc.json). Named non-default so it never shadows vitest/playground tooling. The packages ship raw .ts with .ts import specifiers, so allowImportingTsExtensions + noEmit are required.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  }
+}
