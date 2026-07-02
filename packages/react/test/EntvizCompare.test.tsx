@@ -141,6 +141,18 @@ describe("EntvizCompare", () => {
     expect(ph.style.width).toBe("180px"); // graceful fallback footprint
   });
 
+  test("the empty reference rect IS the upload control (click-the-rect-to-upload), with an icon, no separate button", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    const rect = screen.getByText(/click to choose a file/i) as HTMLLabelElement;
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(rect.tagName).toBe("LABEL");
+    expect(fileInput.id).toBeTruthy();
+    expect(rect.getAttribute("for")).toBe(fileInput.id); // clicking the rect opens the picker
+    expect(rect.querySelector("svg")).toBeTruthy(); // upload glyph lives inside the rect
+    // the paste prompt no longer advertises a separate "pick a file" button
+    expect(screen.getByRole("textbox", { name: /paste a value/i }).getAttribute("aria-label")).not.toMatch(/pick a file/i);
+  });
+
   test("resize on our figure drives BOTH panels", () => {
     const { container } = rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });

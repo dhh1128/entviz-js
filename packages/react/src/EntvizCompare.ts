@@ -16,6 +16,7 @@
 import {
   createElement as h,
   useEffect,
+  useId,
   useMemo,
   useState,
   type CSSProperties,
@@ -214,6 +215,10 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // The feature the guided walk is currently checking — the walk reports it (it
   // runs with externalFigures), and we ring it on OUR static figures (#reuse).
   const [walkStep, setWalkStep] = useState<WalkStep | null>(null);
+  // One file input (rendered once, always attached) that the empty reference rect
+  // triggers via htmlFor — so "click the rect to upload" works and survives a
+  // re-pick, and the rect stays a drop target too.
+  const fileInputId = useId();
 
   // Shared display size/shape (#3): the resize/reshape controls live on OUR
   // figure and drive BOTH panels. Initialized from the host's render inputs.
@@ -314,10 +319,22 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     }
   };
 
+  // The reference file input, rendered once (hidden). The empty reference rect is
+  // a <label htmlFor> that opens it (click-the-rect-to-upload); it also stays a
+  // drop target. Not offered for a controlled/provided reference.
+  const fileInput = provided
+    ? null
+    : h("input", {
+        type: "file", id: fileInputId, accept: ".svg,image/svg+xml,image/*",
+        "aria-label": m.pickFile,
+        onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
+        style: { display: "none" },
+      });
+
   // One full-width acquisition field (#4/#5): paste a value, an entviz SVG, or a
-  // URL — all into the same box; a button beside it picks a file. A pasted URL is
-  // auto-detected and offered for fetch (origin shown first). Hidden during a walk
-  // (no mid-walk reference edits) and when the host supplies a controlled reference.
+  // URL — all into the same box (file upload lives in the reference rect, below).
+  // A pasted URL is auto-detected and offered for fetch (origin shown first).
+  // Hidden during a walk (no mid-walk reference edits) and for a controlled reference.
   const acquisition = provided || walking
     ? null
     : h(
@@ -351,32 +368,6 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             rows: 2,
             style: textareaStyle,
           }),
-          h(
-            "label",
-            { style: fileLabel, title: m.pickFile },
-            // A standard inline-SVG upload glyph (tray + up arrow, à la Feather/
-            // Material) drawn in currentColor — no icon-library dependency. The
-            // wordy "Choose a file…" lives in the tooltip + the input's accessible
-            // name, per the terse-label + hover rule.
-            h(
-              "svg",
-              {
-                "aria-hidden": true, width: "1.15em", height: "1.15em", viewBox: "0 0 24 24",
-                fill: "none", stroke: "currentColor", strokeWidth: 2,
-                strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block" },
-              },
-              h("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
-              h("polyline", { points: "17 8 12 3 7 8" }),
-              h("line", { x1: 12, y1: 3, x2: 12, y2: 15 }),
-            ),
-            h("input", {
-              type: "file",
-              accept: ".svg,image/svg+xml,image/*",
-              "aria-label": m.pickFile,
-              onChange: (e: { target: { files: FileList | null } }) => onPick(e.target.files?.[0], "file"),
-              style: { display: "none" },
-            }),
-          ),
           isUrl
             ? h("button", { type: "button", onClick: onFetch, style: fetchBtn }, m.fetchButton)
             : null,
@@ -390,6 +381,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const referenceTab = h(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 10 } },
+    fileInput,
     h(
       "div",
       { style: panelsStyle, "data-entviz-layout": layout },
@@ -433,7 +425,25 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           // empty slot, sized to OUR figure's footprint — doubles as the drop target
           // (the "Reference" label above already says what it is, so the copy is just
           // the drop hint; #3).
-          ? h("div", { style: { ...placeholderBox, ...placeholderSize } }, m.dropHint)
+          // The empty slot IS the upload control: a <label> for the hidden file
+          // input (click to choose), carrying an upload glyph + the drop hint. It
+          // still receives drops via the root onDrop.
+          ? h(
+              "label",
+              { htmlFor: fileInputId, style: { ...placeholderBox, ...placeholderSize } },
+              h(
+                "svg",
+                {
+                  "aria-hidden": true, width: "1.7em", height: "1.7em", viewBox: "0 0 24 24",
+                  fill: "none", stroke: "currentColor", strokeWidth: 2,
+                  strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block", opacity: 0.75, marginBottom: 4 },
+                },
+                h("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
+                h("polyline", { points: "17 8 12 3 7 8" }),
+                h("line", { x1: 12, y1: 3, x2: 12, y2: 15 }),
+              ),
+              m.dropHint,
+            )
           : walking
             ? h(
                 "div",
@@ -596,7 +606,8 @@ const figureFill: CSSProperties = { display: "block" };
 // An empty reference slot the same footprint as OUR figure (size from
 // placeholderSize), so both panels show a figure-sized box side-by-side (#3).
 const placeholderBox: CSSProperties = {
-  boxSizing: "border-box", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+  boxSizing: "border-box", overflow: "hidden", display: "flex", flexDirection: "column",
+  alignItems: "center", justifyContent: "center", cursor: "pointer",
   border: "1px dashed var(--entviz-compare-placeholder, #d0d7de)", borderRadius: 8,
   color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: "0.7em", textAlign: "center", padding: 8,
 };
@@ -607,14 +618,6 @@ const textareaStyle: CSSProperties = {
   // buttons instead of imposing its own intrinsic width — so the row never
   // overflows the comparator and the file button stays inside the panel range.
   flex: "1 1 0", minWidth: 0, boxSizing: "border-box",
-};
-// The file picker is a bordered icon button, sized to match the fetch button and
-// kept within the acquisition row (flex 0 0 auto — never grows past the edge).
-const fileLabel: CSSProperties = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto",
-  fontSize: "0.8em", lineHeight: 1, color: "var(--entviz-compare-action, #3b34b0)", cursor: "pointer",
-  border: "1px solid var(--entviz-compare-action, #3b34b0)", borderRadius: 6, padding: "5px 9px",
-  background: "none", whiteSpace: "nowrap",
 };
 const fetchBtn: CSSProperties = {
   font: "inherit", fontSize: "0.8em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
