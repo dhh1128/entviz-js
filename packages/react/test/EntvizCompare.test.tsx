@@ -471,6 +471,24 @@ describe("EntvizCompare integrity (T2 render-tamper resistance)", () => {
     expect(style).not.toMatch(/var\(--entviz-compare-(good|bad|warn|neutral)/);
   });
 
+  test("messages can localize chrome but NOT relabel the verdict (judgment-tamper)", () => {
+    rtlRender(<EntvizCompare value={HEX} messages={{ heading: "My Compare", different: "Actually a Match" }} />);
+    expect(screen.getByText("My Compare")).toBeTruthy(); // chrome override still works
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: OTHER } });
+    expect(status()).toContain("Different"); // the locked verdict label wins
+    expect(status()).not.toContain("Actually a Match"); // the attacker's relabel is ignored
+  });
+
+  test("an identical machine verdict renders the §2.4 scoping caveat, and it can't be softened via messages", () => {
+    rtlRender(<EntvizCompare value={HEX} messages={{ recognitionNote: "This reference is fully trusted", identical: "PERFECT MATCH" }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    expect(status()).toContain("Identical"); // locked verdict label
+    expect(screen.queryByText(/perfect match/i)).toBeNull();
+    // the scoping copy is rendered on the MACHINE chip (not just walk/voice) and is the locked default
+    expect(screen.getByText(/does not vouch for the reference/i)).toBeTruthy();
+    expect(screen.queryByText(/fully trusted/i)).toBeNull();
+  });
+
   test("the walk focus ring/scrim use fixed colors (T2 can't set --entviz-walk-ring transparent to erase the spotlight)", () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);

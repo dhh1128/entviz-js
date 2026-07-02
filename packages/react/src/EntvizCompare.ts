@@ -210,9 +210,24 @@ const VERDICT_SKIN: Record<Chip["tone"], { bg: string; fg: string }> = {
   neutral: { bg: "#57606a", fg: "#ffffff" },
 };
 
+// Strings that carry the security JUDGMENT (the verdict, its scoping caveat, provenance) are
+// NOT host-overridable via `messages` — only surrounding chrome is localizable. Re-pinned in
+// EntvizCompare() after the override merge.
+const VERDICT_LOCKED_KEYS: (keyof CompareMessages)[] = [
+  "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar",
+  "unknownReason", "pending", "machineCheck", "recognitionNote",
+  "provenancePasted", "provenanceFile", "provenanceUrl", "provenanceDropped", "provenanceProvided",
+];
+
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, className, style } = props;
+  // Merge host `messages`, then RE-PIN the verdict-, scoping-, and provenance-bearing strings
+  // to the defaults. A host override may localize surrounding chrome, but must NOT relabel a
+  // verdict ("Different" → "Match"), soften the recognition≠verification scoping, or rewrite
+  // provenance — that is judgment-tamper against the primary asset (threat-model: the user's
+  // equality belief), not localization.
   const m: CompareMessages = { ...defaultCompareMessages, ...overrides };
+  for (const k of VERDICT_LOCKED_KEYS) m[k] = defaultCompareMessages[k];
   const rtl = isRtlLocale(locale ?? "");
   const panelsStyle = layoutStyle(layout);
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
@@ -484,6 +499,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           h("span", null, chip.label),
         )
       : null,
+    // §2.4 scoping caveat on the MACHINE chip too (not just the walk/voice paths): a match
+    // means "equal to THIS reference", never that the reference is the one to trust. Shown
+    // for every non-"different" verdict (identical/unknown) — the fastest, most-trusted
+    // outcomes. Locked string (not host-overridable).
+    result.kind === "verdict" && result.verdict.state !== "different"
+      ? h("span", { style: scopingNote }, m.recognitionNote)
+      : null,
     // Guided-walk launch (M2): a value reference walks value-vs-value; a raster
     // reference walks OUR figure against the pasted image by eye. Only offered when
     // there's a renderable reference (a value / a matched comparison text) or a raster.
@@ -649,5 +671,7 @@ const warnBanner: CSSProperties = {
 };
 const provenance: CSSProperties = { fontSize: "0.75em", opacity: 0.6 };
 const hint: CSSProperties = { fontSize: "0.72em", opacity: 0.6 };
+// The §2.4 scoping caveat under an affirmative verdict ("equal to THIS reference…").
+const scopingNote: CSSProperties = { fontSize: "0.72em", opacity: 0.72, maxWidth: "46ch", alignSelf: "flex-start" };
 
 export default EntvizCompare;
