@@ -18,6 +18,8 @@ export interface CompareMessages {
   imagePasted: string; // the marker shown in the input when a raster image is the reference
   imageAlt: string; // alt text for the pasted/dropped reference image
   dropHint: string; // shown in the empty reference slot — it doubles as a drop target
+  dropOnlyHint: string; // shown when file-pick is disabled but drop is on (no "click to choose")
+  placeholderHint: string; // shown when both file-pick and drop are disabled (non-interactive)
   urlPlaceholder: string;
   fetchButton: string;
   fetchHint: string; // "Will fetch from {origin}"
@@ -54,6 +56,8 @@ export const defaultCompareMessages: CompareMessages = {
   imagePasted: "[image]",
   imageAlt: "Pasted reference image",
   dropHint: "Click to choose a file, or drop an entviz SVG or image here",
+  dropOnlyHint: "Drop an entviz SVG or image here",
+  placeholderHint: "Paste a reference to compare",
   urlPlaceholder: "https://… (URL of an entviz SVG)",
   fetchButton: "Fetch",
   fetchHint: "Will fetch from {origin}",

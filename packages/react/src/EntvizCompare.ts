@@ -48,6 +48,29 @@ export interface EntvizCompareProps {
   layout?: EntvizLayout;
   locale?: string;
   messages?: Partial<CompareMessages>;
+  /** ALLOWLIST-CLOSED, restrict-only. When ABSENT, all four acquisition methods
+   *  are ON (today's behavior). When PRESENT, a method is enabled ONLY if its key
+   *  is exactly `true`; any missing/false/undefined key is OFF. So
+   *  `allow={{paste:true}}` disables file, url, and drop. This is a light DLP /
+   *  host-policy convenience (least acquisition surface) — NOT the primary asset
+   *  (`secret.detected`-style hygiene). NEVER `allow.x ?? true`: that would leave a
+   *  method live when the host thought it locked it down. */
+  allow?: { paste?: boolean; file?: boolean; url?: boolean; drop?: boolean };
+  /** A light convenience: when true, `reference.acquired` carries `content` (the
+   *  raw reference bytes). OFF by default so a pasted-secret corner case isn't
+   *  ambiently logged. Confidentiality is OUT of scope — values are public — so
+   *  this is hygiene, not a security firewall; nothing else is gated on it. */
+  includeContent?: boolean;
+  /** Host-injected URL fetcher (proxy/auth/CORS/tests). When provided, the URL
+   *  path calls THIS instead of the built-in `fetch`. Integrity guard (§4/§5.8):
+   *  the returned bytes are attacker-authorable and flow through the SAME
+   *  `classifyResult`/`compareSvg` §6.2 gauntlet as pasted bytes — the fetcher
+   *  supplies BYTES, never a verdict, and cannot mark a reference identical.
+   *  `{ text }` sets text/svg content; `{ blob }` is read to a data URL (raster). */
+  fetchReference?: (
+    url: string,
+    ctx: { origin: string; signal: AbortSignal },
+  ) => Promise<{ text: string } | { blob: Blob }>;
   onVerdict?: (v: Verdict) => void;
   /** The typed event firehose (see events.ts). Notify-only, in addition to the
    *  specific callbacks; only `fetch.start` is advisory-cancelable. */
@@ -115,6 +138,17 @@ export function readFileAsReference(file: File): Promise<string> {
     fr.onload = () => resolve(String(fr.result));
     if (/^image\//i.test(file.type) && !/svg/i.test(file.type)) fr.readAsDataURL(file);
     else fr.readAsText(file);
+  });
+}
+
+/** Read a host-fetcher `{ blob }` to a data URL so it routes to the raster engine
+ *  (the same path a pasted/dropped screenshot takes) — never `identical`. */
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("read failed"));
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(blob);
   });
 }
 
@@ -234,7 +268,16 @@ function verdictStateOf(result: CompareResult): VerdictState {
 }
 
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
-  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, onEvent, className, style } = props;
+  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, allow, includeContent, fetchReference, onVerdict, onEvent, className, style } = props;
+  // ALLOWLIST-CLOSED acquisition gate (§5.10): an ABSENT `allow` is all-on;
+  // a PRESENT `allow` enables a method ONLY on an explicit `=== true`. Never
+  // `allow[m] ?? true` — that fails OPEN, leaving a method live the host thought
+  // it disabled. This mirrors the DLP/policy hygiene of `secret.detected`: a
+  // restrict-only least-surface control, not the primary (equality-belief) asset.
+  const allowPaste = allow ? allow.paste === true : true;
+  const allowFile = allow ? allow.file === true : true;
+  const allowUrl = allow ? allow.url === true : true;
+  const allowDrop = allow ? allow.drop === true : true;
   // The event firehose: a monotonic seq per instance, and a bound `emit` that
   // stamps source="compare" and swallows a throwing host handler (events.ts).
   const seqRef = useRef(0);
@@ -304,7 +347,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // "ambiguous" to the medium detector but parses as a URL, so we offer to fetch
   // it (origin shown first, never auto-fetched — §5).
   const refOrigin = originOf(refContent);
-  const isUrl = medium === "ambiguous" && !!refOrigin;
+  // `url` off (allowlist-closed): even a pasted URL is treated as ambiguous — no
+  // Fetch button / URL-ready chip is offered, so no egress path is opened.
+  const isUrl = allowUrl && medium === "ambiguous" && !!refOrigin;
   const baseResult = useMemo(() => classifyResult(value, refContent, opts), [value, refContent, opts]);
 
   // Raster comparison is async (decode the image, render ours, disprove); the
@@ -363,6 +408,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         medium,
         byteLength: new TextEncoder().encode(eff!.content).length,
         origin: eff!.origin || undefined,
+        // Content is a public value; withheld by default only so a pasted-secret
+        // corner case isn't ambiently logged (includeContent = hygiene, not a firewall).
+        ...(includeContent ? { content: eff!.content } : {}),
       });
     } else if (!present && hadRefRef.current) {
       emit({ type: "reference.cleared" });
@@ -429,7 +477,8 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const onFetch = async () => {
     setFetchError(null);
     // fetch.start is the one advisory-cancelable event: a host handler may call
-    // preventDefault() to block egress (fail-closed — blocking can only deny).
+    // preventDefault() to block egress (fail-closed — blocking can only deny). If
+    // blocked, neither the built-in fetch NOR a host `fetchReference` runs.
     let blocked = false;
     emit({
       type: "fetch.start",
@@ -441,17 +490,42 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     if (blocked) return;
     const startedAt = Date.now();
     try {
-      const res = await fetch(refContent);
-      const text = await res.text();
+      // The bytes we set as the reference — supplied by the host fetcher OR the
+      // built-in fetch. Either way they flow through the SAME classifyResult /
+      // compareSvg §6.2 gauntlet as pasted bytes (via setRef → refContent): the
+      // fetcher hands us BYTES, never a verdict, and CANNOT mark a reference
+      // identical (§5.8). `{ text }` → text/svg classification; `{ blob }` → a data
+      // URL → the raster engine (raster is never `identical`).
+      let content: string;
+      let byteLength: number;
+      let status = 0;
+      if (fetchReference) {
+        // Origin is already shown before the user clicks Fetch (unchanged). Provide
+        // an AbortSignal so a host fetcher can be cancelled on unmount/host policy.
+        const controller = new AbortController();
+        const out = await fetchReference(refContent, { origin: refOrigin, signal: controller.signal });
+        if ("blob" in out) {
+          content = await blobToDataUrl(out.blob);
+          byteLength = out.blob.size;
+        } else {
+          content = out.text;
+          byteLength = new TextEncoder().encode(content).length;
+        }
+      } else {
+        const res = await fetch(refContent);
+        content = await res.text();
+        byteLength = new TextEncoder().encode(content).length;
+        status = (res as { status?: number }).status ?? 0;
+      }
       emit({
         type: "fetch.success",
         origin: refOrigin,
-        status: (res as { status?: number }).status ?? 0,
-        byteLength: new TextEncoder().encode(text).length,
+        status,
+        byteLength,
         durationMs: Date.now() - startedAt,
         sensitivity: "network",
       });
-      setRef({ content: text, provenance: "url", origin: refOrigin });
+      setRef({ content, provenance: "url", origin: refOrigin });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       emit({ type: "fetch.error", origin: refOrigin, message, sensitivity: "network" });
@@ -499,8 +573,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
 
   // The reference file input, rendered once (hidden). The empty reference rect is
   // a <label htmlFor> that opens it (click-the-rect-to-upload); it also stays a
-  // drop target. Not offered for a controlled/provided reference.
-  const fileInput = provided
+  // drop target. Not offered for a controlled/provided reference, nor when `file`
+  // is disabled by the allowlist (then the empty rect is not an upload control).
+  const fileInput = provided || !allowFile
     ? null
     : h("input", {
         type: "file", id: fileInputId, accept: ".svg,image/svg+xml,image/*",
@@ -522,18 +597,24 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           "div",
           { style: { display: "flex", gap: 6, alignItems: "flex-start", width: "100%" } },
           h("textarea", {
+            // `paste` off (allowlist-closed): the field is readOnly so no value can
+            // be entered — the acquisition textarea is effectively not offered.
+            readOnly: !allowPaste,
             // A raster reference (pasted/dropped/picked image) shows an "[image]"
             // marker rather than its data URL; a pasted text value shows itself.
             value: medium === "raster" ? m.imagePasted : eff?.provenance === "pasted" ? refContent : "",
             // Editing over the marker drops it, so typing replaces the image with text.
-            onChange: (e: { target: { value: string } }) =>
-              setRef({ content: e.target.value.replace(m.imagePasted, ""), provenance: "pasted", origin: "" }),
+            onChange: (e: { target: { value: string } }) => {
+              if (!allowPaste) return;
+              setRef({ content: e.target.value.replace(m.imagePasted, ""), provenance: "pasted", origin: "" });
+            },
             // A pasted raster image (screenshot) becomes the reference — read it as
             // a file (data URL → raster engine) instead of the default text paste.
             onPaste: (e: {
               preventDefault: () => void;
               clipboardData: { files: FileList | File[] };
             }) => {
+              if (!allowPaste) return;
               const img = [...(e.clipboardData?.files ?? [])].find(
                 (f) => /^image\//i.test(f.type) && !/svg/i.test(f.type),
               );
@@ -606,22 +687,10 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           // The empty slot IS the upload control: a <label> for the hidden file
           // input (click to choose), carrying an upload glyph + the drop hint. It
           // still receives drops via the root onDrop.
-          ? h(
-              "label",
-              { htmlFor: fileInputId, style: { ...placeholderBox, ...placeholderSize } },
-              h(
-                "svg",
-                {
-                  "aria-hidden": true, width: "1.7em", height: "1.7em", viewBox: "0 0 24 24",
-                  fill: "none", stroke: "currentColor", strokeWidth: 2,
-                  strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block", opacity: 0.75, marginBottom: 4 },
-                },
-                h("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
-                h("polyline", { points: "17 8 12 3 7 8" }),
-                h("line", { x1: 12, y1: 3, x2: 12, y2: 15 }),
-              ),
-              m.dropHint,
-            )
+          ? emptyReferenceSlot({
+              allowFile, allowDrop, fileInputId, m,
+              boxStyle: { ...placeholderBox, ...placeholderSize },
+            })
           : walking
             ? h(
                 "div",
@@ -715,8 +784,10 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     {
       dir: rtl ? "rtl" : undefined,
       className,
-      onDragOver: provided ? undefined : (e: { preventDefault: () => void }) => e.preventDefault(),
-      onDrop: provided
+      // `drop` off (allowlist-closed): the root onDrop/onDragOver are no-ops, so a
+      // dragged file/value can't become a reference by this path.
+      onDragOver: provided || !allowDrop ? undefined : (e: { preventDefault: () => void }) => e.preventDefault(),
+      onDrop: provided || !allowDrop
         ? undefined
         : (e: { preventDefault: () => void; dataTransfer: DataTransfer }) => {
             e.preventDefault();
@@ -741,6 +812,43 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         ),
     secret ? h("span", { role: "alert", style: warnBanner }, m.secretWarning) : null,
     !provided && tab === "voice" ? voiceTab : referenceTab,
+  );
+}
+
+/** The empty reference slot, adapted to the allowlist:
+ *  - file ON  → a <label> upload control (click-to-choose) that is also a drop target;
+ *  - file OFF, drop ON → a plain <div> with only a drop hint (no upload affordance);
+ *  - file OFF, drop OFF → a plain, non-interactive placeholder (paste-only host).
+ *  Never a <label> when file is off (nothing to open), so the host's DLP/policy
+ *  lock-down is visible in the UI, not just wired behind it. */
+function emptyReferenceSlot(o: {
+  allowFile: boolean;
+  allowDrop: boolean;
+  fileInputId: string;
+  m: CompareMessages;
+  boxStyle: CSSProperties;
+}): ReactNode {
+  const { allowFile, allowDrop, fileInputId, m, boxStyle } = o;
+  const uploadGlyph = h(
+    "svg",
+    {
+      "aria-hidden": true, width: "1.7em", height: "1.7em", viewBox: "0 0 24 24",
+      fill: "none", stroke: "currentColor", strokeWidth: 2,
+      strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block", opacity: 0.75, marginBottom: 4 },
+    },
+    h("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }),
+    h("polyline", { points: "17 8 12 3 7 8" }),
+    h("line", { x1: 12, y1: 3, x2: 12, y2: 15 }),
+  );
+  if (allowFile) {
+    return h("label", { htmlFor: fileInputId, style: { ...boxStyle, cursor: "pointer" } }, uploadGlyph, m.dropHint);
+  }
+  // No file upload: a plain div. If drop is on, keep the drop hint; otherwise a
+  // fully non-interactive placeholder (default cursor, no upload copy).
+  return h(
+    "div",
+    { style: { ...boxStyle, cursor: "default" } },
+    allowDrop ? m.dropOnlyHint : m.placeholderHint,
   );
 }
 

@@ -795,3 +795,241 @@ describe("EntvizCompare onEvent firehose", () => {
     expect(of(onEvent, "voice.step").length).toBe(0);
   });
 });
+
+describe("EntvizCompare config props (allow / includeContent / fetchReference)", () => {
+  const MULTI = "0123456789abcdef".repeat(4);
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+  const box = () => screen.getByRole("textbox", { name: /paste/i });
+
+  // --- includeContent ------------------------------------------------------
+
+  test("includeContent=false (default) omits `content` on reference.acquired", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: OTHER } });
+    const e = last(onEvent, "reference.acquired");
+    expect(e).toBeTruthy();
+    expect(e.content).toBeUndefined();
+  });
+
+  test("includeContent=true adds the raw reference content on reference.acquired", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} includeContent onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: OTHER } });
+    const e = last(onEvent, "reference.acquired");
+    expect(e).toBeTruthy();
+    expect(e.content).toBe(OTHER); // the raw pasted reference bytes
+  });
+
+  test("includeContent=true carries the fetched body as content (url provenance)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 200, text: async () => SVG })));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} includeContent onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(last(onEvent, "reference.acquired")?.provenance).toBe("url"));
+    expect(last(onEvent, "reference.acquired").content).toBe(SVG);
+  });
+
+  // --- allow (restrict-only, allowlist-closed) -----------------------------
+
+  test("absent `allow` keeps all four methods on (paste box, file input, url fetch, drop)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 200, text: async () => SVG })));
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    // paste on
+    const ta = box() as HTMLTextAreaElement;
+    expect(ta.readOnly).toBe(false);
+    // file on
+    expect(container.querySelector('input[type="file"]')).toBeTruthy();
+    // drop on
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(status()).toContain("Identical");
+    cleanup();
+    // url on
+    const r2 = rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/key.svg" } });
+    expect(screen.getByRole("button", { name: "Fetch" })).toBeTruthy();
+    r2.unmount();
+  });
+
+  test("allow={{paste:true}} disables file, url, and drop but keeps paste", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    // paste stays usable
+    const ta = box() as HTMLTextAreaElement;
+    expect(ta.readOnly).toBe(false);
+    fireEvent.change(ta, { target: { value: HEX } });
+    expect(status()).toContain("Identical");
+    // file OFF: no hidden file input, and the empty placeholder isn't a <label>
+    cleanup();
+    const empty = rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    expect(empty.container.querySelector('input[type="file"]')).toBeNull();
+    expect(screen.queryByText(/click to choose a file/i)).toBeNull();
+    empty.unmount();
+    // url OFF: even a pasted URL string does not offer a Fetch button
+    const u = rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/key.svg" } });
+    expect(screen.queryByRole("button", { name: "Fetch" })).toBeNull();
+    u.unmount();
+    // drop OFF: dropping a value is a no-op
+    const d = rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    const root = d.container.firstElementChild as HTMLElement;
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(screen.queryByRole("status")).toBeNull(); // no reference acquired
+    d.unmount();
+  });
+
+  test("allow with paste absent disables the paste textarea (readOnly, no value entered)", async () => {
+    rtlRender(<EntvizCompare value={HEX} allow={{ file: true }} />);
+    const ta = box() as HTMLTextAreaElement;
+    expect(ta.readOnly).toBe(true);
+    fireEvent.change(ta, { target: { value: HEX } });
+    expect(screen.queryByRole("status")).toBeNull(); // readOnly ⇒ no reference set
+    // a pasted image is ALSO ignored when paste is off (the onPaste handler no-ops)
+    const png = new File([new Uint8Array([1])], "s.png", { type: "image/png" });
+    fireEvent.paste(ta, { clipboardData: { files: [png] } });
+    await Promise.resolve();
+    expect(screen.queryByAltText("Pasted reference image")).toBeNull();
+  });
+
+  test("allow={{drop:true}} (file off) shows a plain placeholder, not an upload label", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} allow={{ drop: true }} />);
+    expect(container.querySelector('input[type="file"]')).toBeNull(); // no file input
+    const ph = screen.queryByText(/drop an entviz/i);
+    expect(ph).toBeTruthy(); // still a drop hint (drop is on)
+    expect((ph as HTMLElement).tagName).not.toBe("LABEL"); // but not an upload control
+  });
+
+  test("allow with file AND drop off yields a plain non-interactive placeholder", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    // the placeholder slot exists but is neither a <label> nor a drop target
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  test("allow with url off treats a pasted URL as ambiguous (no URL-ready chip, no Fetch)", () => {
+    rtlRender(<EntvizCompare value={HEX} allow={{ paste: true }} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    // no URL-ready chip; the string falls through to the ambiguous handling
+    expect(screen.queryByRole("button", { name: "Fetch" })).toBeNull();
+    expect(screen.queryByText(/Will fetch from/i)).toBeNull();
+    expect(status()).toMatch(/recognize/i); // ambiguous, not URL-ready
+  });
+
+  test("allow={{drop:true}} drops still work while paste/file/url are off", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} allow={{ drop: true }} />);
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.dragOver(root);
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(status()).toContain("Identical");
+    expect(screen.getByText("Reference: dropped")).toBeTruthy();
+  });
+
+  // --- fetchReference (host-injected fetcher → §6.2 gauntlet) --------------
+
+  test("fetchReference returning {text: faithful SVG} reaches identical THROUGH the gauntlet", async () => {
+    const builtIn = vi.fn(async () => ({ status: 200, text: async () => "SHOULD NOT BE CALLED" }));
+    vi.stubGlobal("fetch", builtIn);
+    const fetchReference = vi.fn(async (_url: string, _ctx: { origin: string; signal: AbortSignal }) => ({ text: SVG }));
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(fetchReference).toHaveBeenCalledTimes(1);
+    // the injected fetcher supplies BYTES only — the built-in fetch is bypassed
+    expect(builtIn).not.toHaveBeenCalled();
+    // it was handed the origin + an AbortSignal
+    const [url, ctx] = fetchReference.mock.calls[0];
+    expect(url).toBe("https://example.com/key.svg");
+    expect(ctx.origin).toBe("https://example.com");
+    expect(ctx.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("fetchReference returning attacker-ish non-conformant text does NOT reach identical (fails closed)", async () => {
+    const fetchReference = vi.fn(async () => ({ text: "<svg><!-- not a faithful entviz --></svg>" }));
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} />);
+    fireEvent.change(box(), { target: { value: "https://evil.example/forge" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(fetchReference).toHaveBeenCalled());
+    await waitFor(() => expect(status()).toMatch(/confirm a match|recognize/i));
+    expect(status()).not.toContain("Identical"); // a fetcher cannot mark a reference identical
+  });
+
+  test("fetchReference returning {blob} routes through the raster engine (never identical)", async () => {
+    const onVerdict = vi.fn();
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
+    const fetchReference = vi.fn(async () => ({ blob }));
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} onVerdict={onVerdict} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/shot.png" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(onVerdict).toHaveBeenCalled(), RWAIT);
+    expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
+    expect(status()).not.toContain("Identical");
+  });
+
+  test("fetchReference {blob} that fails to read surfaces a fetch.error (fail-closed)", async () => {
+    class ErrFileReader {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      result = "";
+      readAsDataURL() { Promise.resolve().then(() => this.onerror?.()); }
+    }
+    vi.stubGlobal("FileReader", ErrFileReader);
+    const onEvent = vi.fn();
+    const blob = new Blob([new Uint8Array([1])], { type: "image/png" });
+    const fetchReference = vi.fn(async () => ({ blob }));
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/shot.png" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(of(onEvent, "fetch.error").length).toBe(1), RWAIT);
+    expect(of(onEvent, "fetch.success").length).toBe(0); // never a success on a bad read
+    expect(screen.queryByText(/identical/i)).toBeNull(); // no verdict forged
+  });
+
+  test("the built-in fetch is still used when fetchReference is absent", async () => {
+    const builtIn = vi.fn(async () => ({ status: 200, text: async () => SVG }));
+    vi.stubGlobal("fetch", builtIn);
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(builtIn).toHaveBeenCalledTimes(1);
+  });
+
+  test("fetch.start preventDefault also blocks a host fetchReference (fail-closed)", async () => {
+    const fetchReference = vi.fn(async () => ({ text: SVG }));
+    const onEvent = vi.fn((e: { type: string; preventDefault?: () => void }) => {
+      if (e.type === "fetch.start") e.preventDefault!();
+    });
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await Promise.resolve();
+    expect(fetchReference).not.toHaveBeenCalled(); // egress blocked → fetcher not called either
+    expect(of(onEvent, "fetch.success").length).toBe(0);
+  });
+
+  test("fetchReference emits fetch.success and fetch.error around it", async () => {
+    const onEvent = vi.fn();
+    const good = vi.fn(async () => ({ text: SVG }));
+    rtlRender(<EntvizCompare value={HEX} fetchReference={good} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(of(onEvent, "fetch.success").length).toBe(1));
+    cleanup();
+    const onEvent2 = vi.fn();
+    const bad = vi.fn(async () => { throw new Error("proxy exploded"); });
+    rtlRender(<EntvizCompare value={HEX} fetchReference={bad} onEvent={onEvent2} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "https://example.com/x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(of(onEvent2, "fetch.error").length).toBe(1));
+    expect(last(onEvent2, "fetch.error").message).toMatch(/proxy exploded/i);
+  });
+});
