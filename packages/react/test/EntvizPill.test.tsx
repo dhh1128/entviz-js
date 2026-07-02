@@ -95,6 +95,10 @@ describe("pill-messages", () => {
       const { messages } = resolveMessages(loc);
       expect(messages.view.length).toBeGreaterThan(0);
       expect(messages.desc).toContain("{cells}");
+      // lifecycle chrome keys are present & non-empty in every locale
+      for (const k of ["stepCite", "stepVisualize", "stepCompare", "teachVisualize", "compareAction"] as const) {
+        expect(messages[k].length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -384,5 +388,82 @@ describe("EntvizPill edges", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /copy image/i }));
     expect((await screen.findAllByText("Copy failed")).length).toBeGreaterThan(0);
     (globalThis as unknown as { Image: unknown }).Image = RealImage;
+  });
+});
+
+// --- disclosure lifecycle: Cite · Visualize · Compare ---------------------
+
+describe("EntvizPill disclosure lifecycle", () => {
+  const expand = () => fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+
+  test("expanded (no onCompare): rail shows Cite·Visualize, teaching header, no compare affordance", () => {
+    render(<EntvizPill value={HEX} />);
+    expand();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Cite")).toBeTruthy();
+    expect(within(dialog).getByText("Visualize")).toBeTruthy();
+    // teaching header (Seam 1)
+    expect(within(dialog).getByText(/read the cells to check a value/i)).toBeTruthy();
+    // recognition-only: no compare step, no compare button, no acquisition field
+    expect(within(dialog).queryByText("Compare")).toBeNull();
+    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    // grow-from-pill motion class is applied
+    expect(dialog.classList.contains("entviz-pill__pop")).toBe(true);
+  });
+
+  test("onCompare opts in the compare affordance + the Compare rail step", () => {
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} />);
+    expand();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Compare")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compare against a reference/i })).toBeTruthy();
+    // still recognition-only until the user chooses to verify
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+  });
+
+  test("clicking the affordance enters compare: fires onCompare, renders the real <EntvizCompare> (a reference-requiring task, not a verdict)", () => {
+    const onCompare = vi.fn();
+    render(<EntvizPill value={UUID} onCompare={onCompare} />);
+    expand();
+    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    expect(onCompare).toHaveBeenCalledTimes(1);
+    const dialog = screen.getByRole("dialog");
+    // EntvizCompare's reference-acquisition field is now present (the gate)…
+    expect(within(dialog).getByRole("textbox")).toBeTruthy();
+    // …and no affirmative verdict is shown at entry (no green "=" chip yet).
+    expect(within(dialog).queryByText("=")).toBeNull();
+    // the visualize-state affordance/teaching are replaced, not duplicated
+    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+  });
+
+  test("showCompareAffordance={false} keeps the hook but hides the built-in button", () => {
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} showCompareAffordance={false} />);
+    expand();
+    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+    expect(within(screen.getByRole("dialog")).queryByText("Compare")).toBeNull();
+  });
+
+  test("collapsing resets to the visualize state (no back-slide into a stale compare)", () => {
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} />);
+    expand();
+    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    expect(within(screen.getByRole("dialog")).getByRole("textbox")).toBeTruthy();
+    // click the pill again to collapse, then reopen
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expand();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("textbox")).toBeNull(); // back at visualize
+    expect(screen.getByRole("button", { name: /compare against a reference/i })).toBeTruthy();
+  });
+
+  test("lifecycle chrome is localized", () => {
+    render(<EntvizPill value={HEX} locale="fr" onCompare={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /voir la visualisation/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Citer")).toBeTruthy();
+    expect(within(dialog).getByText("Visualiser")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /comparer à une référence/i })).toBeTruthy();
   });
 });

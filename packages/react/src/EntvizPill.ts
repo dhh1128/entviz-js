@@ -33,6 +33,7 @@ import {
   type RenderOptions,
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
+import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { fmt, isRtlLocale, resolveMessages, type Messages } from "./pill-messages.ts";
 
@@ -58,6 +59,14 @@ export interface EntvizPillProps {
   className?: string;
   style?: CSSProperties;
   onExpand?: () => void;
+  /** Called when the user enters the compare state from the expanded popover.
+   *  Providing it opts the pill into the in-popover "Compare against a reference…"
+   *  affordance; the pill then renders <EntvizCompare> in place, so recognition →
+   *  verification stays a deliberate, reference-requiring act (design Seam 2). */
+  onCompare?: () => void;
+  /** Show the in-popover compare affordance (default true when `onCompare` is set).
+   *  Lets a host keep the onCompare hook but suppress the built-in button. */
+  showCompareAffordance?: boolean;
   onCopy?: (kind: CopyKind) => void;
   onError?: (message: string) => void;
 }
@@ -159,7 +168,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
     label, showType = true, showIcon = true, maxWidth, locale, dir,
-    messages: overrides, className, style, onExpand, onCopy, onError,
+    messages: overrides, className, style, onExpand, onCompare, showCompareAffordance, onCopy, onError,
   } = props;
 
   const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
@@ -196,6 +205,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
 
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const wrapRef = useRef<HTMLSpanElement>(null);
@@ -218,12 +228,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   useEffect(() => {
     if (!expanded && !menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setExpanded(false); setMenuOpen(false); pillRef.current?.focus(); }
+      if (e.key === "Escape") { setExpanded(false); setMenuOpen(false); setComparing(false); pillRef.current?.focus(); }
     };
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setExpanded(false);
         setMenuOpen(false);
+        setComparing(false);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -243,8 +254,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     return () => cancelAnimationFrame(id);
   }, [menuOpen, menuFloat.ref]);
 
-  const openExpand = () => { setMenuOpen(false); setExpanded(true); onExpand?.(); };
+  const collapse = () => { setExpanded(false); setComparing(false); };
+  const openExpand = () => { setMenuOpen(false); setComparing(false); setExpanded(true); onExpand?.(); };
   const openMenu = () => { setExpanded(false); setMenuOpen(true); };
+  // Recognition → verification is a deliberate act: entering compare reveals a
+  // reference-requiring surface (never a verdict), and reports to the host.
+  const enterCompare = () => { setComparing(true); onCompare?.(); };
 
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
@@ -287,6 +302,34 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   ];
 
   const cssVar = (name: string, fallback: string) => `var(--entviz-pill-${name}, ${fallback})`;
+
+  // --- disclosure-lifecycle chrome (Cite · Visualize · Compare) --------------
+  // Compare is offered only when the host opts in via onCompare (design §5 / Seam
+  // 2): the pill stays recognition-only unless a verification path is wanted.
+  const compareAvailable = !!onCompare && (showCompareAffordance ?? true);
+  const activeStep = comparing ? "compare" : "visualize";
+  const railSteps: [string, string][] = compareAvailable
+    ? [["cite", m.stepCite], ["visualize", m.stepVisualize], ["compare", m.stepCompare]]
+    : [["cite", m.stepCite], ["visualize", m.stepVisualize]];
+  const rail = h(
+    "div",
+    { key: "rail", "aria-hidden": true, style: railStyle },
+    railSteps.map(([k, lbl], i) =>
+      h(
+        "span",
+        { key: k, style: { display: "inline-flex", alignItems: "center", gap: 6, opacity: k === activeStep ? 1 : 0.5, fontWeight: k === activeStep ? 600 : 500 } },
+        i > 0 ? h("span", { key: "sep", style: railSepStyle }) : null,
+        h("span", { key: "dot", style: railDotStyle(k === activeStep) }),
+        lbl,
+      ),
+    ),
+  );
+  const teach = h("p", { key: "teach", style: teachStyle }, m.teachVisualize);
+  const compareBtn = h(
+    "button",
+    { key: "cmpbtn", type: "button", onClick: enterCompare, style: compareBtnStyle },
+    m.compareAction,
+  );
 
   // --- badge ---
   // The badge is the pill's leading cap: a square color swatch bled over the
@@ -347,7 +390,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     {
       ref: pillRef,
       type: "button",
-      onClick: () => (expanded ? setExpanded(false) : openExpand()),
+      onClick: () => (expanded ? collapse() : openExpand()),
       onKeyDown: (e: ReactKeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
         else if (e.key === "ArrowDown") { e.preventDefault(); openMenu(); }
@@ -422,6 +465,18 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       )
     : null;
 
+  // Popover body by lifecycle state. Visualize = a STANDARD <Entviz> with its
+  // STANDARD toolbar (size ladder, shape picker, copy/export kebab). Compare =
+  // the STANDARD <EntvizCompare> — so every comparison affordance (paste / file /
+  // drop / URL acquisition, the verdict machine, the guided walk, the voice
+  // ceremony) comes along unchanged; the pill only adds the rail + the deliberate,
+  // reference-requiring entry into it.
+  const popoverBody = error
+    ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
+    : comparing
+      ? [rail, h(EntvizCompare, { key: "cmp", value, targetAr, fontSizePt, note, locale, layout: "auto" })]
+      : [rail, teach, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true }), compareAvailable ? compareBtn : null];
+
   const popover = expanded
     ? h(
         "span",
@@ -430,15 +485,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
           role: "dialog",
           "aria-label": ariaLabel,
           "aria-describedby": error ? undefined : descId,
+          className: "entviz-pill__pop",
           style: { ...popoverStyle, ...popFloat.style },
         },
-        error
-          ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
-          // A STANDARD <Entviz> with its STANDARD toolbar — the size ladder, the
-          // shape picker, and the copy/export kebab (whose ⋮ menu carries all the
-          // copy actions). No bespoke per-action buttons here: the expanded view is
-          // just an ordinary entviz, consistent with every other place one appears.
-          : h(Entviz, { value, targetAr, fontSizePt, note, controls: true }),
+        popoverBody,
         // §9 accessible per-channel description (visually hidden; referenced by the dialog).
         channels
           ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m))
@@ -466,6 +516,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         .entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
         .entviz-pill--hover .entviz-pill__kebab,
         .entviz-pill__kebab:focus-visible { opacity: 0.7; }
+        @keyframes entviz-pill-grow { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+        .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 0); }
+        @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
       `),
   );
 }
@@ -491,6 +544,24 @@ const popoverStyle: CSSProperties = {
   zIndex: 30, display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
   background: "var(--entviz-pill-popover-bg, #fff)", border: "var(--entviz-pill-popover-border, 1px solid #e6e6f0)",
   borderRadius: 12, padding: 14, boxShadow: "0 8px 30px rgba(0,0,0,.16)", font: "13px system-ui, sans-serif",
+  // Responsive: never exceed the viewport; scroll tall content (e.g. the compare
+  // surface on a phone). Width caps so the compare state isn't enormous on desktop
+  // yet fits a narrow screen (where <EntvizCompare layout="auto"> then stacks).
+  maxWidth: "min(720px, calc(100vw - 24px))", maxHeight: "calc(100dvh - 24px)", overflowY: "auto",
+};
+// --- disclosure-lifecycle chrome styles ------------------------------------
+const railStyle: CSSProperties = {
+  display: "flex", alignItems: "center", gap: 8, fontSize: 11, letterSpacing: "0.08em",
+  textTransform: "uppercase", marginBottom: 2,
+};
+const railSepStyle: CSSProperties = { width: 12, height: 1, background: "currentColor", opacity: 0.25 };
+function railDotStyle(active: boolean): CSSProperties {
+  return { width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: active ? 1 : 0.3 };
+}
+const teachStyle: CSSProperties = { margin: 0, fontSize: 13, lineHeight: 1.4, opacity: 0.72, maxWidth: 340 };
+const compareBtnStyle: CSSProperties = {
+  alignSelf: "start", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+  color: "var(--entviz-pill-compare-fg, #3b34b0)", background: "none", border: "none", padding: "4px 0",
 };
 const toastStyle: CSSProperties = {
   position: "absolute", top: "100%", marginTop: 6, zIndex: 35,
