@@ -59,6 +59,21 @@ export interface EntvizPillProps {
   messages?: Partial<Messages>;
   className?: string;
   style?: CSSProperties;
+  /** Controlled disclosure of the popover's open/closed state (proposal §3, §5.3).
+   *  When PROVIDED, the popover follows this prop (controlled): the pill's own
+   *  open/collapse actions call `onOpenChange(next)` instead of only flipping
+   *  internal state. When ABSENT, the popover is uncontrolled (today's behavior),
+   *  and `onOpenChange` still fires on every open/close TRANSITION.
+   *  SECURITY (§5.3): controlling `open` does NOT suppress the provenance chrome or
+   *  the §2.4 scoping copy — those live inside <EntvizCompare> (the pill's compare
+   *  state) and are structurally always-rendered, so controlled open can't skip the
+   *  reference gate. `open === true` maps to the VISUALIZE state (never straight to a
+   *  verdict); entering compare stays a deliberate, reference-requiring act. */
+  open?: boolean;
+  /** Called on every open/close transition with the NEXT open state. Under
+   *  controlled `open` this is how the pill asks the host to change state; when
+   *  uncontrolled it is a notification alongside the internal state flip. */
+  onOpenChange?: (open: boolean) => void;
   onExpand?: () => void;
   /** Called when the user enters the compare state from the expanded popover.
    *  Providing it opts the pill into the in-popover "Compare against a reference…"
@@ -172,7 +187,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
     label, showType = true, showIcon = true, maxWidth, locale, dir,
-    messages: overrides, className, style, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
+    messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
   } = props;
 
   // The event firehose: a monotonic seq per instance, and a bound `emit` that
@@ -226,6 +241,19 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const [comparing, setComparing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Controlled/uncontrolled disclosure of the popover (§5.3). When `open` is
+  // provided, the popover follows it (controlled) and internal `expanded` is
+  // ignored for the open/closed decision; when absent, `expanded` drives it
+  // (uncontrolled). Either way `setOpen` fires `onOpenChange` on a transition,
+  // and only flips internal state when uncontrolled — a controlled pill's own
+  // click reports the requested state to the host without self-toggling.
+  const controlled = open !== undefined;
+  const isOpen = controlled ? !!open : expanded;
+  const setOpen = (next: boolean) => {
+    if (next !== isOpen) onOpenChange?.(next);
+    if (!controlled) setExpanded(next);
+  };
+
   const wrapRef = useRef<HTMLSpanElement>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -233,7 +261,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const descId = useId();
 
   const menuFloat = useFloating(wrapRef, menuOpen, rtl);
-  const popFloat = useFloating(wrapRef, expanded, rtl);
+  const popFloat = useFloating(wrapRef, isOpen, rtl);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -245,7 +273,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // disclosure.change (notify-only): the Cite · Visualize · Compare lifecycle
   // state, derived from the disclosure flags — comparing wins, else expanded, else
   // the collapsed pill. Fire only on a TRANSITION, carrying the prior state.
-  const disclosure: DisclosureState = comparing ? "compare" : expanded ? "visualize" : "pill";
+  const disclosure: DisclosureState = comparing ? "compare" : isOpen ? "visualize" : "pill";
   const prevDisclosureRef = useRef<DisclosureState>(disclosure);
   useEffect(() => {
     const prev = prevDisclosureRef.current;
@@ -254,15 +282,25 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disclosure]);
 
-  // Dismiss on Escape (focus returns to the pill) and outside-click.
+  // When the popover closes (by any path, incl. a controlled `open=false` from the
+  // host), reset the transient sub-states so a reopen lands back at Visualize (no
+  // back-slide into a stale Compare) and no orphaned menu lingers.
   useEffect(() => {
-    if (!expanded && !menuOpen) return;
+    if (!isOpen) { setMenuOpen(false); setComparing(false); }
+  }, [isOpen]);
+
+  // Dismiss on Escape (focus returns to the pill) and outside-click. These are the
+  // pill's own collapse actions, so they route through `setOpen(false)` — firing
+  // `onOpenChange` and (uncontrolled only) closing the popover. A controlled host
+  // gets the request and decides; the sub-state reset happens in the effect above.
+  useEffect(() => {
+    if (!isOpen && !menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setExpanded(false); setMenuOpen(false); setComparing(false); pillRef.current?.focus(); }
+      if (e.key === "Escape") { setOpen(false); setMenuOpen(false); setComparing(false); pillRef.current?.focus(); }
     };
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setExpanded(false);
+        setOpen(false);
         setMenuOpen(false);
         setComparing(false);
       }
@@ -273,7 +311,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDown);
     };
-  }, [expanded, menuOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, menuOpen]);
 
   // Move focus to the first menu item when the menu opens (ARIA menu pattern).
   useEffect(() => {
@@ -284,9 +323,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     return () => cancelAnimationFrame(id);
   }, [menuOpen, menuFloat.ref]);
 
-  const collapse = () => { setExpanded(false); setComparing(false); };
-  const openExpand = () => { setMenuOpen(false); setComparing(false); setExpanded(true); onExpand?.(); };
-  const openMenu = () => { setExpanded(false); setMenuOpen(true); };
+  const collapse = () => { setOpen(false); setComparing(false); };
+  const openExpand = () => { setMenuOpen(false); setComparing(false); setOpen(true); onExpand?.(); };
+  const openMenu = () => { setOpen(false); setMenuOpen(true); };
   // Recognition → verification is a deliberate act: entering compare reveals a
   // reference-requiring surface (never a verdict), and reports to the host.
   const enterCompare = () => { setComparing(true); onCompare?.(); };
@@ -422,14 +461,14 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     {
       ref: pillRef,
       type: "button",
-      onClick: () => (expanded ? collapse() : openExpand()),
+      onClick: () => (isOpen ? collapse() : openExpand()),
       onKeyDown: (e: ReactKeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
         else if (e.key === "ArrowDown") { e.preventDefault(); openMenu(); }
       },
       title: m.view,
       "aria-label": ariaLabel,
-      "aria-expanded": expanded,
+      "aria-expanded": isOpen,
       style: {
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "inherit", background: "none", border: "none",
@@ -509,7 +548,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       ? [rail, h(EntvizCompare, { key: "cmp", value, targetAr, fontSizePt, note, locale, layout: "auto" })]
       : [rail, teach, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true }), compareAvailable ? compareBtn : null];
 
-  const popover = expanded
+  const popover = isOpen
     ? h(
         "span",
         {

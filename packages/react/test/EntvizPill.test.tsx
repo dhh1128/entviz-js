@@ -545,3 +545,78 @@ describe("EntvizPill onEvent firehose", () => {
     expect(e.message).toMatch(/note/i);
   });
 });
+
+// --- controlled disclosure: open / onOpenChange ---------------------------
+
+describe("EntvizPill controlled disclosure (open / onOpenChange)", () => {
+  const view = () => screen.getByRole("button", { name: /view visualization/i });
+
+  test("open={true} opens the popover without a click; open={false} keeps it closed", () => {
+    const { rerender } = render(<EntvizPill value={HEX} open={false} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<EntvizPill value={HEX} open={true} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(view().getAttribute("aria-expanded")).toBe("true");
+    // host closes it again
+    rerender(<EntvizPill value={HEX} open={false} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("clicking a controlled pill fires onOpenChange but does NOT self-toggle (host owns state)", () => {
+    const onOpenChange = vi.fn();
+    // controlled-closed: a click requests OPEN but the popover stays closed until
+    // the host flips `open`.
+    const { rerender } = render(<EntvizPill value={HEX} open={false} onOpenChange={onOpenChange} />);
+    fireEvent.click(view());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(screen.queryByRole("dialog")).toBeNull(); // did NOT open on its own
+    // controlled-open: a click requests CLOSE, still no self-toggle.
+    rerender(<EntvizPill value={HEX} open={true} onOpenChange={onOpenChange} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(view());
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole("dialog")).toBeTruthy(); // still open — host hasn't flipped it
+  });
+
+  test("Escape on a controlled-open pill requests close via onOpenChange (no self-toggle)", () => {
+    const onOpenChange = vi.fn();
+    render(<EntvizPill value={HEX} open={true} onOpenChange={onOpenChange} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole("dialog")).toBeTruthy(); // host owns the state
+  });
+
+  test("uncontrolled still works AND fires onOpenChange on open/close transitions", () => {
+    const onOpenChange = vi.fn();
+    render(<EntvizPill value={HEX} onOpenChange={onOpenChange} />);
+    // click opens (internal state flips) and notifies
+    fireEvent.click(view());
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    // click collapses and notifies
+    fireEvent.click(view());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test("uncontrolled with no onOpenChange keeps the plain toggle behavior", () => {
+    render(<EntvizPill value={HEX} />);
+    fireEvent.click(view());
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(view());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("SECURITY (§5.3): entering compare under controlled open still yields the EntvizCompare reference gate", () => {
+    // A host drives the pill open (controlled) and opts into compare. Controlled
+    // `open` must NOT let the compare journey skip the reference-acquisition
+    // surface (where the provenance chrome + §2.4 scoping copy live). Entering
+    // compare must still render <EntvizCompare>'s acquisition textbox, and show no
+    // affirmative "=" verdict at entry.
+    render(<EntvizPill value={UUID} open={true} onCompare={vi.fn()} onOpenChange={vi.fn()} />);
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /compare against a reference/i }));
+    expect(within(screen.getByRole("dialog")).getByRole("textbox")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).queryByText("=")).toBeNull();
+  });
+});

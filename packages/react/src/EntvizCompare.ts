@@ -75,6 +75,12 @@ export interface EntvizCompareProps {
   /** The typed event firehose (see events.ts). Notify-only, in addition to the
    *  specific callbacks; only `fetch.start` is advisory-cancelable. */
   onEvent?: (e: EntvizEvent) => void;
+  /** A [0,1) source for the unpredictable check ORDER, threaded down to the
+   *  <EntvizWalk> / <EntvizVoiceCompare> this launches — the platform CSPRNG by
+   *  default; a seeded source in tests/repro demos. PROD GATE (§5.4): each child
+   *  re-gates via `safeRng`, so a prod bundle always uses the platform CSPRNG
+   *  regardless of an injected `rng` and a predictable order can't be shipped. */
+  rng?: () => number;
   className?: string;
   style?: CSSProperties;
 }
@@ -268,7 +274,7 @@ function verdictStateOf(result: CompareResult): VerdictState {
 }
 
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
-  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, allow, includeContent, fetchReference, onVerdict, onEvent, className, style } = props;
+  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, allow, includeContent, fetchReference, onVerdict, onEvent, rng, className, style } = props;
   // ALLOWLIST-CLOSED acquisition gate (§5.10): an ABSENT `allow` is all-on;
   // a PRESENT `allow` enables a method ONLY on an explicit `=== true`. Never
   // `allow[m] ?? true` — that fails OPEN, leaving a method live the host thought
@@ -736,6 +742,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             targetAr: dispAr, fontSizePt: dispFs, note, layout,
             mode: walkMode!, // launch straight into the chosen mode
             externalFigures: true, // reuse our static figures; just report the step
+            rng, // threaded down; EntvizWalk re-gates via safeRng (§5.4)
             onStep: onWalkStep,
             // The core walk status "pending" (a Done at a sub-Good peek) maps to the
             // event union's "pending-done"; the other three pass straight through.
@@ -763,6 +770,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const voiceTab = h(EntvizVoiceCompare, {
     value, targetAr: dispAr, fontSizePt: dispFs, note,
     mode: canPasteBind ? "paste-bind" : "voice-only", layout,
+    rng, // threaded down; EntvizVoiceCompare re-gates via safeRng (§5.4)
     // voice.complete forwards the ceremony outcome. No voice.start / voice.step —
     // the live check-order must never leave the endpoint (events.ts module doc).
     onComplete: (status) => emit({ type: "voice.complete", status }),

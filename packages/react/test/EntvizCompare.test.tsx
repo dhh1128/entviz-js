@@ -1033,3 +1033,41 @@ describe("EntvizCompare config props (allow / includeContent / fetchReference)",
     expect(last(onEvent2, "fetch.error").message).toMatch(/proxy exploded/i);
   });
 });
+
+// --- rng threaded down to the launched Walk / Voice, prod-gated (§5.4) ------
+
+describe("EntvizCompare rng thread-down + prod-gate", () => {
+  const MULTI = "0123456789abcdef".repeat(4); // large → offers spot-check
+  const box = () => screen.getByRole("textbox", { name: /paste/i });
+
+  test("threads rng into the launched walk (consulted in the test env)", () => {
+    const rng = vi.fn(() => 0.5);
+    rtlRender(<EntvizCompare value={MULTI} rng={rng} />);
+    fireEvent.change(box(), { target: { value: MULTI } });
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    // the child EntvizWalk built its plan from OUR injected source
+    expect(rng).toHaveBeenCalled();
+  });
+
+  test("threads rng into the launched voice ceremony (consulted in the test env)", () => {
+    const rng = vi.fn(() => 0.5);
+    rtlRender(<EntvizCompare value={MULTI} rng={rng} />);
+    fireEvent.click(screen.getByRole("tab", { name: /compare by voice/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
+    expect(rng).toHaveBeenCalled();
+  });
+
+  test("under NODE_ENV=production the threaded rng is IGNORED by the launched walk", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const rng = vi.fn(() => 0.5);
+      rtlRender(<EntvizCompare value={MULTI} rng={rng} />);
+      fireEvent.change(box(), { target: { value: MULTI } });
+      fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+      expect(rng).not.toHaveBeenCalled(); // prod always uses the platform csprng
+      expect(screen.getByRole("button", { name: /looks the same/i })).toBeTruthy(); // still walking
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

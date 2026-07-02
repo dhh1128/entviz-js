@@ -36,6 +36,7 @@ import {
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { safeRng } from "./rng-guard.ts";
 
 /** Panel arrangement shared by the comparator and the walk. */
 export type EntvizLayout = "side-by-side" | "stacked" | "auto";
@@ -71,6 +72,12 @@ export interface EntvizWalkProps {
   /** The typed event firehose (see events.ts). Notify-only, in addition to
    *  onStep/onComplete (walk.start / walk.step / walk.complete). */
   onEvent?: (e: EntvizEvent) => void;
+  /** A [0,1) source standing in for the walk's unpredictable check ORDER — the
+   *  platform CSPRNG by default; a seeded source in tests/repro demos. PROD GATE
+   *  (§5.4): compiled out of production via `safeRng` — a prod bundle always uses
+   *  the platform CSPRNG regardless of an injected `rng`, so a predictable order
+   *  can't be shipped to defeat the unpredictable-sampling defense. */
+  rng?: () => number;
   className?: string;
   style?: CSSProperties;
 }
@@ -206,8 +213,11 @@ export function mutate(text: string): string {
 }
 
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
-  const { value, reference, targetAr, fontSizePt, note, mode, layout = "side-by-side", externalFigures = false, onStep, onComplete, onEvent, className, style } = props;
+  const { value, reference, targetAr, fontSizePt, note, mode, layout = "side-by-side", externalFigures = false, onStep, onComplete, onEvent, rng, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
+  // The [0,1) source for the check order, PROD-GATED: an injected `rng` is honored
+  // in dev/test and IGNORED in production (always the platform CSPRNG — §5.4).
+  const rand = safeRng(rng);
 
   // The event firehose: a monotonic seq per instance, and a bound `emit` that
   // stamps source="walk" and swallows a throwing host handler (events.ts). A
@@ -230,7 +240,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   );
 
   const [state, setState] = useState<WalkState | null>(
-    mode ? () => startWalk(buildCheckPlan(value, opts, mode, csprng)) : null,
+    mode ? () => startWalk(buildCheckPlan(value, opts, mode, rand)) : null,
   );
   const [relook, setRelook] = useState(false);
   const [probeText, setProbeText] = useState<string | null>(null);
@@ -270,13 +280,13 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
-  const begin = (m: WalkMode) => setState(startWalk(buildCheckPlan(value, opts, m, csprng)));
+  const begin = (m: WalkMode) => setState(startWalk(buildCheckPlan(value, opts, m, rand)));
 
   // After a verdict, start over for another round (a different mode, or a fresh
   // unpredictable plan at the same one). With a fixed mode prop we rebuild that
   // walk; otherwise we return to the picker.
   const restart = () => {
-    setState(mode ? startWalk(buildCheckPlan(value, opts, mode, csprng)) : null);
+    setState(mode ? startWalk(buildCheckPlan(value, opts, mode, rand)) : null);
     setRelook(false);
     setProbeText(null);
   };
@@ -444,13 +454,6 @@ function safeDescribe(value: string, opts: RenderOptions): ChannelDescription | 
   } catch {
     return null;
   }
-}
-
-// CSPRNG [0,1) source for the single-user walk.
-function csprng(): number {
-  const a = new Uint32Array(1);
-  crypto.getRandomValues(a);
-  return a[0] / 2 ** 32;
 }
 
 const overlayStyle: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" };

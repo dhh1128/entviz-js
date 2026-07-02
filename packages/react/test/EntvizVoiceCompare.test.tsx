@@ -230,3 +230,31 @@ describe("EntvizVoiceCompare onEvent firehose", () => {
     expect(types).toEqual(new Set(["voice.start", "voice.complete"]));
   });
 });
+
+describe("EntvizVoiceCompare rng prod-gate (§5.4)", () => {
+  test("an injected rng IS consulted in the (default) test env", () => {
+    // A medium-constrained value → a consecutive run from an UNPREDICTABLE start,
+    // which draws from the source (small/big enumerate or hash-anchor without it).
+    const rng = vi.fn(rngFrom(1));
+    render(<EntvizVoiceCompare value={HEX512} rng={rng} />);
+    affirm(); // the read-back plan is built on affirm, drawing from the source
+    expect(rng).toHaveBeenCalled();
+  });
+
+  test("under NODE_ENV=production the injected rng is IGNORED (platform csprng)", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      // A medium-constrained value that WOULD draw from an honored rng (consecutive
+      // run) — so `not.toHaveBeenCalled` is a meaningful assertion of the prod gate.
+      const rng = vi.fn(rngFrom(1));
+      render(<EntvizVoiceCompare value={HEX512} rng={rng} />);
+      affirm();
+      expect(rng).not.toHaveBeenCalled();
+      // the ceremony still runs to a verdict on the platform csprng
+      driveMatchAll();
+      expect(screen.getByText(/no difference found across what they read/i)).toBeTruthy();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

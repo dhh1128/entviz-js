@@ -42,6 +42,7 @@ import {
 import { Entviz } from "./Entviz.ts";
 import { ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { safeRng } from "./rng-guard.ts";
 
 export interface EntvizVoiceCompareProps {
   value: string;
@@ -64,7 +65,10 @@ export interface EntvizVoiceCompareProps {
    *  the live authenticator-chosen cell order never leaves the endpoint. */
   onEvent?: (e: EntvizEvent) => void;
   /** A [0,1) source standing in for the authenticator's live, unpredictable choice
-   *  of cells — the platform CSPRNG by default; a seeded source in tests. */
+   *  of cells — the platform CSPRNG by default; a seeded source in tests. PROD GATE
+   *  (§5.4): compiled out of production via `safeRng` — a prod bundle always uses
+   *  the platform CSPRNG regardless of an injected `rng`, so a predictable live
+   *  order can't be shipped to defeat the ceremony's selection-unpredictability. */
   rng?: () => number;
   className?: string;
   style?: CSSProperties;
@@ -112,13 +116,6 @@ const HINT: Record<string, string> = {
   bind: M.hintBind,
 };
 
-// CSPRNG [0,1) source — the authenticator's live choice of which cells to ask for.
-function csprng(): number {
-  const a = new Uint32Array(1);
-  crypto.getRandomValues(a);
-  return a[0] / 2 ** 32;
-}
-
 function safeDescribe(value: string, opts: RenderOptions): ChannelDescription | null {
   try {
     return describeChannels(value, opts);
@@ -130,9 +127,12 @@ function safeDescribe(value: string, opts: RenderOptions): ChannelDescription | 
 export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note, mode = "voice-only", layout = "side-by-side",
-    externalFigures = false, onStep, onComplete, onEvent, rng = csprng, className, style,
+    externalFigures = false, onStep, onComplete, onEvent, rng, className, style,
   } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
+  // The [0,1) source for the live cell order, PROD-GATED: an injected `rng` is
+  // honored in dev/test and IGNORED in production (always the platform CSPRNG — §5.4).
+  const rand = safeRng(rng);
 
   // The event firehose: a monotonic seq per instance, and a bound `emit` that
   // stamps source="voice" and swallows a throwing host handler (events.ts). Only
@@ -160,7 +160,7 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     // voice.start: the ceremony proceeds past the §15.1 affirmation gate. `mode` is
     // the ceremony's CeremonyMode ("voice-only" | "paste-bind").
     emit({ type: "voice.start", mode });
-    setState(startCeremony(buildReadbackPlan(value, opts, mode, rng)));
+    setState(startCeremony(buildReadbackPlan(value, opts, mode, rand)));
   };
   const restart = () => {
     setState(null);

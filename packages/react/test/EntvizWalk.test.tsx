@@ -271,3 +271,28 @@ describe("EntvizWalk onEvent firehose", () => {
     expect(of(onEvent, "walk.step").slice(-1)[0].index).toBe(0);
   });
 });
+
+// --- rng prod-gate (§5.4) --------------------------------------------------
+
+describe("EntvizWalk rng prod-gate", () => {
+  test("an injected rng IS consulted in the (default) test env", () => {
+    const rng = vi.fn(() => 0.5);
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" rng={rng} />);
+    // the plan is built from the injected source, so it was drawn from
+    expect(rng).toHaveBeenCalled();
+  });
+
+  test("under NODE_ENV=production the injected rng is IGNORED (platform csprng)", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const rng = vi.fn(() => 0.5);
+      // the walk still builds a plan and runs to a verdict, but never touches the fake
+      rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" rng={rng} />);
+      expect(rng).not.toHaveBeenCalled();
+      driveToEnd();
+      expect(screen.getByText(/no difference found/i)).toBeTruthy();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
