@@ -70,8 +70,12 @@ export interface EntvizWalkProps {
   style?: CSSProperties;
 }
 
-const RING = "var(--entviz-walk-ring, #39ff14)"; // bright focus ring around the spotlight (§7.1)
-const SCRIM = "var(--entviz-walk-scrim, #000)"; // everything OUTSIDE the focus is dimmed
+// The focus ring + scrim are FIXED literals, NOT host-themeable vars: the spotlight is a
+// load-bearing verification cue (the walk asks "do the HIGHLIGHTED characters match?"), so
+// ambient/host CSS (threat-model T2) must not be able to set them transparent and erase it,
+// which would let a user answer "same" on a cell they never actually examined.
+const RING = "#39ff14"; // bright focus ring around the spotlight (§7.1)
+const SCRIM = "#000"; // everything OUTSIDE the focus is dimmed
 
 // The focus overlay: a semi-transparent scrim over the whole figure with a hole
 // punched out where the feature is (via an SVG mask — white shows the scrim,

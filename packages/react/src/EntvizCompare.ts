@@ -197,6 +197,19 @@ const TONE: Record<Chip["tone"], string> = {
   neutral: "var(--entviz-compare-neutral, #57606a)",
 };
 
+// The VERDICT chip's colors are FIXED, self-contained literals — never the host-themeable
+// `--entviz-compare-*` vars — so ambient/host CSS (threat-model T2: "controls the rendering
+// surface") cannot recolor a verdict (e.g. paint a "≠ Different" chip verdict-green). A solid
+// fill + white ink stays legible on any host background, and color is only a REDUNDANT cue
+// here: the symbol (=/≠) and the label text are the primary, non-recolorable channels.
+// (The themeable TONE var above is kept only for non-verdict chrome, e.g. the fetch-error hint.)
+const VERDICT_SKIN: Record<Chip["tone"], { bg: string; fg: string }> = {
+  good: { bg: "#1a7f37", fg: "#ffffff" },
+  bad: { bg: "#c4314b", fg: "#ffffff" },
+  warn: { bg: "#9a6700", fg: "#ffffff" },
+  neutral: { bg: "#57606a", fg: "#ffffff" },
+};
+
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, className, style } = props;
   const m: CompareMessages = { ...defaultCompareMessages, ...overrides };
@@ -465,7 +478,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     isUrl || result.kind !== "pending"
       ? h(
           "span",
-          { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
+          { role: "status", "aria-live": "polite", style: { ...chipStyle, background: VERDICT_SKIN[chip.tone].bg, color: VERDICT_SKIN[chip.tone].fg, borderColor: "transparent" } },
           !isUrl ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
           h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
           h("span", null, chip.label),

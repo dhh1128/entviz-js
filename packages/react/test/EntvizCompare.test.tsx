@@ -458,6 +458,30 @@ describe("EntvizCompare", () => {
   });
 });
 
+describe("EntvizCompare integrity (T2 render-tamper resistance)", () => {
+  test("the verdict chip is painted with FIXED colors, not host-themeable vars (ambient CSS can't recolor a verdict)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: OTHER } });
+    const chip = screen.getByRole("status");
+    expect(chip.textContent).toContain("Different");
+    expect(chip.textContent).toContain("≠"); // symbol is a non-color channel
+    const style = chip.getAttribute("style") ?? "";
+    // the verdict tone must NOT be painted with the overridable --entviz-compare-* vars,
+    // or a T2 stylesheet setting --entviz-compare-bad:#1a7f37 would render "≠ Different" green
+    expect(style).not.toMatch(/var\(--entviz-compare-(good|bad|warn|neutral)/);
+  });
+
+  test("the walk focus ring/scrim use fixed colors (T2 can't set --entviz-walk-ring transparent to erase the spotlight)", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    expect(container.querySelector('[stroke="#39ff14"]')).toBeTruthy(); // ring drawn with the literal
+    expect(container.innerHTML).not.toContain("var(--entviz-walk-ring");
+    expect(container.innerHTML).not.toContain("var(--entviz-walk-scrim");
+  });
+});
+
 describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
   const voiceTab = () => screen.queryByRole("tab", { name: /compare by voice/i });
   const refTab = () => screen.getByRole("tab", { name: /compare visualizations/i });
