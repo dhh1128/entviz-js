@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Entviz, EntvizPill, EntvizCompare, SUPPORTED_LOCALES } from "@entviz/react";
+import { EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
 import { render as renderEntviz } from "@entviz/core";
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
@@ -18,23 +18,55 @@ function randomHex(bytes: number): string {
 
 const mono = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const sans = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const serif = 'Georgia, "Iowan Old Style", "Times New Roman", serif';
+
+// A host app sets its OWN typography/colors, plus a handful of `--entviz-*` custom
+// properties, and the components inherit the rest. These four "ambient themes"
+// demonstrate that adaptation — the SAME <EntvizPill> looks native in each.
+type Palette = { name: string; font: string; bg: string; panel: string; fg: string; accent: string; border: string; muted: string };
+const PALETTES: Palette[] = [
+  { name: "Acme (light)", font: sans, bg: "#f6f7f9", panel: "#ffffff", fg: "#1f2733", accent: "#2f6bff", border: "#d5dae2", muted: "#8a93a2" },
+  { name: "Midnight (dark)", font: sans, bg: "#0f1218", panel: "#1a1f2b", fg: "#c7cdd9", accent: "#8b7dff", border: "#2d3440", muted: "#7a8494" },
+  { name: "Gazette (serif)", font: serif, bg: "#f4eee1", panel: "#fbf7ee", fg: "#2a2620", accent: "#9a3b2e", border: "#ddd2bd", muted: "#8a7f6d" },
+  { name: "Terminal (mono)", font: mono, bg: "#0a0e0a", panel: "#101610", fg: "#b9d3b0", accent: "#57d977", border: "#243024", muted: "#6f8a6b" },
+];
+
+// Map a palette to the component CSS custom properties a host would set. Anything
+// omitted falls back to the components' own defaults (or currentColor).
+function evzVars(p: Palette): Record<string, string> {
+  const b1 = `1px solid ${p.border}`;
+  return {
+    // <Entviz> toolbar (size ladder, shape picker, copy/export kebab)
+    "--entviz-ctl": p.border, "--entviz-ctl-bg": p.panel, "--entviz-ctl-active": p.accent,
+    "--entviz-menu-bg": p.panel, "--entviz-menu-fg": p.fg, "--entviz-menu-border": b1,
+    "--entviz-toast-bg": p.fg, "--entviz-toast-fg": p.bg,
+    // <EntvizPill> chrome
+    "--entviz-pill-popover-bg": p.panel, "--entviz-pill-popover-border": b1,
+    "--entviz-pill-menu-bg": p.panel, "--entviz-pill-menu-fg": p.fg, "--entviz-pill-menu-border": b1,
+    "--entviz-pill-toast-bg": p.fg, "--entviz-pill-toast-fg": p.bg, "--entviz-pill-compare-fg": p.accent,
+    // <EntvizCompare> / walk (reached by drilling into the pill)
+    "--entviz-compare-action": p.accent, "--entviz-compare-neutral": p.muted,
+    "--entviz-compare-placeholder": p.border, "--entviz-compare-placeholder-fg": p.muted,
+    "--entviz-compare-input-border": b1,
+    "--entviz-walk-btn": p.border, "--entviz-walk-btn-bg": p.panel, "--entviz-walk-track": p.border,
+  };
+}
 
 export function App() {
   const [draft, setDraft] = useState(PRESETS[0].value);
   const [value, setValue] = useState(PRESETS[0].value);
-  const [targetAr, setTargetAr] = useState(1.0);
   const [fontSizePt, setFontSizePt] = useState(12);
   const [note, setNote] = useState("");
   const [locale, setLocale] = useState(""); // "" = auto-detect from the browser
   const [pillLabel, setPillLabel] = useState("");
   const [showType, setShowType] = useState(true);
+  const [themeIdx, setThemeIdx] = useState(0);
 
-  const opts = { targetAr, fontSizePt, note: note || null };
+  const opts = { fontSizePt, note: note || null };
+  const theme = PALETTES[themeIdx];
 
-  // Surface the renderer's error message in the parent's OWN render (the
-  // component swallows errors via onError + an empty fallback). Computing it
-  // here — rather than via the child's onError — avoids a cross-component
-  // setState during render, and doubles as a live demo of the core API.
+  // Surface the renderer's error (bad note, etc.) so invalid inputs are visible;
+  // the pill itself also fails closed to an "unrenderable" state.
   const error = useMemo(() => {
     try {
       renderEntviz(value, opts);
@@ -42,7 +74,7 @@ export function App() {
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }
-  }, [value, targetAr, fontSizePt, note]);
+  }, [value, fontSizePt, note]);
 
   const build = () => setValue(draft.trim());
   const surprise = () => {
@@ -51,20 +83,35 @@ export function App() {
     setValue(v);
   };
 
+  const pill = (extra: Partial<React.ComponentProps<typeof EntvizPill>> = {}) => (
+    <EntvizPill
+      value={value}
+      label={pillLabel || undefined}
+      showType={showType}
+      fontSizePt={fontSizePt}
+      note={note || null}
+      locale={locale || undefined}
+      onCompare={() => console.log("pill: entered compare")}
+      onError={(m) => console.warn("pill:", m)}
+      {...extra}
+    />
+  );
+
   return (
     <div style={{ fontFamily: sans, color: "#1a1a2e", maxWidth: 980, margin: "0 auto", padding: "32px 20px 64px" }}>
       <header style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 28, margin: "0 0 4px", letterSpacing: -0.5 }}>
           entviz <span style={{ color: "#6c63ff" }}>playground</span>
         </h1>
-        <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
-          Paste a high-entropy value and hit Build to render the{" "}
-          <code style={{ fontFamily: mono }}>&lt;Entviz/&gt;</code> React component. Tweak the props live.
+        <p style={{ margin: 0, color: "#555", fontSize: 14, maxWidth: "70ch" }}>
+          An entviz enters the page as a compact <code style={{ fontFamily: mono }}>&lt;EntvizPill/&gt;</code>. Click it
+          to <b>Visualize</b> the full render, then <b>Compare</b> it against a reference — all in one place. Tweak the
+          inputs on the left; switch the host theme on the right to watch the components adapt.
         </p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1fr) minmax(280px, 1fr)", gap: 28, alignItems: "start" }}>
-        {/* Controls */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 340px) minmax(300px, 1fr)", gap: 28, alignItems: "start" }}>
+        {/* Controls — entropy + how the entviz/pill renders */}
         <section>
           <label style={labelStyle}>Entropy</label>
           <textarea
@@ -86,6 +133,13 @@ export function App() {
               </button>
             ))}
           </div>
+
+          <label style={labelStyle}>
+            Font size <span style={{ fontWeight: 400, color: "#888" }}>({fontSizePt}pt — the initial render size; also adjustable inside the pill)</span>
+          </label>
+          <input type="range" min={6} max={30} step={2} value={fontSizePt}
+            onChange={(e) => setFontSizePt(Number(e.target.value))}
+            style={{ width: "100%", marginBottom: 16 }} />
 
           <label style={labelStyle}>
             Note <span style={{ fontWeight: 400, color: "#888" }}>(≤10 printable-ASCII chars; never hashed)</span>
@@ -115,61 +169,45 @@ export function App() {
           </label>
         </section>
 
-        {/* Preview */}
+        {/* Showcase — the pill, inside a switchable ambient host theme */}
         <section>
-          <label style={labelStyle}>Preview</label>
-          <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 24, background: "#fafafe", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 220 }}>
-            {error ? (
-              <div style={{ color: "#b00020", fontFamily: mono, fontSize: 12, textAlign: "center", lineHeight: 1.5 }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>render rejected</div>
-                {error}
-              </div>
-            ) : (
-              <Entviz
-                value={value}
-                targetAr={targetAr}
-                fontSizePt={fontSizePt}
-                note={note || null}
-                controls
-                onResize={setFontSizePt}
-                onReshape={setTargetAr}
-                onError={(m) => console.warn("entviz onError:", m)}
-              />
-            )}
-          </div>
-
-          <label style={{ ...labelStyle, marginTop: 16 }}>Props</label>
-          <pre style={{ fontFamily: mono, fontSize: 12, background: "#1a1a2e", color: "#e6e6f0", padding: 14, borderRadius: 10, overflowX: "auto", margin: 0 }}>
-{`<Entviz
-  value=${JSON.stringify(value.length > 40 ? value.slice(0, 40) + "…" : value)}
-  targetAr={${targetAr}}
-  fontSizePt={${fontSizePt}}
-  note={${note ? JSON.stringify(note) : "null"}}
-/>`}
-          </pre>
-
-          <label style={{ ...labelStyle, marginTop: 16 }}>
-            Disclosure lifecycle (&lt;EntvizPill/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— Cite · Visualize · Compare. Click to expand; the popover offers “Compare against a reference…”, which opens the comparison in place.</span>
+          <label style={labelStyle}>
+            Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
           </label>
-          <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe", fontSize: 15, lineHeight: 2.1 }}>
-            Run:{" "}
-            <code style={{ fontFamily: mono, fontSize: 13 }}>
-              gh secret save{" "}
-              <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} onError={(m) => console.warn("pill:", m)} />
-            </code>
-            <br />
-            Inherits the running font &amp; color:{" "}
-            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} />
-            {" "}— and again without its badge:{" "}
-            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} showIcon={false} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} />
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {PALETTES.map((p, i) => (
+              <button key={p.name} onClick={() => setThemeIdx(i)}
+                style={i === themeIdx ? themeBtnActive : themeBtn}>
+                {p.name}
+              </button>
+            ))}
           </div>
 
-          <label style={{ ...labelStyle, marginTop: 16 }}>
-            Compare directly (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— the same surface the pill opens, also usable standalone: machine, guided walk, or live voice ceremony (M1–M3)</span>
-          </label>
-          <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe" }}>
-            <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
+          <div style={{ ...evzVars(theme), background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
+            <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
+              ▦ your application
+            </div>
+            <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
+              Before you rotate it, save your signing key {pill()} to your secret store — then confirm the
+              one you restore later is the very same key.
+            </p>
+            <p style={{ fontSize: 13, opacity: 0.65, marginTop: 22 }}>
+              Click the pill → <b>Visualize</b> the full render → <b>“Compare against a reference…”</b>. Everything
+              below inherits this theme. Also shown without its badge: {pill({ showIcon: false })}.
+            </p>
           </div>
+
+          {error ? (
+            <div style={{ marginTop: 12, color: "#b00020", fontFamily: mono, fontSize: 12, lineHeight: 1.5, border: "1px solid #f3c2c2", background: "#fff5f5", borderRadius: 8, padding: "8px 10px" }}>
+              <b>render rejected:</b> {error} — the pill falls back to an “unrenderable” state.
+            </div>
+          ) : null}
+
+          <p style={{ fontSize: 12.5, color: "#666", lineHeight: 1.6, marginTop: 18, maxWidth: "60ch" }}>
+            The lifecycle is <b>Cite · Visualize · Compare</b>: the pill cites the value inline; expanding visualizes the
+            spec-locked glyph with its size/shape/copy controls; and “Compare” opens the full comparison surface
+            (paste / drop / click-the-rect to upload / URL, machine verdict, guided walk, and voice ceremony) in place.
+          </p>
         </section>
       </div>
     </div>
@@ -180,3 +218,5 @@ const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, fontWe
 const primaryBtn: React.CSSProperties = { background: "#6c63ff", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
 const ghostBtn: React.CSSProperties = { background: "#fff", color: "#6c63ff", border: "1px solid #6c63ff", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
 const chip: React.CSSProperties = { background: "#eef0ff", color: "#3b34b0", border: "none", borderRadius: 999, padding: "5px 11px", fontSize: 12, cursor: "pointer" };
+const themeBtn: React.CSSProperties = { background: "#fff", color: "#444", border: "1px solid #ccc", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
+const themeBtnActive: React.CSSProperties = { ...themeBtn, background: "#1a1a2e", color: "#fff", borderColor: "#1a1a2e" };
