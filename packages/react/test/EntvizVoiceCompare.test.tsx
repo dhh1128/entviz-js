@@ -150,3 +150,83 @@ describe("EntvizVoiceCompare: wiring", () => {
     expect(screen.getByText(/same value as you/i)).toBeTruthy();
   });
 });
+
+// --- onEvent firehose ------------------------------------------------------
+
+describe("EntvizVoiceCompare onEvent firehose", () => {
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+
+  test("stamps seq/ts/source=voice and increments seq monotonically", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} onEvent={onEvent} />);
+    affirm();
+    driveMatchAll();
+    expect(onEvent).toHaveBeenCalled();
+    const evs = onEvent.mock.calls.map((c) => c[0]);
+    for (const e of evs) {
+      expect(e.source).toBe("voice");
+      expect(typeof e.ts).toBe("number");
+      expect(typeof e.seq).toBe("number");
+    }
+    const seqs = evs.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  test("a throwing host handler never breaks the ceremony", () => {
+    const onEvent = vi.fn(() => { throw new Error("host bug"); });
+    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} onEvent={onEvent} />);
+    expect(() => affirm()).not.toThrow();
+    expect(maybe(MATCH)).toBeTruthy(); // still reading
+  });
+
+  test("voice.start fires past the affirmation gate, carrying the mode; NOT before", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} onEvent={onEvent} />);
+    expect(of(onEvent, "voice.start").length).toBe(0); // gate still up
+    affirm();
+    expect(last(onEvent, "voice.start")).toMatchObject({ mode: "voice-only" });
+  });
+
+  test("voice.start reports the paste-bind mode", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={HEX512} mode="paste-bind" rng={rngFrom(3)} onEvent={onEvent} />);
+    affirm();
+    expect(last(onEvent, "voice.start")).toMatchObject({ mode: "paste-bind" });
+  });
+
+  test("voice.complete fires with the terminal status at the end of the ceremony", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} onEvent={onEvent} />);
+    affirm();
+    driveMatchAll();
+    expect(last(onEvent, "voice.complete")).toMatchObject({ status: "no-difference" });
+  });
+
+  test("voice.complete reports 'different' when a difference is confirmed", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} onEvent={onEvent} />);
+    affirm();
+    click(DIFFER);
+    click(/^yes, different$/i);
+    expect(last(onEvent, "voice.complete")).toMatchObject({ status: "different" });
+  });
+
+  test("NO per-cell step ever leaves the endpoint — no voice.step and no walk.step, ever", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={HEX512} rng={rngFrom(4)} onEvent={onEvent} />);
+    affirm();
+    driveMatchAll(); // drives every planned cell to the verdict
+    // the live authenticator-chosen cell order must never be reported (events.ts doc)
+    expect(of(onEvent, "voice.step").length).toBe(0);
+    expect(of(onEvent, "walk.step").length).toBe(0);
+    // only the coarse lifecycle events are emitted
+    const types = new Set(onEvent.mock.calls.map((c) => c[0].type));
+    expect(types).toEqual(new Set(["voice.start", "voice.complete"]));
+  });
+});

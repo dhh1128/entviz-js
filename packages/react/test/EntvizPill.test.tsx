@@ -467,3 +467,81 @@ describe("EntvizPill disclosure lifecycle", () => {
     expect(screen.getByRole("button", { name: /comparer à une référence/i })).toBeTruthy();
   });
 });
+
+// --- onEvent firehose ------------------------------------------------------
+
+describe("EntvizPill onEvent firehose", () => {
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+  const expand = () => fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+
+  test("stamps seq/ts/source=pill and increments seq monotonically", () => {
+    const onEvent = vi.fn();
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} onEvent={onEvent} />);
+    expand(); // pill → visualize
+    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i })); // visualize → compare
+    expect(onEvent).toHaveBeenCalled();
+    const evs = onEvent.mock.calls.map((c) => c[0]);
+    for (const e of evs) {
+      expect(e.source).toBe("pill");
+      expect(typeof e.ts).toBe("number");
+      expect(typeof e.seq).toBe("number");
+    }
+    const seqs = evs.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  test("a throwing host handler never breaks the pill", () => {
+    const onEvent = vi.fn(() => { throw new Error("host bug"); });
+    render(<EntvizPill value={HEX} onEvent={onEvent} />);
+    expect(() => fireEvent.click(screen.getByRole("button", { name: /view visualization/i }))).not.toThrow();
+    expect(screen.getByRole("dialog")).toBeTruthy(); // still expands
+  });
+
+  test("disclosure.change fires on pill→visualize→compare→pill transitions, carrying prev", () => {
+    const onEvent = vi.fn();
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} onEvent={onEvent} />);
+    expand();
+    expect(last(onEvent, "disclosure.change")).toMatchObject({ state: "visualize", prev: "pill" });
+    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    expect(last(onEvent, "disclosure.change")).toMatchObject({ state: "compare", prev: "visualize" });
+    // collapse (Escape) → back to the pill state
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(last(onEvent, "disclosure.change")).toMatchObject({ state: "pill", prev: "compare" });
+  });
+
+  test("disclosure.change does not re-emit an unchanged state on an unrelated re-render", () => {
+    const onEvent = vi.fn();
+    const { rerender } = render(<EntvizPill value={HEX} onEvent={onEvent} />);
+    expand();
+    const count = of(onEvent, "disclosure.change").length;
+    rerender(<EntvizPill value={HEX} label="x" onEvent={onEvent} />); // still expanded → "visualize"
+    expect(of(onEvent, "disclosure.change").length).toBe(count);
+  });
+
+  test("copy fires {kind, ok:true} on success and {ok:false} on failure", async () => {
+    const onEvent = vi.fn();
+    render(<EntvizPill value={HEX} onEvent={onEvent} />);
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    await waitFor(() => expect(of(onEvent, "copy").length).toBeGreaterThan(0));
+    expect(last(onEvent, "copy")).toMatchObject({ kind: "value", ok: true });
+    clip().writeText.mockRejectedValueOnce(new Error("denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    await waitFor(() => expect(last(onEvent, "copy")).toMatchObject({ kind: "value", ok: false }));
+  });
+
+  test("render.error fires with the message on an unrenderable pill", () => {
+    const onEvent = vi.fn();
+    render(<EntvizPill {...BAD} onEvent={onEvent} />);
+    const e = last(onEvent, "render.error");
+    expect(e).toBeTruthy();
+    expect(e.message).toMatch(/note/i);
+  });
+});

@@ -301,3 +301,89 @@ describe("Entviz controls — copy menu", () => {
     }
   });
 });
+
+// --- onEvent firehose ------------------------------------------------------
+
+describe("Entviz onEvent firehose", () => {
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+  const shapeBtn = (c: HTMLElement) => c.querySelector('button[aria-label="shape"]') as HTMLButtonElement;
+  const shapeOptions = (c: HTMLElement) =>
+    [...c.querySelectorAll('[role="menu"][aria-label="shape"] [role="menuitem"]')] as HTMLButtonElement[];
+
+  test("stamps seq/ts/source=entviz and increments seq monotonically", () => {
+    const onEvent = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls onEvent={onEvent} />);
+    fireEvent.click(btn(container, "larger")); // display.resize
+    fireEvent.click(shapeBtn(container));
+    fireEvent.click(shapeOptions(container).find((o) => o.getAttribute("aria-pressed") !== "true")!); // display.reshape
+    expect(onEvent).toHaveBeenCalled();
+    const evs = onEvent.mock.calls.map((c) => c[0]);
+    for (const e of evs) {
+      expect(e.source).toBe("entviz");
+      expect(typeof e.ts).toBe("number");
+      expect(typeof e.seq).toBe("number");
+    }
+    const seqs = evs.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  test("a throwing host handler never breaks the figure", () => {
+    const onEvent = vi.fn(() => { throw new Error("host bug"); });
+    const { container } = render(<Entviz value={MULTI} controls onEvent={onEvent} />);
+    expect(() => fireEvent.click(btn(container, "larger"))).not.toThrow();
+    expect(container.querySelector("svg")).toBeTruthy(); // still rendering
+  });
+
+  test("render.error fires with the message on a render failure (once per distinct error)", () => {
+    const onEvent = vi.fn();
+    const { rerender } = render(<Entviz value={HEX} note="toolongnote" onEvent={onEvent} />);
+    const e = last(onEvent, "render.error");
+    expect(e).toBeTruthy();
+    expect(e.message).toMatch(/note/i);
+    // an unrelated re-render with the SAME error must not re-emit
+    const before = of(onEvent, "render.error").length;
+    rerender(<Entviz value={HEX} note="toolongnote" onEvent={onEvent} />);
+    expect(of(onEvent, "render.error").length).toBe(before);
+  });
+
+  test("display.resize fires with the new fontSizePt on a ladder step", () => {
+    const onEvent = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} onEvent={onEvent} />);
+    fireEvent.click(btn(container, "larger"));
+    expect(last(onEvent, "display.resize")).toMatchObject({ fontSizePt: 14 });
+    fireEvent.click(btn(container, "smaller"));
+    expect(last(onEvent, "display.resize")).toMatchObject({ fontSizePt: 12 });
+  });
+
+  test("display.reshape fires with targetAr + cols/rows on a shape pick", () => {
+    const onEvent = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls onEvent={onEvent} />);
+    fireEvent.click(shapeBtn(container));
+    fireEvent.click(shapeOptions(container).find((o) => o.getAttribute("aria-pressed") !== "true")!);
+    const e = last(onEvent, "display.reshape");
+    expect(e).toBeTruthy();
+    expect(typeof e.targetAr).toBe("number");
+    expect(e.cols).toBeGreaterThan(0);
+    expect(e.rows).toBeGreaterThan(0);
+  });
+
+  test("copy fires {kind, ok:true} on success and {ok:false} on failure", async () => {
+    const onEvent = vi.fn();
+    const { container } = render(<Entviz value={MULTI} controls onEvent={onEvent} />);
+    fireEvent.click(kebab(container));
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    await waitFor(() => expect(of(onEvent, "copy").length).toBeGreaterThan(0));
+    expect(last(onEvent, "copy")).toMatchObject({ kind: "value", ok: true });
+    // a rejected clipboard write reports ok:false
+    clip().writeText.mockRejectedValueOnce(new Error("denied"));
+    fireEvent.click(kebab(container));
+    fireEvent.click(screen.getByRole("menuitem", { name: /copy value/i }));
+    await waitFor(() => expect(last(onEvent, "copy")).toMatchObject({ kind: "value", ok: false }));
+  });
+});

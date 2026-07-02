@@ -6,6 +6,7 @@
 import React from "react";
 import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
+import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 
 export interface EntvizProps {
   /** The high-entropy value to visualize (key, hash, UUID, address, …). */
@@ -36,6 +37,9 @@ export interface EntvizProps {
   /** Reshape handler. When given, the aspect ratio is CONTROLLED; otherwise
    *  managed internally. Receives the `targetAr` of the chosen grid shape. */
   onReshape?: (targetAr: number) => void;
+  /** The typed event firehose (see events.ts). Notify-only, in addition to the
+   *  specific callbacks (render.error / display.resize / display.reshape / copy). */
+  onEvent?: (e: EntvizEvent) => void;
 }
 
 /**
@@ -51,7 +55,12 @@ export interface EntvizProps {
  */
 export function Entviz(props: EntvizProps): React.ReactElement {
   const { value, targetAr, fontSizePt, note, className, style, title, onError,
-    controls = false, reshapable = true, onResize, onReshape } = props;
+    controls = false, reshapable = true, onResize, onReshape, onEvent } = props;
+
+  // The event firehose: a monotonic seq per instance, and a bound `emit` that
+  // stamps source="entviz" and swallows a throwing host handler (events.ts).
+  const seqRef = React.useRef(0);
+  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "entviz", seqRef, init);
 
   // Opt-in resize/reshape state: CONTROLLED when the parent passes a handler (it
   // owns the value — e.g. the comparator drives both figures), else managed
@@ -98,16 +107,26 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     return () => cancelAnimationFrame(id);
   }, [openMenu, openWrapRef]);
 
-  const svg = React.useMemo(() => {
+  const { svg, error } = React.useMemo(() => {
     const opts: RenderOptions = { targetAr: ar, fontSizePt: fs, note };
     try {
-      return render(value, opts);
+      return { svg: render(value, opts), error: null as string | null };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (onError) onError(msg);
-      return null;
+      return { svg: null as string | null, error: msg };
     }
   }, [value, ar, fs, note, onError]);
+
+  // render.error (notify-only): mirror the onError path onto the firehose,
+  // firing only when the error message TRANSITIONS (a fresh/changed failure),
+  // never re-emitting the same error every render.
+  const prevErrorRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (error && error !== prevErrorRef.current) emit({ type: "render.error", message: error });
+    prevErrorRef.current = error;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   // PSY-JS-F3: fold the note into the default accessible label so a screen
   // reader conveys the caption a sighted user sees in the bottom strip. An
@@ -139,8 +158,11 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const setFs = (v: number) => (fsControlled ? onResize!(v) : setStateFs(v));
   const setAr = (v: number) => (arControlled ? onReshape!(v) : setStateAr(v));
   const ladderIdx = nearestLadderIndex(curPt);
-  const stepFs = (dir: number) =>
-    setFs(FONT_SIZE_LADDER[Math.max(0, Math.min(FONT_SIZE_LADDER.length - 1, ladderIdx + dir))]);
+  const stepFs = (dir: number) => {
+    const next = FONT_SIZE_LADDER[Math.max(0, Math.min(FONT_SIZE_LADDER.length - 1, ladderIdx + dir))];
+    emit({ type: "display.resize", fontSizePt: next });
+    setFs(next);
+  };
   const reset = () => { setFs(fontSizePt ?? DEFAULT_FONT_SIZE_PT); setAr(targetAr ?? 1); };
 
   const flash = (msg: string) => {
@@ -152,8 +174,10 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     setOpenMenu(null);
     try {
       await copyEntviz(kind, { value, opts: { targetAr: ar, fontSizePt: fs, note }, svg });
+      emit({ type: "copy", kind, ok: true });
       flash(COPY_TOAST[kind]);
     } catch {
+      emit({ type: "copy", kind, ok: false });
       flash(COPY_FAILED);
     }
   };
@@ -222,7 +246,7 @@ export function Entviz(props: EntvizProps): React.ReactElement {
                     "button",
                     {
                       key: `${s.cols}x${s.rows}`, role: "menuitem", type: "button",
-                      onClick: () => { setAr(s.targetAr); setOpenMenu(null); shapeBtnRef.current?.focus(); },
+                      onClick: () => { emit({ type: "display.reshape", targetAr: s.targetAr, cols: s.cols, rows: s.rows }); setAr(s.targetAr); setOpenMenu(null); shapeBtnRef.current?.focus(); },
                       "aria-label": `${s.cols} by ${s.rows}`, "aria-pressed": active,
                       style: { ...thumbBtn, ...(active ? thumbActive : null) },
                     },

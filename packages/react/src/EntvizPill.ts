@@ -36,6 +36,7 @@ import { Entviz } from "./Entviz.ts";
 import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { fmt, isRtlLocale, resolveMessages, type Messages } from "./pill-messages.ts";
+import { emitEvent, type DisclosureState, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 
 export type { CopyKind };
 
@@ -69,6 +70,9 @@ export interface EntvizPillProps {
   showCompareAffordance?: boolean;
   onCopy?: (kind: CopyKind) => void;
   onError?: (message: string) => void;
+  /** The typed event firehose (see events.ts). Notify-only, in addition to the
+   *  specific callbacks (disclosure.change / copy / render.error). */
+  onEvent?: (e: EntvizEvent) => void;
 }
 
 // 2×2 row-major: gold + blue on top, black + red on bottom — keeps the two dark
@@ -168,8 +172,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
     label, showType = true, showIcon = true, maxWidth, locale, dir,
-    messages: overrides, className, style, onExpand, onCompare, showCompareAffordance, onCopy, onError,
+    messages: overrides, className, style, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
   } = props;
+
+  // The event firehose: a monotonic seq per instance, and a bound `emit` that
+  // stamps source="pill" and swallows a throwing host handler (events.ts).
+  const seqRef = useRef(0);
+  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "pill", seqRef, init);
 
   const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
   const m: Messages = { ...base, ...overrides };
@@ -203,6 +212,15 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
 
   useEffect(() => { if (error && onError) onError(error); }, [error, onError]);
 
+  // render.error (notify-only): mirror the onError path onto the firehose, firing
+  // only when the error message TRANSITIONS (a fresh/changed failure).
+  const prevErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (error && error !== prevErrorRef.current) emit({ type: "render.error", message: error });
+    prevErrorRef.current = error;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [comparing, setComparing] = useState(false);
@@ -223,6 +241,18 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     toastTimer.current = setTimeout(() => setToast(null), 2400);
   };
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // disclosure.change (notify-only): the Cite · Visualize · Compare lifecycle
+  // state, derived from the disclosure flags — comparing wins, else expanded, else
+  // the collapsed pill. Fire only on a TRANSITION, carrying the prior state.
+  const disclosure: DisclosureState = comparing ? "compare" : expanded ? "visualize" : "pill";
+  const prevDisclosureRef = useRef<DisclosureState>(disclosure);
+  useEffect(() => {
+    const prev = prevDisclosureRef.current;
+    if (disclosure !== prev) emit({ type: "disclosure.change", state: disclosure, prev });
+    prevDisclosureRef.current = disclosure;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disclosure]);
 
   // Dismiss on Escape (focus returns to the pill) and outside-click.
   useEffect(() => {
@@ -270,8 +300,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         flash(fmt(m.copiedComparison, { n: channels ? channels.cells.filter((c) => !c.blank).length : 0 }));
       else if (kind === "svg") flash(m.copiedSvg);
       else flash(m.copiedImage);
+      emit({ type: "copy", kind, ok: true });
       onCopy?.(kind);
     } catch {
+      emit({ type: "copy", kind, ok: false });
       flash(m.copyFailed);
     }
   };

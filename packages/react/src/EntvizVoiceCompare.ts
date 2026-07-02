@@ -21,6 +21,7 @@ import {
   createElement as h,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -40,6 +41,7 @@ import {
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
+import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 
 export interface EntvizVoiceCompareProps {
   value: string;
@@ -57,6 +59,10 @@ export interface EntvizVoiceCompareProps {
   externalFigures?: boolean;
   onStep?: (step: WalkStep | null) => void;
   onComplete?: (status: CeremonyStatus) => void;
+  /** The typed event firehose (see events.ts). Notify-only: voice.start (past the
+   *  §15.1 gate) and voice.complete only — there is deliberately NO voice.step, so
+   *  the live authenticator-chosen cell order never leaves the endpoint. */
+  onEvent?: (e: EntvizEvent) => void;
   /** A [0,1) source standing in for the authenticator's live, unpredictable choice
    *  of cells — the platform CSPRNG by default; a seeded source in tests. */
   rng?: () => number;
@@ -124,9 +130,16 @@ function safeDescribe(value: string, opts: RenderOptions): ChannelDescription | 
 export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note, mode = "voice-only", layout = "side-by-side",
-    externalFigures = false, onStep, onComplete, rng = csprng, className, style,
+    externalFigures = false, onStep, onComplete, onEvent, rng = csprng, className, style,
   } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
+
+  // The event firehose: a monotonic seq per instance, and a bound `emit` that
+  // stamps source="voice" and swallows a throwing host handler (events.ts). Only
+  // voice.start / voice.complete — never a per-cell step (the live check-order
+  // must never leave the endpoint — events.ts module doc).
+  const seqRef = useRef(0);
+  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "voice", seqRef, init);
   const model = useMemo(() => safeDescribe(value, opts), [value, opts]);
 
   const [state, setState] = useState<CeremonyState | null>(null);
@@ -143,7 +156,12 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   }, [onStep, step]);
   useEffect(() => () => onStep?.(null), [onStep]);
 
-  const begin = () => setState(startCeremony(buildReadbackPlan(value, opts, mode, rng)));
+  const begin = () => {
+    // voice.start: the ceremony proceeds past the §15.1 affirmation gate. `mode` is
+    // the ceremony's CeremonyMode ("voice-only" | "paste-bind").
+    emit({ type: "voice.start", mode });
+    setState(startCeremony(buildReadbackPlan(value, opts, mode, rng)));
+  };
   const restart = () => {
     setState(null);
     setRelook(false);
@@ -152,7 +170,10 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     setState((s) => {
       if (!s) return s;
       const next = compute(s);
-      if (next.ended && !s.ended) onComplete?.(next.status);
+      if (next.ended && !s.ended) {
+        onComplete?.(next.status);
+        emit({ type: "voice.complete", status: next.status });
+      }
       return next;
     });
     setRelook(false);

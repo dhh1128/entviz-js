@@ -15,6 +15,7 @@ import {
   createElement as h,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -34,6 +35,7 @@ import {
   type WalkStep,
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
+import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 
 /** Panel arrangement shared by the comparator and the walk. */
 export type EntvizLayout = "side-by-side" | "stacked" | "auto";
@@ -66,6 +68,9 @@ export interface EntvizWalkProps {
    *  `externalFigures` can ring it on its own figures. */
   onStep?: (step: WalkStep | null) => void;
   onComplete?: (status: WalkState["status"]) => void;
+  /** The typed event firehose (see events.ts). Notify-only, in addition to
+   *  onStep/onComplete (walk.start / walk.step / walk.complete). */
+  onEvent?: (e: EntvizEvent) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -201,8 +206,16 @@ export function mutate(text: string): string {
 }
 
 export function EntvizWalk(props: EntvizWalkProps): ReactNode {
-  const { value, reference, targetAr, fontSizePt, note, mode, layout = "side-by-side", externalFigures = false, onStep, onComplete, className, style } = props;
+  const { value, reference, targetAr, fontSizePt, note, mode, layout = "side-by-side", externalFigures = false, onStep, onComplete, onEvent, className, style } = props;
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
+
+  // The event firehose: a monotonic seq per instance, and a bound `emit` that
+  // stamps source="walk" and swallows a throwing host handler (events.ts). A
+  // monotonic step index, reset at each walk.start (single-user walk → walk.step
+  // is allowed, carrying a feature KIND + index, never glyph text — events.ts doc).
+  const seqRef = useRef(0);
+  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "walk", seqRef, init);
+  const walkStepIndexRef = useRef(0);
 
   // Describe each value ONCE per (value, opts) — the focus rings, the size class,
   // and the probe cell all read this, instead of rebuilding the model per render
@@ -222,15 +235,40 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   const [relook, setRelook] = useState(false);
   const [probeText, setProbeText] = useState<string | null>(null);
 
+  // The current step (the feature under the ring), or null off-walk/at the end.
+  const currentStep: WalkStep | null =
+    state && !state.ended && state.index < state.plan.steps.length ? state.plan.steps[state.index] : null;
+
   // Report the feature currently being checked so a host using externalFigures can
   // ring it on its own figures; clear it when the walk ends / in the picker / on
   // unmount. (The walk stays active past the Good milestone, so gate on `ended`.)
   useEffect(() => {
-    if (!onStep) return;
-    onStep(state && !state.ended && state.index < state.plan.steps.length
-      ? state.plan.steps[state.index] : null);
-  }, [state, onStep]);
+    onStep?.(currentStep);
+  }, [currentStep, onStep]);
   useEffect(() => () => onStep?.(null), [onStep]);
+
+  // walk.start (notify-only): a new plan object means a walk just began (picker,
+  // restart, or the mode-prop initial launch). Reset the walk.step index here.
+  const prevPlanRef = useRef<WalkState["plan"] | null>(null);
+  useEffect(() => {
+    if (state && state.plan !== prevPlanRef.current) {
+      walkStepIndexRef.current = 0;
+      emit({ type: "walk.start", mode: state.plan.mode });
+    }
+    prevPlanRef.current = state ? state.plan : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  // walk.step (notify-only): fire on each distinct feature the walk presents,
+  // carrying the feature KIND (never glyph text) and a monotonic index per walk.
+  const prevStepRef = useRef<WalkStep | null>(null);
+  useEffect(() => {
+    if (currentStep && currentStep !== prevStepRef.current) {
+      emit({ type: "walk.step", feature: currentStep.kind, index: walkStepIndexRef.current++ });
+    }
+    prevStepRef.current = currentStep;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
 
   const begin = (m: WalkMode) => setState(startWalk(buildCheckPlan(value, opts, m, csprng)));
 
@@ -249,7 +287,12 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     setState((s) => {
       if (!s) return s;
       const next = compute(s);
-      if (next.ended && !s.ended) onComplete?.(next.status);
+      if (next.ended && !s.ended) {
+        onComplete?.(next.status);
+        // The core walk status "pending" (a Done at a sub-Good peek) maps to the
+        // event union's "pending-done"; the other three pass straight through.
+        emit({ type: "walk.complete", status: next.status === "pending" ? "pending-done" : next.status });
+      }
       return next;
     });
     setRelook(false);

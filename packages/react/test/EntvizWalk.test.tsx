@@ -177,3 +177,97 @@ function driveToEndWithReveal(max = 200) {
     }
   }
 }
+
+// --- onEvent firehose ------------------------------------------------------
+
+describe("EntvizWalk onEvent firehose", () => {
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+
+  test("stamps seq/ts/source=walk and increments seq monotonically", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    matchN(3);
+    expect(onEvent).toHaveBeenCalled();
+    const evs = onEvent.mock.calls.map((c) => c[0]);
+    for (const e of evs) {
+      expect(e.source).toBe("walk");
+      expect(typeof e.ts).toBe("number");
+      expect(typeof e.seq).toBe("number");
+    }
+    const seqs = evs.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  test("a throwing host handler never breaks the walk", () => {
+    const onEvent = vi.fn(() => { throw new Error("host bug"); });
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    expect(() => matchN(2)).not.toThrow();
+    expect(btn(/looks the same/i)).toBeTruthy(); // still walking
+  });
+
+  test("walk.start fires with the mode when a mode-prop walk launches", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="complete" onEvent={onEvent} />);
+    expect(last(onEvent, "walk.start")).toMatchObject({ mode: "complete" });
+  });
+
+  test("walk.start fires with the mode chosen in the picker", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX512} reference={HEX512} onEvent={onEvent} />);
+    expect(of(onEvent, "walk.start").length).toBe(0); // picker: no walk yet
+    fireEvent.click(btn(/spot-check/i)!);
+    expect(last(onEvent, "walk.start")).toMatchObject({ mode: "spot-check" });
+  });
+
+  test("walk.step carries the feature KIND (never glyphs) with a monotonic index from 0", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX512} reference={HEX512} mode="complete" onEvent={onEvent} />);
+    driveToEndWithReveal();
+    const steps = of(onEvent, "walk.step");
+    expect(steps.length).toBeGreaterThan(0);
+    for (const s of steps) {
+      expect(["text", "gestalt", "probe"]).toContain(s.feature); // a KIND, not glyph text
+      expect(typeof s.index).toBe("number");
+    }
+    expect(steps.map((s) => s.index)).toEqual(steps.map((_, i) => i)); // monotonic from 0
+  });
+
+  test("walk.complete fires with the terminal status (no-difference)", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    driveToEnd();
+    expect(last(onEvent, "walk.complete")).toMatchObject({ status: "no-difference" });
+  });
+
+  test("walk.complete maps a sub-Good early Done (core 'pending') → 'pending-done'", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    fireEvent.click(btn(/done — that's enough/i)!); // stop below the Good milestone
+    expect(last(onEvent, "walk.complete")).toMatchObject({ status: "pending-done" });
+  });
+
+  test("walk.complete reports 'different' when a difference is confirmed", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    fireEvent.click(btn(/looks different/i)!);
+    fireEvent.click(btn(/yes, different/i)!);
+    expect(last(onEvent, "walk.complete")).toMatchObject({ status: "different" });
+  });
+
+  test("restarting via 'Walk again' emits a fresh walk.start and resets the step index", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" onEvent={onEvent} />);
+    driveToEnd();
+    const startsBefore = of(onEvent, "walk.start").length;
+    fireEvent.click(screen.getByRole("button", { name: /walk again/i }));
+    expect(of(onEvent, "walk.start").length).toBe(startsBefore + 1);
+    // the new walk's first step re-starts the index at 0
+    expect(of(onEvent, "walk.step").slice(-1)[0].index).toBe(0);
+  });
+});
