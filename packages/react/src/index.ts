@@ -11,3 +11,17 @@ export { EntvizWalk, type EntvizWalkProps, mutate } from "./EntvizWalk.ts";
 export { EntvizVoiceCompare, type EntvizVoiceCompareProps } from "./EntvizVoiceCompare.ts";
 export { SUPPORTED_LOCALES, type Messages } from "./pill-messages.ts";
 export { type CompareMessages } from "./compare-messages.ts";
+export {
+  emitEvent,
+  type EntvizEvent,
+  type EntvizEventInit,
+  type EntvizEventPayload,
+  type EntvizSource,
+  type EntvizSensitivity,
+  type DisclosureState,
+  type Provenance,
+  type Medium,
+  type VerdictState,
+  type WalkStatus,
+  type CeremonyStatus,
+} from "./events.ts";
