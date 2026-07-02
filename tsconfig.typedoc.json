@@ -1,5 +1,5 @@
 {
-  "//": "Dedicated tsconfig for TypeDoc only (see typedoc.json). Named non-default so it never shadows vitest/playground tooling. The packages ship raw .ts with .ts import specifiers, so allowImportingTsExtensions + noEmit are required.",
+  "//": "Dedicated tsconfig for TypeDoc only (see typedoc.json). Named non-default so it never shadows vitest/playground tooling. Scoped to package src (not tests/apps). The packages ship raw .ts with .ts import specifiers, so allowImportingTsExtensions + noEmit are required.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -12,5 +12,7 @@
     "noEmit": true,
     "esModuleInterop": true,
     "resolveJsonModule": true
-  }
+  },
+  "include": ["packages/core/src/**/*.ts", "packages/react/src/**/*.ts"],
+  "exclude": ["node_modules", "apps/**", "**/test/**", "**/*.test.ts", "**/*.test.tsx"]
 }
