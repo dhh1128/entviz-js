@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { locateFrame, near, pixelAt, type Raster } from "../../src/raster-compare.ts";
+import { locateFrame, near, pixelAt, rasterCompare, type Raster } from "../../src/raster-compare.ts";
+import { describeChannels, hexToRgb, type RenderOptions } from "../../src/entviz.ts";
 
 // --- a tiny synthetic rasterizer (test fixtures; real rasters come from the
 // browser canvas in the React layer) -------------------------------------------
@@ -116,4 +117,77 @@ test("a gray rectangle with a dark interior (no white strip) is rejected", () =>
   vLine(r, box.x0, box.y0, box.y1, GRAY);
   vLine(r, box.x1, box.y0, box.y1, GRAY);
   assert.equal(locateFrame(r), null);
+});
+
+// --- rasterCompare: a faithful synthetic entviz painted from the render model ---
+// (real browser rasters, with anti-aliasing, are exercised by the calibration
+// slice; this proves the locate→scale→map→sample→verdict chain deterministically.)
+function paintEntviz(value: string, opts: RenderOptions, scale: number, pad: number): Raster {
+  const model = describeChannels(value, opts);
+  const [, , bw, bh] = model.geometry.viewBox.split(/\s+/).map(Number);
+  const fx0 = pad, fy0 = pad;
+  const fx1 = pad + Math.round((bw - 1) * scale);
+  const fy1 = pad + Math.round((bh - 1) * scale);
+  const r = blank(fx1 + pad + 1, fy1 + pad + 1, WHITE);
+  const px = (vx: number) => Math.round(fx0 + (vx - 0.5) * scale);
+  const py = (vy: number) => Math.round(fy0 + (vy - 0.5) * scale);
+  // grid background (leaves the top label strip + left gutter white)
+  const g = model.geometry.gridRect;
+  fillRect(r, px(g.x), py(g.y), px(g.x + g.w), py(g.y + g.h), hexToRgb(model.bgColor) as RGB);
+  // nuclei at their true colors
+  for (const c of model.cells) {
+    if (c.blank) continue;
+    const rect = model.geometry.cellRects[c.index];
+    fillRect(r, px(rect.x), py(rect.y), px(rect.x + rect.w), py(rect.y + rect.h), hexToRgb(c.nucleusColor as string) as RGB);
+  }
+  // the #808080 frame, painted last so its edges stay crisp
+  hLine(r, fx0, fx1, fy0, GRAY); hLine(r, fx0, fx1, fy1, GRAY);
+  vLine(r, fx0, fy0, fy1, GRAY); vLine(r, fx1, fy0, fy1, GRAY);
+  return r;
+}
+
+const UUID_A = "550e8400-e29b-41d4-a716-446655440000";
+const UUID_B = "ffffffff-ffff-4fff-afff-ffffffffffff"; // same shape, wholly different content
+
+test("rasterCompare: a faithful raster of the same value → no visible difference (never identical)", () => {
+  const v = rasterCompare(paintEntviz(UUID_A, {}, 3, 20), UUID_A);
+  assert.equal(v.state, "unknown");
+  assert.equal((v as { similar?: boolean }).similar, true);
+});
+
+test("rasterCompare: a different value of the same shape → different", () => {
+  assert.deepEqual(rasterCompare(paintEntviz(UUID_A, {}, 3, 20), UUID_B), { state: "different" });
+});
+
+test("rasterCompare: a reference that differs only by a note still matches (note excluded)", () => {
+  const withNote = paintEntviz(UUID_A, { note: "git" }, 3, 20); // taller: a bottom strip
+  const v = rasterCompare(withNote, UUID_A); // our model has no note
+  assert.equal(v.state, "unknown");
+  assert.equal((v as { similar?: boolean }).similar, true);
+});
+
+test("rasterCompare: a different grid shape → unknown (phase-1 same-shape requirement)", () => {
+  const v = rasterCompare(paintEntviz(UUID_A, { targetAr: 2.5 }, 3, 20), UUID_A, { targetAr: 0.4 });
+  assert.equal(v.state, "unknown");
+  assert.match((v as { reason: string }).reason, /different shape/);
+});
+
+test("rasterCompare: too small to sample reliably → unknown", () => {
+  const v = rasterCompare(paintEntviz(UUID_A, {}, 0.25, 20), UUID_A);
+  assert.equal(v.state, "unknown");
+  assert.match((v as { reason: string }).reason, /too small/);
+});
+
+test("rasterCompare: no entviz in the image → unknown", () => {
+  const v = rasterCompare(blank(120, 90, RED), UUID_A);
+  assert.equal(v.state, "unknown");
+  assert.match((v as { reason: string }).reason, /couldn't find/);
+});
+
+test("rasterCompare: a frame is found but our value won't render → unknown", () => {
+  // a valid frame, but an over-cap value makes describeChannels throw
+  const framedRaster = framed(200, 150, { x0: 10, y0: 8, x1: 180, y1: 130 });
+  const v = rasterCompare(framedRaster, "!".repeat(65537));
+  assert.equal(v.state, "unknown");
+  assert.match((v as { reason: string }).reason, /couldn't render/);
 });

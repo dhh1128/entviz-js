@@ -219,10 +219,11 @@ describe("EntvizCompare", () => {
     fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
     await waitFor(() => expect(status()).toContain("Identical"), RWAIT);
     expect(screen.getByText("Reference: file")).toBeTruthy();
-    // a raster file runs the raster engine → never identical (mocked clean rasters
-    // are look-alikes, so: unknown — an image cannot prove equality)
+    // a raster file runs the geometry-anchored engine → never identical (the mock
+    // raster isn't a faithful entviz, so it resolves to an unknown/different, not `=`)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
-    await waitFor(() => expect(status()).toMatch(/look very similar/i), RWAIT);
+    await waitFor(() => expect(status()).toMatch(/couldn't|different|too small|no visible/i), RWAIT);
+    expect(status()).not.toContain("Identical");
     // an empty file list is a no-op
     fireEvent.change(file, { target: { files: [] } });
   });
@@ -234,7 +235,7 @@ describe("EntvizCompare", () => {
     // retry BOTH conditions together — the async decode resolves the verdict and
     // the onVerdict callback on the same render, but over separate microtask ticks.
     await waitFor(() => {
-      expect(status()).toMatch(/look very similar/i);
+      expect(status()).toMatch(/couldn't|different|too small|no visible/i);
       expect(onVerdict).toHaveBeenCalled();
     }, RWAIT);
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);

@@ -1946,6 +1946,9 @@ export * from "./compare.ts";
 // The guided human walk (M2): check-plan builder + walk reducer.
 export * from "./compare-walk.ts";
 
+// The geometry-anchored raster comparison engine (§6.3).
+export { rasterCompare, locateFrame, type FrameBox } from "./raster-compare.ts";
+
 // The remote voice ceremony (M3): read-back planner + ceremony reducer. The
 // reducer's respond/finish/coverage share names with the walk's, so they are
 // re-exported under a `ceremony*` alias from the single entry point.

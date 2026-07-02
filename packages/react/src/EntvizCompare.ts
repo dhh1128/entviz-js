@@ -21,7 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
+import { compareSvg, compareValues, describeChannels, detectMedium, rasterCompare, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
@@ -110,19 +110,17 @@ function imageToRaster(img: HTMLImageElement, w: number, h: number): Raster {
   return { rgba: ctx.getImageData(0, 0, w, h).data, w, h };
 }
 
-const svgDataUrl = (svg: string): string => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-
 /**
- * Raster path: decode the reference image, render OUR value at the same pixel
- * size, and disprove-or-bail. Never `identical` (comparison-design.md §6.3).
+ * Raster path: decode the reference image to RGBA and hand it to the core
+ * geometry-anchored engine (comparison-design.md §6.3), which locates the entviz
+ * in the image and samples predicted feature colors. Never `identical`. We do NOT
+ * rasterize our own SVG — the engine reads the image against the render model.
  */
 export async function compareRaster(refSrc: string, value: string, opts: RenderOptions = {}): Promise<Verdict> {
   const refImg = await loadImage(refSrc);
   const w = refImg.naturalWidth || 1;
   const h = refImg.naturalHeight || 1;
-  const reference = imageToRaster(refImg, w, h);
-  const ours = imageToRaster(await loadImage(svgDataUrl(render(value, opts))), w, h);
-  return rasterDisprove(reference, ours);
+  return rasterCompare(imageToRaster(refImg, w, h), value, opts);
 }
 
 const originOf = (url: string): string => {
