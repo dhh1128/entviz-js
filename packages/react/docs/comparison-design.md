@@ -216,9 +216,13 @@ The engine leans on `describeChannels(value, shape)`, which already yields the e
    found (text unread)" (`unknown`/`similar`, zero credit).
 
 **Phasing & calibration.** Phase 1 (now): same-shape required. Phase 2 (later): shape-tolerant, for SVG
-parity. The minimum-size threshold and the per-channel color tolerances are **set from a calibration
-test** that renders known values at shrinking pixel sizes and finds where sampling begins to
-misclassify — never from a guessed constant.
+parity. The tolerances were **calibrated against real browser rasters** (`apps/playground/calibrate.html`
+renders an entviz to a canvas at a size ladder and runs the engine): on anti-aliased pixels the binding
+floor is **frame detectability**, not nucleus size — the 1px `#808080` border blurs toward white as the
+image shrinks, so `locateFrame` returns null (→ `unknown`, fail-closed) below ≈140px wide for a small
+value; at and above that the engine is correct (same value → "no visible difference", different value →
+`different`). The min-nucleus gate is a secondary guard for a large value whose frame is found but whose
+individual nuclei fall below the sampling threshold.
 
 ---
 

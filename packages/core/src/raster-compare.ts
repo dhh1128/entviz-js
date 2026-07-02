@@ -36,8 +36,14 @@ const EDGE_FRAME_MIN = 0.8;
 const STRIP_WHITE_MIN = 0.6;
 
 // --- sampling / verdict tolerances --------------------------------------------
-// PROVISIONAL, pending the §6.3 calibration test (real browser rasters at shrinking
-// sizes). Kept together so calibration tunes one place.
+// Calibrated against REAL browser rasters (apps/playground/calibrate.html renders
+// an entviz to a canvas at a size ladder and runs this engine). Finding: on
+// anti-aliased rasters the binding floor is FRAME DETECTABILITY, not nucleus size —
+// the 1px #808080 border blurs toward white as the image shrinks, so `locateFrame`
+// returns null (→ `unknown`, fail-closed) below ~140px wide for a small value; at
+// and above that the engine is correct (same value → similar, different → different).
+// These tolerances hold across that range; MIN_NUCLEUS_PX is a secondary guard for
+// a large value whose frame is found but whose individual nuclei are sub-threshold.
 const NUCLEUS_TOL = 40; // per-channel tolerance when matching a sampled nucleus color
 const MIN_NUCLEUS_PX = 6; // a nucleus smaller than this (px) blurs → too small to sample
 const SHAPE_TOL = 0.02; // the reference's height (model units) may differ this fraction
