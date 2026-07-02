@@ -539,3 +539,259 @@ describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 });
+
+describe("EntvizCompare onEvent firehose", () => {
+  const MULTI = "0123456789abcdef".repeat(4); // large → offers spot-check + reshape
+  // Collect every emitted event of a given type from a spy.
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+  const box = () => screen.getByRole("textbox", { name: /paste/i });
+
+  test("stamps seq/ts/source on every event and monotonically increments seq", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    expect(onEvent).toHaveBeenCalled();
+    const evs = onEvent.mock.calls.map((c) => c[0]);
+    for (const e of evs) {
+      expect(e.source).toBe("compare");
+      expect(typeof e.ts).toBe("number");
+      expect(typeof e.seq).toBe("number");
+    }
+    const seqs = evs.map((e) => e.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length); // all distinct
+  });
+
+  test("a throwing host handler never breaks the widget", () => {
+    const onEvent = vi.fn(() => { throw new Error("host bug"); });
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    expect(() => fireEvent.change(box(), { target: { value: HEX } })).not.toThrow();
+    expect(status()).toContain("Identical"); // still renders the verdict
+  });
+
+  test("reference.acquired fires on acquisition (with provenance/medium/byteLength) and NOT content", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    const e = last(onEvent, "reference.acquired");
+    expect(e).toBeTruthy();
+    expect(e.provenance).toBe("pasted");
+    expect(e.medium).toBe("text");
+    expect(e.byteLength).toBe(new TextEncoder().encode(HEX).length);
+    expect(e.content).toBeUndefined(); // content is gated behind a future includeContent prop
+  });
+
+  test("reference.acquired carries origin for a fetched (url) reference", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 200, text: async () => SVG })));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(last(onEvent, "reference.acquired")?.provenance).toBe("url"));
+    expect(last(onEvent, "reference.acquired").origin).toBe("https://example.com");
+  });
+
+  test("reference.cleared fires when the reference goes empty again", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    expect(of(onEvent, "reference.cleared").length).toBe(0);
+    fireEvent.change(box(), { target: { value: "" } }); // edit it empty
+    expect(of(onEvent, "reference.cleared").length).toBe(1);
+  });
+
+  test("reference.mediumDetected fires with medium + isUrl", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    expect(last(onEvent, "reference.mediumDetected")).toMatchObject({ medium: "text", isUrl: false });
+    // a URL is medium "ambiguous" but flagged isUrl:true
+    fireEvent.change(box(), { target: { value: "https://example.com/x" } });
+    expect(last(onEvent, "reference.mediumDetected")).toMatchObject({ medium: "ambiguous", isUrl: true });
+  });
+
+  test("secret.detected fires with where=value when the OWN value looks secret", () => {
+    const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={mnemonic} onEvent={onEvent} />);
+    expect(last(onEvent, "secret.detected")).toMatchObject({ where: "value" });
+  });
+
+  test("secret.detected fires with where=reference when only the reference looks secret", () => {
+    const mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: mnemonic } });
+    expect(last(onEvent, "secret.detected")).toMatchObject({ where: "reference" });
+  });
+
+  test("reference.readError fires when a picked file fails to read", async () => {
+    class ErrFileReader {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      result = "";
+      readAsText() { Promise.resolve().then(() => this.onerror?.()); }
+      readAsDataURL() { Promise.resolve().then(() => this.onerror?.()); }
+    }
+    vi.stubGlobal("FileReader", ErrFileReader);
+    const onEvent = vi.fn();
+    const { container } = rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    const file = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(file, { target: { files: [new File(["x"], "r.svg", { type: "image/svg+xml" })] } });
+    await waitFor(() => expect(of(onEvent, "reference.readError").length).toBeGreaterThan(0), RWAIT);
+    expect(last(onEvent, "reference.readError").reason).toMatch(/read failed/i);
+  });
+
+  test("reference.readError fires when a reference image fails to decode", async () => {
+    class FailImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 0;
+      naturalHeight = 0;
+      set src(_v: string) { Promise.resolve().then(() => this.onerror?.()); }
+    }
+    vi.stubGlobal("Image", FailImage);
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "data:image/png;base64,zzzz" } });
+    await waitFor(() => expect(of(onEvent, "reference.readError").length).toBeGreaterThan(0), RWAIT);
+    expect(last(onEvent, "reference.readError").reason).toMatch(/could not read the reference image/i);
+  });
+
+  test("fetch.start / fetch.success carry origin/status/byteLength/durationMs and tag network sensitivity", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ status: 200, text: async () => SVG })));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(of(onEvent, "fetch.success").length).toBe(1));
+    const start = last(onEvent, "fetch.start");
+    expect(start.origin).toBe("https://example.com");
+    expect(start.url).toBe("https://example.com/key.svg");
+    expect(start.sensitivity).toBe("network");
+    expect(typeof start.preventDefault).toBe("function");
+    const ok = last(onEvent, "fetch.success");
+    expect(ok).toMatchObject({ origin: "https://example.com", status: 200, sensitivity: "network" });
+    expect(ok.byteLength).toBe(new TextEncoder().encode(SVG).length);
+    expect(typeof ok.durationMs).toBe("number");
+  });
+
+  test("fetch.start preventDefault ABORTS the fetch (fail-closed) — no fetch, no success/error", async () => {
+    const fetchSpy = vi.fn(async () => ({ status: 200, text: async () => SVG }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const onEvent = vi.fn((e: { type: string; preventDefault?: () => void }) => {
+      if (e.type === "fetch.start") e.preventDefault!();
+    });
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/key.svg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await Promise.resolve();
+    expect(fetchSpy).not.toHaveBeenCalled(); // egress blocked
+    expect(of(onEvent, "fetch.success").length).toBe(0);
+    expect(of(onEvent, "fetch.error").length).toBe(0);
+  });
+
+  test("fetch.error fires (network sensitivity) when the fetch throws", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: "https://example.com/x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(of(onEvent, "fetch.error").length).toBe(1));
+    const e = last(onEvent, "fetch.error");
+    expect(e).toMatchObject({ origin: "https://example.com", sensitivity: "network" });
+    expect(e.message).toMatch(/network down/i);
+  });
+
+  test("verdict.change fires on the verdict STATE transition (notify-only, carries medium+provenance)", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    const idn = last(onEvent, "verdict.change");
+    expect(idn).toMatchObject({ verdict: "identical", medium: "text", provenance: "pasted" });
+    expect(idn.preventDefault).toBeUndefined(); // notify-only
+    const beforeCount = of(onEvent, "verdict.change").length;
+    fireEvent.change(box(), { target: { value: OTHER } }); // identical → different transition
+    expect(of(onEvent, "verdict.change").length).toBe(beforeCount + 1);
+    expect(last(onEvent, "verdict.change").verdict).toBe("different");
+  });
+
+  test("display.tab fires when switching to the voice tab", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.click(screen.getByRole("tab", { name: /compare by voice/i }));
+    expect(last(onEvent, "display.tab")).toMatchObject({ tab: "voice" });
+  });
+
+  test("display.resize fires with the new fontSizePt", () => {
+    const onEvent = vi.fn();
+    const { container } = rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: HEX } });
+    fireEvent.click(container.querySelector('[aria-label="larger"]') as HTMLButtonElement);
+    const e = last(onEvent, "display.resize");
+    expect(e).toBeTruthy();
+    expect(typeof e.fontSizePt).toBe("number");
+  });
+
+  test("display.reshape fires with targetAr + cols/rows", () => {
+    const onEvent = vi.fn();
+    const { container } = rtlRender(<EntvizCompare value={MULTI} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: MULTI } });
+    fireEvent.click(container.querySelector('button[aria-label="shape"]') as HTMLButtonElement);
+    const other = [...container.querySelectorAll('[role="menu"][aria-label="shape"] [role="menuitem"]')].find(
+      (b) => b.getAttribute("aria-pressed") !== "true",
+    ) as HTMLButtonElement;
+    fireEvent.click(other);
+    const e = last(onEvent, "display.reshape");
+    expect(e).toBeTruthy();
+    expect(typeof e.targetAr).toBe("number");
+    expect(e.cols).toBeGreaterThan(0);
+    expect(e.rows).toBeGreaterThan(0);
+  });
+
+  test("walk.start / walk.step / walk.complete fire through a guided walk (feature=kind, never glyphs)", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={MULTI} onEvent={onEvent} />);
+    fireEvent.change(box(), { target: { value: MULTI } });
+    fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
+    expect(last(onEvent, "walk.start")).toMatchObject({ mode: "complete" });
+    const steps = of(onEvent, "walk.step");
+    expect(steps.length).toBeGreaterThan(0);
+    // feature is a KIND from the WalkStep union, never glyph text
+    for (const s of steps) {
+      expect(["text", "gestalt", "probe"]).toContain(s.feature);
+      expect(typeof s.index).toBe("number");
+    }
+    // indices are monotonic from 0
+    expect(steps.map((s) => s.index)).toEqual(steps.map((_, i) => i));
+    fireEvent.click(screen.getByRole("button", { name: /done — that's enough/i }));
+    const done = last(onEvent, "walk.complete");
+    expect(done).toBeTruthy();
+    expect(["no-difference", "different", "inconclusive", "pending-done"]).toContain(done.status);
+  });
+
+  test("voice.complete forwards the ceremony outcome (and no voice.step/voice.start ever fires)", () => {
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    fireEvent.click(screen.getByRole("tab", { name: /compare by voice/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
+    // Drive the ceremony to its verdict: "Matches" advances one planned cell at a
+    // time; the plan is finite, so this terminates in "no difference found".
+    for (let i = 0; i < 60 && of(onEvent, "voice.complete").length === 0; i++) {
+      const match = screen.queryByRole("button", { name: /^matches$/i });
+      if (!match) break;
+      fireEvent.click(match);
+    }
+    const done = last(onEvent, "voice.complete");
+    expect(done).toBeTruthy();
+    expect(["no-difference", "different"]).toContain(done.status);
+    // The live check-order must never leave the endpoint: no voice.start, no voice.step.
+    expect(of(onEvent, "voice.start").length).toBe(0);
+    expect(of(onEvent, "voice.step").length).toBe(0);
+  });
+});

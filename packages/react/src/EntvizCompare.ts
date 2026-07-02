@@ -18,6 +18,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -28,6 +29,7 @@ import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } fr
 import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
+import { emitEvent, type EntvizEvent, type EntvizEventInit, type Medium, type VerdictState } from "./events.ts";
 
 export interface EntvizCompareProps {
   // --- the user's own value + its render inputs (deterministic) ---
@@ -47,6 +49,9 @@ export interface EntvizCompareProps {
   locale?: string;
   messages?: Partial<CompareMessages>;
   onVerdict?: (v: Verdict) => void;
+  /** The typed event firehose (see events.ts). Notify-only, in addition to the
+   *  specific callbacks; only `fetch.start` is advisory-cancelable. */
+  onEvent?: (e: EntvizEvent) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -219,8 +224,23 @@ const VERDICT_LOCKED_KEYS: (keyof CompareMessages)[] = [
   "provenancePasted", "provenanceFile", "provenanceUrl", "provenanceDropped", "provenanceProvided",
 ];
 
+/** Map the internal machine result to the firehose's coarse `VerdictState`
+ *  (pending/deferred → "pending"; ambiguous → "unknown"; a real verdict passes
+ *  its own state through, all of which are valid VerdictStates). */
+function verdictStateOf(result: CompareResult): VerdictState {
+  if (result.kind === "verdict") return result.verdict.state as VerdictState;
+  if (result.kind === "ambiguous") return "unknown";
+  return "pending"; // pending | deferred (raster still decoding)
+}
+
 export function EntvizCompare(props: EntvizCompareProps): ReactNode {
-  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, className, style } = props;
+  const { value, targetAr, fontSizePt, note, reference, layout = "side-by-side", locale, messages: overrides, onVerdict, onEvent, className, style } = props;
+  // The event firehose: a monotonic seq per instance, and a bound `emit` that
+  // stamps source="compare" and swallows a throwing host handler (events.ts).
+  const seqRef = useRef(0);
+  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "compare", seqRef, init);
+  // Monotonic step index for walk.step, reset when a walk launches.
+  const walkStepIndexRef = useRef(0);
   // Merge host `messages`, then RE-PIN the verdict-, scoping-, and provenance-bearing strings
   // to the defaults. A host override may localize surrounding chrome, but must NOT relabel a
   // verdict ("Different" → "Match"), soften the recognition≠verification scoping, or rewrite
@@ -296,7 +316,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     setRasterV(null);
     compareRaster(refContent, value, opts).then(
       (v) => { if (alive) setRasterV(v); },
-      () => { if (alive) setRasterV({ state: "unknown", reason: "could not read the reference image" }); },
+      () => {
+        if (!alive) return;
+        emit({ type: "reference.readError", reason: "could not read the reference image" });
+        setRasterV({ state: "unknown", reason: "could not read the reference image" });
+      },
     );
     return () => { alive = false; };
   }, [medium, refContent, value, opts]);
@@ -307,7 +331,70 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     if (result.kind === "verdict") onVerdict?.(result.verdict);
   }, [result, onVerdict]);
 
+  // verdict.change (notify-only): fire when the effective verdict STATE transitions.
+  const prevVerdictRef = useRef<VerdictState | null>(null);
+  const effProvenance = eff?.provenance ?? null;
+  useEffect(() => {
+    const vs = verdictStateOf(result);
+    if (vs !== prevVerdictRef.current) {
+      emit({ type: "verdict.change", verdict: vs, medium: medium ?? null, provenance: effProvenance });
+    }
+    prevVerdictRef.current = vs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, medium, effProvenance]);
+
   const secret = looksLikeSecret(value) || looksLikeSecret(refContent);
+
+  // --- event firehose: fire on TRANSITIONS only (prior-value refs), never
+  //     re-emit unchanged state every render. ---
+
+  // reference.acquired / reference.cleared: a reference becoming present / empty.
+  // A change of provenance while still present (e.g. a pasted URL replaced by its
+  // FETCHED body: pasted → url) is a fresh acquisition, so re-emit on that too.
+  const hadRefRef = useRef(false);
+  const prevProvenanceRef = useRef<Provenance | null>(null);
+  useEffect(() => {
+    const present = refContent.trim().length > 0;
+    const prov = eff?.provenance ?? null;
+    if (present && (!hadRefRef.current || prov !== prevProvenanceRef.current)) {
+      emit({
+        type: "reference.acquired",
+        provenance: eff!.provenance,
+        medium,
+        byteLength: new TextEncoder().encode(eff!.content).length,
+        origin: eff!.origin || undefined,
+      });
+    } else if (!present && hadRefRef.current) {
+      emit({ type: "reference.cleared" });
+    }
+    hadRefRef.current = present;
+    prevProvenanceRef.current = present ? prov : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refContent, medium]);
+
+  // reference.mediumDetected: `medium` resolves to a concrete value.
+  const prevMediumRef = useRef<Medium | null>(null);
+  useEffect(() => {
+    if (medium !== null && medium !== prevMediumRef.current) {
+      emit({ type: "reference.mediumDetected", medium, isUrl });
+    }
+    prevMediumRef.current = medium;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [medium, isUrl]);
+
+  // secret.detected: `secret` flips true — report WHERE the secret shape was seen.
+  const prevSecretRef = useRef(false);
+  useEffect(() => {
+    if (secret && !prevSecretRef.current) {
+      const inValue = looksLikeSecret(value);
+      const inRef = looksLikeSecret(refContent);
+      const where = inValue && inRef ? "both" : inValue ? "value" : "reference";
+      emit({ type: "secret.detected", where });
+    }
+    prevSecretRef.current = secret;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secret, value, refContent]);
+
   // A detected-but-unfetched URL isn't "couldn't recognize" — it's recognized,
   // just not loaded yet: show a neutral "fetch it" chip instead of the warning.
   const chip: Chip = isUrl
@@ -332,19 +419,82 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     setFetchError(null);
     readFileAsReference(file).then(
       (content) => setRef({ content, provenance, origin: "" }),
-      () => setFetchError("read failed"),
+      () => {
+        emit({ type: "reference.readError", reason: "read failed" });
+        setFetchError("read failed");
+      },
     );
   };
 
   const onFetch = async () => {
     setFetchError(null);
+    // fetch.start is the one advisory-cancelable event: a host handler may call
+    // preventDefault() to block egress (fail-closed — blocking can only deny).
+    let blocked = false;
+    emit({
+      type: "fetch.start",
+      origin: refOrigin,
+      url: refContent,
+      preventDefault: () => { blocked = true; },
+      sensitivity: "network",
+    });
+    if (blocked) return;
+    const startedAt = Date.now();
     try {
       const res = await fetch(refContent);
       const text = await res.text();
+      emit({
+        type: "fetch.success",
+        origin: refOrigin,
+        status: (res as { status?: number }).status ?? 0,
+        byteLength: new TextEncoder().encode(text).length,
+        durationMs: Date.now() - startedAt,
+        sensitivity: "network",
+      });
       setRef({ content: text, provenance: "url", origin: refOrigin });
     } catch (e) {
-      setFetchError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      emit({ type: "fetch.error", origin: refOrigin, message, sensitivity: "network" });
+      setFetchError(message);
     }
+  };
+
+  // Display controls, wrapped to fire display.* events. resize/reshape drive
+  // BOTH figures (one state), so the event is emitted once with the new size/shape.
+  const onDispResize = (fontSizePt: number) => {
+    emit({ type: "display.resize", fontSizePt });
+    setDispFs(fontSizePt);
+  };
+  const onDispReshape = (nextAr: number) => {
+    // cols/rows are required on display.reshape — derive them from OUR value at the
+    // NEWLY chosen aspect ratio (describeChannels picks the grid). Fall back to the
+    // current model's grid if the value can't be measured.
+    let cols = ourModel?.cols ?? 0;
+    let rows = ourModel?.rows ?? 0;
+    try {
+      const m2 = describeChannels(value, { targetAr: nextAr, fontSizePt: dispFs, note });
+      cols = m2.cols;
+      rows = m2.rows;
+    } catch { /* keep the fallback grid */ }
+    emit({ type: "display.reshape", targetAr: nextAr, cols, rows });
+    setDispAr(nextAr);
+  };
+  const onSetTab = (t: "reference" | "voice") => {
+    emit({ type: "display.tab", tab: t });
+    setTab(t);
+  };
+  const onSetWalkMode = (mode: "spot-check" | "complete") => {
+    walkStepIndexRef.current = 0;
+    emit({ type: "walk.start", mode });
+    setWalkMode(mode);
+  };
+  // The walk reports the current WalkStep (or null when it clears/ends). We forward
+  // it as walk.step with the feature KIND (never glyph text — comparison-design
+  // §14.2) and a monotonic index; the walk here is single-user so walk.step is
+  // allowed (a live ceremony never emits *.step — events.ts module doc).
+  const onWalkStep = (step: WalkStep | null) => {
+    if (step) emit({ type: "walk.step", feature: step.kind, index: walkStepIndexRef.current++ });
+    setWalkStep(step);
   };
 
   // The reference file input, rendered once (hidden). The empty reference rect is
@@ -432,7 +582,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           : h(Entviz, {
               value, targetAr: dispAr, fontSizePt: dispFs, note,
               controls: true, reshapable: medium !== "raster",
-              onResize: setDispFs, onReshape: setDispAr,
+              onResize: onDispResize, onReshape: onDispReshape,
             }),
       ),
       // Reference — re-rendered at the same shared size/shape; no controls. The
@@ -517,8 +667,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             targetAr: dispAr, fontSizePt: dispFs, note, layout,
             mode: walkMode!, // launch straight into the chosen mode
             externalFigures: true, // reuse our static figures; just report the step
-            onStep: setWalkStep,
-            onComplete: () => setWalkStep(null),
+            onStep: onWalkStep,
+            // The core walk status "pending" (a Done at a sub-Good peek) maps to the
+            // event union's "pending-done"; the other three pass straight through.
+            onComplete: (status) => {
+              emit({ type: "walk.complete", status: status === "pending" ? "pending-done" : status });
+              setWalkStep(null);
+            },
             style: { marginTop: 4 },
           })
         : h(
@@ -526,8 +681,8 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
             small || medium === "raster"
               ? null
-              : h("button", { type: "button", onClick: () => setWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
-            h("button", { type: "button", onClick: () => setWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
+              : h("button", { type: "button", onClick: () => onSetWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
+            h("button", { type: "button", onClick: () => onSetWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
           )
       : null,
   );
@@ -539,6 +694,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const voiceTab = h(EntvizVoiceCompare, {
     value, targetAr: dispAr, fontSizePt: dispFs, note,
     mode: canPasteBind ? "paste-bind" : "voice-only", layout,
+    // voice.complete forwards the ceremony outcome. No voice.start / voice.step —
+    // the live check-order must never leave the endpoint (events.ts module doc).
+    onComplete: (status) => emit({ type: "voice.complete", status }),
   });
 
   const tabButton = (key: "reference" | "voice", label: string, icon: ReactNode): ReactNode =>
@@ -546,7 +704,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       "button",
       {
         type: "button", role: "tab", "aria-selected": tab === key,
-        onClick: () => setTab(key), style: tab === key ? tabActive : tabInactive,
+        onClick: () => onSetTab(key), style: tab === key ? tabActive : tabInactive,
       },
       icon,
       h("span", null, label),
