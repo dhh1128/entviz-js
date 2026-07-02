@@ -21,7 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, describeChannels, detectMedium, rasterCompare, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
+import { compareComparisonText, compareSvg, compareValues, describeChannels, detectMedium, rasterCompare, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
@@ -52,18 +52,39 @@ export interface EntvizCompareProps {
 
 export type CompareResult =
   | { kind: "pending" }
-  | { kind: "verdict"; verdict: Verdict }
+  // `refValue` is the value to RENDER as the reference figure, or null when we
+  // can't draw it (e.g. a comparison-text reference that didn't match).
+  | { kind: "verdict"; verdict: Verdict; refValue?: string | null }
   | { kind: "deferred"; medium: "raster" }
   | { kind: "ambiguous" };
 
 type Provenance = "pasted" | "file" | "url" | "dropped" | "provided";
 
+// Comparison text is space-separated cells (blanks as U+00B7); a plain value is a
+// lone token. Used only to decide whether to RENDER an unmatched reference — the
+// verdict itself comes from trying both engines.
+const looksLikeComparisonText = (s: string): boolean => /·/.test(s) || /\s/.test(s.trim());
+
 /** Pure: route an acquired reference to a machine result (no DOM, unit-tested). */
 export function classifyResult(value: string, refContent: string, opts: RenderOptions = {}): CompareResult {
   if (!refContent.trim()) return { kind: "pending" };
   const medium = detectMedium(refContent);
-  if (medium === "text") return { kind: "verdict", verdict: compareValues(value, refContent) };
-  if (medium === "svg") return { kind: "verdict", verdict: compareSvg(refContent, value, opts) };
+  if (medium === "text") {
+    // A pasted VALUE is definitive and renderable, so it wins. If it doesn't match,
+    // the text may be COMPARISON TEXT (the "Copy comparison text" output) of our
+    // value — compare that too. A comparison-text match can't reconstruct the
+    // reference, so we render OUR figure (it's the same value); a comparison-text
+    // MISMATCH can't be drawn at all.
+    const asValue = compareValues(value, refContent);
+    if (asValue.state === "identical") return { kind: "verdict", verdict: asValue, refValue: refContent };
+    const asCmp = compareComparisonText(refContent, value, opts);
+    if (asCmp.state !== "different") return { kind: "verdict", verdict: asCmp, refValue: value };
+    return { kind: "verdict", verdict: asValue, refValue: looksLikeComparisonText(refContent) ? null : refContent };
+  }
+  if (medium === "svg") {
+    const verdict = compareSvg(refContent, value, opts);
+    return { kind: "verdict", verdict, refValue: verdict.state === "identical" ? value : null };
+  }
   if (medium === "raster") return { kind: "deferred", medium };
   return { kind: "ambiguous" };
 }
@@ -260,15 +281,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     ? { symbol: "↻", label: m.urlReady, tone: "neutral" }
     : chipFor(result, m);
 
-  // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG
-  // is never embedded): for a text reference, the pasted value; for an SVG
-  // reference, our value when the machine confirmed `identical` (same value).
-  const refDisplayValue =
-    result.kind === "verdict" && medium === "text"
-      ? refContent
-      : result.kind === "verdict" && medium === "svg" && result.verdict.state === "identical"
-        ? value
-        : null;
+  // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG is
+  // never embedded). `refValue` (from classifyResult) is the value to draw: the
+  // pasted value for a value reference, OUR value on an SVG/comparison-text match,
+  // or null when it can't be drawn. Raster shows the image itself (handled below).
+  const refDisplayValue = result.kind === "verdict" ? (result.refValue ?? null) : null;
 
   // Describe the reference once too (for its focus ring during a walk).
   const refModel = useMemo(() => {
@@ -445,12 +462,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         )
       : null,
     // Guided-walk launch (M2): a value reference walks value-vs-value; a raster
-    // reference walks OUR figure against the pasted image by eye.
-    (medium === "text" || medium === "raster") && refContent.trim()
+    // reference walks OUR figure against the pasted image by eye. Only offered when
+    // there's a renderable reference (a value / a matched comparison text) or a raster.
+    ((medium === "text" && refDisplayValue) || medium === "raster") && refContent.trim()
       ? walking
         ? h(EntvizWalk, {
             value,
-            reference: medium === "raster" ? "" : refContent,
+            reference: medium === "raster" ? "" : (refDisplayValue ?? ""),
             targetAr: dispAr, fontSizePt: dispFs, note, layout,
             mode: walkMode!, // launch straight into the chosen mode
             externalFigures: true, // reuse our static figures; just report the step

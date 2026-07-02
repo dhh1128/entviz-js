@@ -44,7 +44,7 @@ export const defaultCompareMessages: CompareMessages = {
   heading: "Compare visualizations",
   yours: "Yours",
   reference: "Reference",
-  pastePrompt: "Paste a value, an entviz SVG, or a URL — or pick a file — to compare",
+  pastePrompt: "Paste a value, comparison text, an entviz SVG, or a URL — or pick a file — to compare",
   provenancePasted: "Reference: pasted",
   provenanceFile: "Reference: file",
   provenanceUrl: "Reference: {origin}",
