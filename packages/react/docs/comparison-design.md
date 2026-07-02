@@ -160,16 +160,69 @@ not a demonstrated bug). The engine MUST:
    (gestalt = SHA-512 of its own cells; glyphs = `<text>`);
 4. reject any inconsistency → route to the human walk, never IDENTICAL.
 
-### 6.3 Raster → disprove-only, fidelity-probed
-A raster **can never reach EQUAL** — color and text are unbound in an attacker-authored image,
-and we do not OCR. It may only **DIFFERENT** or **UNKNOWN**. A **fidelity self-probe** (sample
-the input-independent constants: bounding fill `#ffffff`, borders `#808080`, color-bar bands =
-exact palette entries) decides whether sampling is trustworthy enough to **disprove** on
-mismatch; if degraded/lossy/screen-shared, exclude the nucleus channel and bail to the human.
-**A passed probe credits zero comparison evidence** — it licenses disproof, not authentication;
-an UNKNOWN resets any subsequent human walk to **zero** credited bits (adjudicated S10). Surface
-"couldn't read the reference" distinctly from "DIFFERENT" to deny the false-DIFFERENT social
-lever (S18).
+### 6.3 Raster → structural predict-and-sample (disprove-only, geometry-anchored)
+
+> **This supersedes an earlier whole-image pixel-diff sketch** that rasterized our own SVG,
+> *stretched* it onto the reference's pixel box, and thresholded an aggregate pixel difference. That
+> was a defect: it compared a distorted image, silently absorbed aspect-ratio differences into the
+> stretch, and returned a reassuring "look very similar" for a coarse, near-meaningless signal. The
+> engine below instead **anchors on the entviz's real geometry and samples predicted feature colors.**
+
+**What it proves, and what it can't.** A raster **can never reach IDENTICAL** — we cannot OCR the cell
+text, and a nucleus color encodes only a token's few *quant* bits, so matching every sampled color
+still does not prove the values equal. It is **disprove-only**: it can reach **DIFFERENT** (a predicted
+color is wrong) or, at best, **"no visible difference found (text unread)"**, which is surfaced as
+`unknown`/`similar` and **credits zero authentication** (S10) — a raster reference still offers only the
+**Complete human walk**, whose text read is the real check. "Couldn't analyze" is surfaced **distinctly
+from DIFFERENT** to deny the false-DIFFERENT social lever (S18).
+
+**Why it is nonetheless useful.** The color bar, quartile cells, and blank map are all **SHA-derived**,
+so a genuinely different value **avalanches** them — the engine disproves a different value with high
+probability. It is *blind* only to a difference that changes cell **text** without changing any sampled
+(coarse) color — exactly the residual the human text walk covers. **Disprove-capable, never blessing.**
+
+**Ground truth (the real pixel structure — `entviz.ts` render).** White bounding fill (`:1553`); a thin
+**`#808080`** frame — four outer borders + a left divider (`:1713–1717`, `borderLine :1882`), **not
+black**; a full-height **left color-bar gutter** (grid sits to its right; geometry `:1281–1285`); a white
+**top label strip** (height `nucleusHeight`, type/prefix); grid background ∈ **{white, gold `#e7be00`,
+red `#ff3f2f`, blue `#2f3fbf`}** (black excluded); an **optional bottom strip** (note *or* suffix); nuclei
+= colored sub-rects with centered text; the **ellipse sits *behind* the nuclei** (never tints a nucleus,
+only its surround); quartile marks = triangles in cell **corners**; blank cells filled, black-stroked.
+
+The engine leans on `describeChannels(value, shape)`, which already yields the exact expected
+**geometry** (viewBox units) and expected **color** of every feature. Five stages:
+
+0. **Decode** — the React layer rasterizes the pasted image to RGBA; core (isomorphic) takes RGBA + the
+   render model. Core never rasterizes our own SVG.
+1. **Locate** — probe vertical scan-lines at x = 25% / 50% / 75% of the image width; find the first
+   validated axis-aligned **`#808080` rectangle** with **white directly below its top edge** (the label
+   strip). Three probes tolerate a screenshot with surrounding chrome. **No valid rectangle → `unknown`**
+   ("couldn't find an entviz to analyze — check by eye"). Best-effort; never guesses.
+2. **Normalize & gate size** — the left gutter + divider and the top strip fix the **grid's pixel
+   rectangle**; **detect and exclude a bottom note/suffix strip** so two values differing only by a note
+   compare equivalent; `scale = gridPixelWidth / model.gridW`. Below the **empirically-calibrated minimum
+   size** (where fractional-pixel blur corrupts color sampling — set by a calibration test, not guessed)
+   → `unknown`.
+3. **Shape gate (phase 1)** — the image's grid aspect must match ours within a high tolerance (~98–99%),
+   else `unknown` ("a different shape — can't compare"). *(Phase 2: search the value's achievable shapes
+   for an aspect match and re-render at it, reaching parity with the shape-independent SVG engine.)*
+4. **Verify structure** — the color-bar bands must be **exactly and only** the expected palette colors,
+   in the expected order and ~ratio (fingerprint-derived, so this is already value-discriminating); frame
+   and top strip present.
+5. **Sample the value channels** — map each `cellRects[i]` to pixels and sample the **nucleus at
+   horizontal-center near its upper/lower edge** (clear of the centered text and the corner quartile
+   marks); likewise sample **quartile-mark corners** and **blank-cell fills**; compare each to the model's
+   expected color. **Any mismatch beyond tolerance → `different`.** All match → "no visible difference
+   found (text unread)" (`unknown`/`similar`, zero credit).
+
+**Phasing & calibration.** Phase 1 (now): same-shape required. Phase 2 (later): shape-tolerant, for SVG
+parity. The tolerances were **calibrated against real browser rasters** (`apps/playground/calibrate.html`
+renders an entviz to a canvas at a size ladder and runs the engine): on anti-aliased pixels the binding
+floor is **frame detectability**, not nucleus size — the 1px `#808080` border blurs toward white as the
+image shrinks, so `locateFrame` returns null (→ `unknown`, fail-closed) below ≈140px wide for a small
+value; at and above that the engine is correct (same value → "no visible difference", different value →
+`different`). The min-nucleus gate is a secondary guard for a large value whose frame is found but whose
+individual nuclei fall below the sampling threshold.
 
 ---
 
@@ -610,3 +663,180 @@ The **committed seed + reveal**, the **channel-authentication affirmation** (wha
 treat the out-of-band channel as authenticated), and the **copy/paste-vs-voice routing** for the
 *remote* ceremony are M3. This section specifies the single-user walk and the shared mechanics
 (plan, focus, presets, state machine) the ceremony reuses.
+
+---
+
+## 15. M3 — the remote voice ceremony (pinned specification)
+
+This section pins the two-party remote ceremony for implementation. It is the outcome of a
+first-principles re-derivation (recorded 2026-07) that **scopes §8 down substantially** — it does
+**not** reverse any adjudicated decision, but it dissolves most of §8's machinery by correcting an
+assumption §8 left implicit. Read §15.9 for exactly how it relates to §8.
+
+### 15.1 Scope and threat posture (what changed from §8)
+
+- **One-way authentication only.** The ceremony answers a single question for **one** party — *"does
+  the value I hold match the value the person on the call actually has?"* Mutual confirmation is that
+  same ceremony run twice, once in each direction; there is no joint protocol. The party running our
+  tool is the **authenticator**; the other party is the **reader**.
+- **The reader may have no software.** We assume only that the reader *has an entviz in front of
+  them* — our render, a third-party render, a screenshot, or a printout. The **sole capability we can
+  assume of the reader is that they can read glyphs off that artifact aloud.** They cannot compute,
+  commit, generate entropy, or run a protocol. This is the assumption §8 left implicit, and it is
+  what forces everything below.
+- **What the ceremony proves is narrow and precise: *the party on the other end of this voice channel
+  is looking at the same value I am.*** It does **not** bind that value to a *human identity*, and it
+  does not require the reader to be someone the authenticator knows — or even to be a human. *Who* holds
+  the matching value is a separate question the authenticator answers with additional context
+  (recognizing a voice, a credential, a prior relationship); the protocol supplies the equality, not
+  the identity. (This corrects an earlier framing that gated the ceremony on "do you recognize them" —
+  an identity claim the protocol cannot make. See §15.10.)
+- **The voice channel carries the whole guarantee, so its integrity is the load-bearing assumption.**
+  Any digital channel between the parties (SMS, chat, email, a paste) is a **fat but unauthenticated
+  pipe** an attacker can modify. A man-in-the-middle is ruled out only to the extent the **voice
+  channel itself has integrity** — a MITM would have to control **both** the voice channel **and** the
+  channel that delivered the reference value. Confidentiality is not required.
+- **The live threat is a substitution/relay** (a value swapped in transit, or read-back injected on the
+  voice channel, so the check passes against a value that is not the reader's). A **dishonest reader
+  who lies about their own artifact** is *out of scope* — the endpoint-trust / reference-authenticity
+  limit (§2.5, §2.4); the ceremony is sound only *conditioned on* the reader honestly reading what they
+  see, and on the voice channel not being silently substituted.
+
+### 15.2 What the ceremony does NOT contain — and why
+
+Three pieces of §8 are **removed**, each for a concrete reason:
+
+- **No seed.** The seed's only security job was to defeat a **last-mover steering** a *jointly-seeded*
+  check-order. When only the authenticator selects checks, there is no joint seed and no last mover —
+  the threat §8 named does not arise. The residual "unpredictability" (so the reader can't pre-forge
+  the sampled cells) is supplied by the **authenticator freely choosing which cells to ask for, live**
+  — selection-unpredictability need not survive a hostile *local* tool (unlike a value's entropy), so
+  a human choice suffices.
+- **No commit-and-reveal.** Commitment binds *two* contributions to one seed; with no joint seed there
+  is nothing to commit. (It survives only for the hypothetical symmetric "walk-together" mode of
+  §15.9, which we are not building.)
+- **No synthetic SAS.** An earlier design carried a short Crockford *digest* read aloud. A digest is
+  SHA-derived — **not printed on the entviz** — so reading it requires the reader to *compute* it,
+  which a human with a picture cannot do. It is inapplicable to the baseline of §15.1 and is dropped
+  entirely. Its job is done instead by reading **rendered** features (§15.3).
+
+### 15.3 The primitive: authenticator-directed read-back of visible features
+
+> The authenticator points at a **rendered feature**; the reader reads it aloud; the authenticator
+> compares it to their own value. The machine covers the rest when a paste is available.
+
+Everything the reader ever does is read glyphs off the artifact in front of them — **never** a gestalt
+characterization ("which corners have triangles, what colors" is unusable over voice) and **never** a
+computed value. The authenticator selects features **live and unpredictably** (their free human
+choice is the anti-pre-forge mechanism). The paste never authenticates anything — it is an efficiency
+accelerator (§15.6); the authentication is **100% the voice channel**.
+
+### 15.4 When sampling is sound (the governing rule)
+
+Reading a *subset* (a row, a column, the fingerprint cells) is sound **only when a difference cannot
+hide in the cells not read.** That holds in exactly two situations, and nowhere else:
+
+1. **Constrained values** (keys, hashes, CESR, UUIDs, safety-numbers, `did:key` — the common,
+   security-critical case). Two distinct *usable* values differ in **~all** cells (forging a cell is
+   the 2²⁰–2²⁴ partial preimage of §2.3/§7.3), so any sample catches a substitution.
+2. **Hash-derived anchor cells** (the fingerprint-middle Crockford cells on >512-bit inputs). They are
+   SHA-512 of the whole value, so **any** difference avalanches into them — a sample of them catches
+   even a single-character near-collision.
+
+Sampling is **unsound** for **programmable / attacker-authored values** that lack a hash anchor
+(arbitrary text, a `did:web` domain, a URL): there an attacker can craft a one-cell near-collision
+(`example.com` vs `examp1e.com`) that a sampled row/column misses. Those must be **read in full** or
+routed to the paste path. The tool already distinguishes constrained from programmable by the
+**parser-derived type** (the same signal that credits programmable cells 0 in the meter, §7.3).
+
+### 15.5 Read-back strategy (size × type)
+
+| value | read-back |
+|---|---|
+| **small** (≤ ~6 cells, any type) | read **all cells** (also the only sound option — nothing to sample) |
+| **medium, constrained** | read a run of **4 consecutive cells** from a live/unpredictable start (reading order, may span rows — robust where a single row is too narrow), each named by its grid address ("row 1, column 2") |
+| **medium, programmable** | read **all cells** (or paste + machine) — no sound sample exists |
+| **big** (>512-bit, any type) | read the **fingerprint-middle Crockford cells** (hash-anchored, single-case, homoglyph-clean) |
+| **paste available** (any) | machine does the exhaustive compare; authenticator asks for **1–2 cells** to bind it to the live person (a fingerprint cell if the value is programmable) |
+
+Homoglyph handling follows §14.5: voice read-back **tolerates** confusables and compensates with
+**one extra credited base64url cell** when the plan contains base64url cells; the Crockford anchors
+and homoglyph-safe alphabets need no compensation.
+
+### 15.6 The two modes
+
+Both modes anchor authentication on the voice channel; they differ only in how much crosses it.
+
+- **Paste-accelerated** (the reader can transmit their value as *text* over any digital channel):
+  the authenticator pastes it into the existing acquisition field (§5), the machine does the exact,
+  homoglyph-free whole-value compare, and the authenticator then issues **1–2 live voice challenges**
+  to bind the pasted bytes to the reader's real artifact (hash-anchored feature if programmable).
+  Strictly better than reading everything aloud — but *not* "paste and done": without the voice
+  binding, a substituted paste (§15.1) passes the machine compare undetected.
+- **Voice-only** (the reader has only a picture, or only a voice call): the value itself must cross
+  voice, so the reader reads the features of §15.5 aloud and the authenticator checks each against
+  their own value.
+
+### 15.7 Roles, verdict, and evidence
+
+- **Local-only evidence** (§8): the verdict lives **only on the authenticator's endpoint**. Because
+  the ceremony is one-way, we surface **no peer verdict at all** — there is nothing to be tempted to
+  trust from the other screen.
+- **Verdict states reuse §14.6**: DIFFERENT (a confirmed mismatch, terminal, certain) · PENDING ·
+  **NO-DIFFERENCE** (coverage-driven, affirmative-but-probabilistic). The ceremony **caps at
+  NO-DIFFERENCE and never reaches IDENTICAL** — even in paste-accelerated mode, where the machine
+  reports IDENTICAL for the *pasted* value, the load-bearing claim ("that pasted value is the reader's
+  real value") rests on a human read-back, so the ceremony's affirmative is coverage, never `=`.
+- Verdict copy keeps the §3 discipline and always carries the §15.1 conditional — scoped to what the
+  protocol actually promises: *the other party is looking at the same value; this says nothing about
+  who they are, and holds only if your voice channel has integrity.*
+
+### 15.8 UI surface
+
+The remote ceremony is a **top-level situational choice** peer to "I have something to check against"
+(§4). It is presented as one of **two tabs** at the top of `<EntvizCompare>` — **"Compare
+visualizations"** (the machine/reference path + guided walk) and **"Compare by voice"** (this
+ceremony) — so the two situations read as equal siblings, both always reachable, sharing the one
+"Yours" value and its size/shape toolbar. (An earlier draft put voice as a labeled button below the
+acquisition field; tabs model the peer choice better and keep the voice path visible even with no
+reference.) The voice tab opens on the §15.10 expectation-setting gate, then runs the guided read-back
+(reusing the walk's focus-ring overlay on our own figure). `paste-bind` is selected automatically when
+a pasted reference already machine-matched as `identical`; otherwise `voice-only`.
+
+### 15.9 Relationship to §8 (scoping, not reversing)
+
+§8's "commit-and-reveal is the default" is **correct for a symmetric, jointly-seeded "walk-together"
+ceremony** — one shared check-order both parties follow in lockstep, where a last-mover genuinely can
+steer. This addendum observes that such a ceremony (a) is impossible when the reader has no software
+and (b) is the only topology that needs the heavy machinery — so it is **not the primitive.** The
+shipped ceremony is the **unilateral, authenticator-directed** one above, which removes the steering
+threat *by construction* (no joint seed) rather than by commitment. The symmetric walk-together mode
+with its §8 commitment default remains available as a future option, deferred; nothing here weakens
+it.
+
+### 15.10 Equality, not identity (the refined guarantee)
+
+A second refinement (recorded 2026-07) sharpens *what the ceremony claims*. It proves exactly one
+thing: **the party on the other end of the voice channel is looking at the same value as the
+authenticator.** It deliberately does **not**:
+
+- **bind that value to a human identity** — the reader need not be known to the authenticator, need not
+  appear on video, need not even be a human. *Who* holds the matching value is the authenticator's own
+  judgment from outside context (a recognized voice, a credential, a prior relationship); the protocol
+  supplies equality, and the human supplies identity.
+- **rule out a man-in-the-middle unconditionally** — a MITM is excluded only insofar as the **voice
+  channel has integrity**, because defeating the check requires controlling *both* the voice channel
+  *and* the channel that delivered the reference value.
+
+This retired the earlier **"do you recognize them — voice or face?" affirmation gate**, which
+overclaimed: it dressed an identity assertion the protocol can't make as a precondition, coaching false
+confidence. The gate is replaced by an **expectation-setter** that states the guarantee and its two
+limits plainly, then asks only to *proceed*:
+
+> *Comparing by voice checks one thing: whether the person on your call is looking at the same value as
+> you. It can't tell you who they are — that's for you to judge — and it can only rule out a
+> man-in-the-middle if your voice channel itself has integrity. Proceed?*
+
+Practically this also **widens applicability**: the ceremony is meaningful over a voice-only call, with
+a stranger, or with an automated reader, so long as the authenticator understands it is checking value
+equality — not vouching for the other party.

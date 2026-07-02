@@ -434,18 +434,15 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         },
         error
           ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
-          : h(Entviz, { value, targetAr, fontSizePt, note, style: { width: 240, display: "block" } }),
+          // A STANDARD <Entviz> with its STANDARD toolbar — the size ladder, the
+          // shape picker, and the copy/export kebab (whose ⋮ menu carries all the
+          // copy actions). No bespoke per-action buttons here: the expanded view is
+          // just an ordinary entviz, consistent with every other place one appears.
+          : h(Entviz, { value, targetAr, fontSizePt, note, controls: true }),
         // §9 accessible per-channel description (visually hidden; referenced by the dialog).
         channels
           ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m))
           : null,
-        h(
-          "span",
-          { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-          ACTIONS.slice(1).map(([kind, lbl, fn]) =>
-            h("button", { key: kind, type: "button", onClick: fn, style: copyBtnStyle, disabled: !svg }, lbl),
-          ),
-        ),
       )
     : null;
 
@@ -494,10 +491,6 @@ const popoverStyle: CSSProperties = {
   zIndex: 30, display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
   background: "var(--entviz-pill-popover-bg, #fff)", border: "var(--entviz-pill-popover-border, 1px solid #e6e6f0)",
   borderRadius: 12, padding: 14, boxShadow: "0 8px 30px rgba(0,0,0,.16)", font: "13px system-ui, sans-serif",
-};
-const copyBtnStyle: CSSProperties = {
-  background: "var(--entviz-pill-action-bg, #eef0ff)", color: "var(--entviz-pill-action-fg, #3b34b0)",
-  border: "none", borderRadius: 7, padding: "6px 10px", fontSize: 12, cursor: "pointer",
 };
 const toastStyle: CSSProperties = {
   position: "absolute", top: "100%", marginTop: 6, zIndex: 35,

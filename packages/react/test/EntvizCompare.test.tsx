@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
-import { render } from "@entviz/core";
+import { render, comparisonText, type Verdict } from "@entviz/core";
 import { EntvizCompare } from "../src/index.ts";
 import { classifyResult, looksLikeSecret, readFileAsReference } from "../src/EntvizCompare.ts";
 
 const HEX = "0123456789abcdef";
 const OTHER = "fedcba9876543210";
+const BIG = "0123456789abcdef".repeat(16); // >512 bits → truncated
 const SVG = render(HEX); // a faithful entviz SVG of HEX
 
 afterEach(() => {
@@ -25,17 +26,37 @@ const RWAIT = { timeout: 8000 };
 // --- pure helpers ---------------------------------------------------------
 
 describe("classifyResult", () => {
-  test("empty → pending; text → value verdict", () => {
+  test("empty → pending; text → value verdict (with the value to render)", () => {
     expect(classifyResult(HEX, "  ")).toEqual({ kind: "pending" });
-    expect(classifyResult(HEX, HEX)).toEqual({ kind: "verdict", verdict: { state: "identical" } });
-    expect(classifyResult(HEX, OTHER)).toEqual({ kind: "verdict", verdict: { state: "different" } });
+    expect(classifyResult(HEX, HEX)).toEqual({ kind: "verdict", verdict: { state: "identical" }, refValue: HEX });
+    expect(classifyResult(HEX, OTHER)).toEqual({ kind: "verdict", verdict: { state: "different" }, refValue: OTHER });
   });
   test("a faithful entviz SVG → identical; a different one → different; garbage → unknown", () => {
-    expect(classifyResult(HEX, SVG)).toEqual({ kind: "verdict", verdict: { state: "identical" } });
-    expect(classifyResult(OTHER, SVG)).toEqual({ kind: "verdict", verdict: { state: "different" } });
+    expect(classifyResult(HEX, SVG)).toEqual({ kind: "verdict", verdict: { state: "identical" }, refValue: HEX });
+    expect(classifyResult(OTHER, SVG)).toEqual({ kind: "verdict", verdict: { state: "different" }, refValue: null });
     const r = classifyResult(HEX, "<svg></svg>");
     expect(r.kind).toBe("verdict");
     expect((r as { verdict: { state: string } }).verdict.state).toBe("unknown");
+  });
+  test("comparison text: matching our value → identical + render OUR figure", () => {
+    const ct = comparisonText(HEX);
+    expect(ct).toMatch(/\s/); // it's space-separated cells, not a lone token
+    expect(classifyResult(HEX, ct)).toEqual({ kind: "verdict", verdict: { state: "identical" }, refValue: HEX });
+  });
+  test("comparison text: a different value → different + no reference figure to draw", () => {
+    expect(classifyResult(HEX, comparisonText(OTHER))).toEqual({
+      kind: "verdict", verdict: { state: "different" }, refValue: null,
+    });
+  });
+  test("comparison text: a >512-bit match is unknown (strong, not proof) + renders ours", () => {
+    const r = classifyResult(BIG, comparisonText(BIG)) as { kind: string; verdict: Verdict; refValue: string | null };
+    expect(r.kind).toBe("verdict");
+    expect(r.verdict.state).toBe("unknown");
+    expect(r.refValue).toBe(BIG);
+  });
+  test("a multi-word value that matches wins over comparison-text routing", () => {
+    const phrase = "correct horse battery staple";
+    expect(classifyResult(phrase, phrase)).toEqual({ kind: "verdict", verdict: { state: "identical" }, refValue: phrase });
   });
   test("a raster data URL is deferred; ambiguous fails closed", () => {
     expect(classifyResult(HEX, "data:image/png;base64,iVBOR")).toEqual({ kind: "deferred", medium: "raster" });
@@ -69,25 +90,41 @@ describe("EntvizCompare", () => {
     expect(screen.getByText("Compare visualizations")).toBeTruthy();
     expect(screen.getAllByRole("img").length).toBe(1);
     expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy(); // paste box
-    expect(status()).toContain("Paste");
+    // no verdict chip while merely pending — that pill just restated the placeholder (#3)
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  test("pasting comparison text of our value matches and renders both figures", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: comparisonText(HEX) } });
+    expect(status()).toContain("Identical");
+    // the reference is drawn from OUR value (comparison text can't be reconstructed)
+    expect(screen.getAllByRole("img").length).toBe(2);
+  });
+
+  test("pasting comparison text of a DIFFERENT value → different, no reference figure", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: comparisonText(OTHER) } });
+    expect(status()).toContain("Different");
+    expect(screen.getAllByRole("img").length).toBe(1); // only ours; the reference can't be drawn
   });
 
   test("reference: a placeholder holds the slot until a value is given; inputs sit below the figure", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    const placeholder = screen.getByText(/reference will appear here/i);
+    const placeholder = screen.getByText(/drop an entviz svg or image here/i);
     const textarea = screen.getByRole("textbox", { name: /paste/i });
     // figure-sized placeholder comes BEFORE the inputs (horizontal line-of-sight)
     expect(placeholder.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // once a value arrives, the placeholder gives way to the re-rendered figure
     fireEvent.change(textarea, { target: { value: HEX } });
-    expect(screen.queryByText(/reference will appear here/i)).toBeNull();
+    expect(screen.queryByText(/drop an entviz svg or image here/i)).toBeNull();
     expect(screen.getAllByRole("img").length).toBe(2);
   });
 
   test("the empty placeholder is figure-sized and tracks the live shape", () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
-    const ph = () => screen.getByText(/reference will appear here/i) as HTMLElement;
+    const ph = () => screen.getByText(/drop an entviz svg or image here/i) as HTMLElement;
     expect(ph().style.width).toMatch(/px$/); // explicit footprint, not a bare aspect-ratio
     const before = ph().style.width;
     fireEvent.click(container.querySelector('button[aria-label="shape"]') as HTMLButtonElement); // open the shape dropdown
@@ -100,7 +137,7 @@ describe("EntvizCompare", () => {
 
   test("placeholder falls back to a default size if our value can't be measured", () => {
     rtlRender(<EntvizCompare value={HEX} note="toolongnote" />); // describeChannels throws
-    const ph = screen.getByText(/reference will appear here/i) as HTMLElement;
+    const ph = screen.getByText(/drop an entviz svg or image here/i) as HTMLElement;
     expect(ph.style.width).toBe("180px"); // graceful fallback footprint
   });
 
@@ -167,9 +204,9 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("≠");
   });
 
-  test("the verdict is labeled as the machine's check (but not while pending)", () => {
+  test("the verdict is labeled as the machine's check (and there's no chip while pending)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
-    expect(status()).not.toContain("Machine check"); // pending is an instruction, not a result
+    expect(screen.queryByRole("status")).toBeNull(); // pending shows no chip at all (#3)
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
     expect(status()).toContain("Machine check");
     expect(status()).toContain("Identical");
@@ -218,10 +255,11 @@ describe("EntvizCompare", () => {
     fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
     await waitFor(() => expect(status()).toContain("Identical"), RWAIT);
     expect(screen.getByText("Reference: file")).toBeTruthy();
-    // a raster file runs the raster engine → never identical (mocked clean rasters
-    // are look-alikes, so: unknown — an image cannot prove equality)
+    // a raster file runs the geometry-anchored engine → never identical (the mock
+    // raster isn't a faithful entviz, so it resolves to an unknown/different, not `=`)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
-    await waitFor(() => expect(status()).toMatch(/look very similar/i), RWAIT);
+    await waitFor(() => expect(status()).toMatch(/couldn't|different|too small|no visible/i), RWAIT);
+    expect(status()).not.toContain("Identical");
     // an empty file list is a no-op
     fireEvent.change(file, { target: { files: [] } });
   });
@@ -233,7 +271,7 @@ describe("EntvizCompare", () => {
     // retry BOTH conditions together — the async decode resolves the verdict and
     // the onVerdict callback on the same render, but over separate microtask ticks.
     await waitFor(() => {
-      expect(status()).toMatch(/look very similar/i);
+      expect(status()).toMatch(/couldn't|different|too small|no visible/i);
       expect(onVerdict).toHaveBeenCalled();
     }, RWAIT);
     expect(onVerdict.mock.calls.every((c) => c[0].state !== "identical")).toBe(true);
@@ -405,5 +443,45 @@ describe("EntvizCompare", () => {
     rerender(<EntvizCompare value={HEX} locale="ar" messages={{ heading: "مقارنة" }} />);
     expect(container.firstElementChild?.getAttribute("dir")).toBe("rtl");
     expect(screen.getByText("مقارنة")).toBeTruthy();
+  });
+});
+
+describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
+  const voiceTab = () => screen.queryByRole("tab", { name: /compare by voice/i });
+  const refTab = () => screen.getByRole("tab", { name: /compare visualizations/i });
+
+  test("presents the two situational choices as tabs; the voice tab launches the ceremony", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    expect(voiceTab()).toBeTruthy();
+    fireEvent.click(voiceTab()!);
+    // the affirmation gate takes over the surface
+    expect(screen.getByText(/same value as you/i)).toBeTruthy();
+    // the reference tab switches back to the comparator
+    fireEvent.click(refTab());
+    expect(screen.getByRole("textbox", { name: /paste/i })).toBeTruthy();
+  });
+
+  test("with no reference it runs voice-only (read the cells)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.click(voiceTab()!);
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
+    expect(screen.getByText(/read each highlighted cell/i)).toBeTruthy();
+  });
+
+  test("after an identical machine match it runs paste-bind (bind a couple of cells)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    expect(status()).toMatch(/identical/i);
+    fireEvent.click(voiceTab()!);
+    fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
+    expect(screen.getByText(/pasted value already matched by machine/i)).toBeTruthy();
+  });
+
+  test("a host-provided reference renders directly, with no tabs", () => {
+    rtlRender(<EntvizCompare value={HEX} reference={{ kind: "text", data: HEX }} />);
+    expect(voiceTab()).toBeNull();
+    // a plain heading instead of a tablist
+    expect(screen.getByText("Compare visualizations")).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
   });
 });

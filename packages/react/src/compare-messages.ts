@@ -17,7 +17,7 @@ export interface CompareMessages {
   pickFile: string;
   imagePasted: string; // the marker shown in the input when a raster image is the reference
   imageAlt: string; // alt text for the pasted/dropped reference image
-  dropHint: string;
+  dropHint: string; // shown in the empty reference slot — it doubles as a drop target
   urlPlaceholder: string;
   fetchButton: string;
   fetchHint: string; // "Will fetch from {origin}"
@@ -36,15 +36,15 @@ export interface CompareMessages {
   unknownRasterSimilar: string; // the raster look-alike verdict (pixels matched, text unchecked)
   secretWarning: string;
   recognitionNote: string;
-  referencePlaceholder: string; // the empty reference slot, before a value is given
   machineCheck: string; // label prefixing the verdict — it's the machine's determination
+  voiceLaunch: string; // the "Compare by voice" tab label
 }
 
 export const defaultCompareMessages: CompareMessages = {
   heading: "Compare visualizations",
   yours: "Yours",
   reference: "Reference",
-  pastePrompt: "Paste a value, an entviz SVG, or a URL — or pick a file — to compare",
+  pastePrompt: "Paste a value, comparison text, an entviz SVG, or a URL — or pick a file — to compare",
   provenancePasted: "Reference: pasted",
   provenanceFile: "Reference: file",
   provenanceUrl: "Reference: {origin}",
@@ -53,7 +53,7 @@ export const defaultCompareMessages: CompareMessages = {
   pickFile: "Choose a file…",
   imagePasted: "[image]",
   imageAlt: "Pasted reference image",
-  dropHint: "…or drop an entviz SVG / file here",
+  dropHint: "Drop an entviz SVG or image here",
   urlPlaceholder: "https://… (URL of an entviz SVG)",
   fetchButton: "Fetch",
   fetchHint: "Will fetch from {origin}",
@@ -64,7 +64,7 @@ export const defaultCompareMessages: CompareMessages = {
   unknownAmbiguous: "Couldn’t recognize that — paste a reference value or entviz SVG",
   unknownRaster: "Comparing the image…",
   unknownReason: "Couldn’t confirm a match — {reason}",
-  unknownRasterSimilar: "Images look very similar. Couldn’t prove a difference, but also couldn’t check text.",
+  unknownRasterSimilar: "No visible difference in the colors we can sample — but an image can’t be read for text, so this isn’t a proven match. Walk the cells to check.",
   walkSpotCheck: "Spot-check",
   walkSpotCheckHint: "Sample features in a surprising order; stop when you're satisfied",
   walkComplete: "Check (complete)",
@@ -74,6 +74,6 @@ export const defaultCompareMessages: CompareMessages = {
     "This looks like secret key material. Comparison does not keep it confidential — only compare values you’re willing to expose here.",
   recognitionNote:
     "A match means the two values are equal; it does not vouch for the reference being the one you should trust.",
-  referencePlaceholder: "The reference will appear here",
   machineCheck: "Machine check",
+  voiceLaunch: "Compare by voice",
 };

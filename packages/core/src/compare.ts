@@ -263,78 +263,14 @@ export function compareSvg(referenceSvg: string, value: string, opts: RenderOpti
 }
 
 // ---------------------------------------------------------------------------
-// Raster engine (§6.3): a raster (screenshot/photo/exported PNG) can NEVER reach
-// `identical` — colour and text are unbound in an attacker-authored image and we
-// do not OCR. It is disprove-only: a clear pixel difference between the reference
-// image and our own render of the value is `different`; a degraded/misaligned
-// image, or a look-alike match (which authenticates nothing), is `unknown`. A
-// passed fidelity probe licenses disproof, not authentication. Takes already-
-// decoded RGBA so core stays isomorphic (the canvas decode is the caller's job).
+// Raster: the decoded-image type. The raster COMPARISON engine (§6.3) lives in
+// raster-compare.ts (geometry-anchored predict-and-sample); this interface is the
+// RGBA hand-off the React layer produces via a canvas. (The earlier crude
+// whole-image pixel-diff `rasterDisprove` was removed — see §6.3.)
 // ---------------------------------------------------------------------------
 
 export interface Raster {
   rgba: Uint8ClampedArray;
   w: number;
   h: number;
-}
-
-const nearColor = (r: number, g: number, b: number, t: number, tol: number): boolean =>
-  Math.abs(r - t) <= tol && Math.abs(g - t) <= tol && Math.abs(b - t) <= tol;
-
-// A clean entviz raster's outer ring is the #808080 border over a #ffffff ground
-// (or white export margin). If the edge ring isn't predominantly that frame
-// colour, the image is a photo / crop / screenshot we can't trust to disprove on.
-export function rasterFidelityProbe(rgba: Uint8ClampedArray, w: number, h: number): boolean {
-  if (w < 2 || h < 2) return false;
-  const isFrame = (x: number, y: number): boolean => {
-    const i = (y * w + x) * 4;
-    const [r, g, b] = [rgba[i], rgba[i + 1], rgba[i + 2]];
-    return nearColor(r, g, b, 0x80, 40) || nearColor(r, g, b, 0xff, 24);
-  };
-  const step = Math.max(1, Math.floor(Math.min(w, h) / 16));
-  let frame = 0;
-  let total = 0;
-  for (let x = 0; x < w; x += step) {
-    for (const y of [0, h - 1]) { total++; if (isFrame(x, y)) frame++; }
-  }
-  for (let y = 0; y < h; y += step) {
-    for (const x of [0, w - 1]) { total++; if (isFrame(x, y)) frame++; }
-  }
-  return frame / total >= 0.6;
-}
-
-// Fraction of pixels differing beyond a per-channel tolerance (absorbs
-// anti-aliasing / mild compression without masking a real visual difference).
-function pixelDiffFraction(a: Uint8ClampedArray, b: Uint8ClampedArray, n: number): number {
-  let diff = 0;
-  for (let i = 0; i < n; i++) {
-    const o = i * 4;
-    if (
-      Math.abs(a[o] - b[o]) > 40 ||
-      Math.abs(a[o + 1] - b[o + 1]) > 40 ||
-      Math.abs(a[o + 2] - b[o + 2]) > 40
-    ) {
-      diff++;
-    }
-  }
-  return diff / n;
-}
-
-/**
- * Raster engine: compare a decoded reference image against OUR own render of the
- * value (the caller rasterizes `render(value)` at the reference's pixel size).
- * `different` on a clear pixel difference; `unknown` on a size mismatch, a
- * degraded/misaligned image, or a look-alike — NEVER `identical`.
- */
-export function rasterDisprove(reference: Raster, ours: Raster): Verdict {
-  if (reference.w !== ours.w || reference.h !== ours.h) {
-    return { state: "unknown", reason: "the reference image is a different size — cannot align it for comparison" };
-  }
-  if (!rasterFidelityProbe(reference.rgba, reference.w, reference.h)) {
-    return { state: "unknown", reason: "the reference image is degraded or not a clean entviz raster" };
-  }
-  const frac = pixelDiffFraction(reference.rgba, ours.rgba, reference.w * reference.h);
-  return frac > 0.02
-    ? { state: "different" }
-    : { state: "unknown", similar: true, reason: "the images look alike, but an image cannot prove two values are equal" };
 }

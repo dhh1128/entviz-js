@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { render, type RenderOptions } from "../../src/entviz.ts";
+import { render, BAND_LETTER, type RenderOptions } from "../../src/entviz.ts";
 import { comparisonText, describeChannels } from "../../src/describe.ts";
 
 // The describe helpers re-derive the render model from the same stage functions
@@ -21,6 +21,9 @@ function svgCells(svg: string) {
     const quartile = tag.match(/data-cell-quartile="(\d+)"/);
     const surround = tag.match(/data-surround-bits="0x([0-9a-f]+)"/);
     const textM = body.match(/<text[^>]*dominant-baseline="central"[^>]*>([^<]*)<\/text>/);
+    // The nucleus is the first <rect> in the cell group (a filled cell's fill is
+    // its nucleus color; for a blank cell the first rect is the blank pill).
+    const nucleusM = body.match(/<rect\b[^>]*\bfill="(#[0-9a-fA-F]{6})"/);
     return {
       index,
       blank,
@@ -28,6 +31,7 @@ function svgCells(svg: string) {
       quartileRank: quartile ? Number(quartile[1]) : null,
       surroundBits: surround ? parseInt(surround[1], 16) : 0,
       text: textM ? textM[1] : null,
+      nucleusFill: nucleusM ? nucleusM[1].toLowerCase() : null,
     };
   });
 }
@@ -54,14 +58,29 @@ for (const [name, value, opts] of CASES) {
     assert.equal(d.rows, Number(attr(svg, "data-rows")));
     assert.equal(d.cells.length, cells.length);
 
-    // per-cell text / blank / fingerprint flags / surround bits
+    // per-cell text / blank / fingerprint flags / surround bits / nucleus color
     for (const sc of cells) {
       const dc = d.cells[sc.index];
       assert.equal(dc.blank, sc.blank, `cell ${sc.index} blank`);
       assert.equal(dc.fingerprint, sc.fingerprint, `cell ${sc.index} fingerprint`);
       assert.equal(dc.text, sc.text, `cell ${sc.index} text`);
       assert.equal(dc.surroundBits, sc.surroundBits, `cell ${sc.index} surround bits`);
+      if (sc.blank) assert.equal(dc.nucleusColor, null, `cell ${sc.index} blank nucleus`);
+      else assert.equal(dc.nucleusColor, sc.nucleusFill, `cell ${sc.index} nucleus color`);
     }
+
+    // grid background color = the grid channel's bg rect fill
+    const gridChannel = svg.split('data-channel="grid"')[1] ?? "";
+    const bgFill = gridChannel.match(/<rect\b[^>]*\bfill="(#[0-9a-fA-F]{6})"/)?.[1].toLowerCase();
+    assert.equal(d.bgColor.toLowerCase(), bgFill, "grid bg color");
+
+    // color-bar bands: color↔letter matches the rendered glyphs; counts are positive
+    assert.deepEqual(
+      d.colorBarBands.map((b) => BAND_LETTER[b.color].toLowerCase()),
+      d.colorBarLetters,
+      "band colors map to the rendered letters",
+    );
+    for (const b of d.colorBarBands) assert.ok(b.count > 0, `band ${b.color} count > 0`);
 
     // comparisonText = filled text in order, blanks as ·
     const expectedCmp = cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");

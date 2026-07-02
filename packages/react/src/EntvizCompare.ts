@@ -21,9 +21,10 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { compareSvg, compareValues, describeChannels, detectMedium, rasterDisprove, render, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
+import { compareComparisonText, compareSvg, compareValues, describeChannels, detectMedium, rasterCompare, type Raster, type RenderOptions, type Verdict, type WalkStep } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
+import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 
@@ -51,18 +52,39 @@ export interface EntvizCompareProps {
 
 export type CompareResult =
   | { kind: "pending" }
-  | { kind: "verdict"; verdict: Verdict }
+  // `refValue` is the value to RENDER as the reference figure, or null when we
+  // can't draw it (e.g. a comparison-text reference that didn't match).
+  | { kind: "verdict"; verdict: Verdict; refValue?: string | null }
   | { kind: "deferred"; medium: "raster" }
   | { kind: "ambiguous" };
 
 type Provenance = "pasted" | "file" | "url" | "dropped" | "provided";
 
+// Comparison text is space-separated cells (blanks as U+00B7); a plain value is a
+// lone token. Used only to decide whether to RENDER an unmatched reference — the
+// verdict itself comes from trying both engines.
+const looksLikeComparisonText = (s: string): boolean => /·/.test(s) || /\s/.test(s.trim());
+
 /** Pure: route an acquired reference to a machine result (no DOM, unit-tested). */
 export function classifyResult(value: string, refContent: string, opts: RenderOptions = {}): CompareResult {
   if (!refContent.trim()) return { kind: "pending" };
   const medium = detectMedium(refContent);
-  if (medium === "text") return { kind: "verdict", verdict: compareValues(value, refContent) };
-  if (medium === "svg") return { kind: "verdict", verdict: compareSvg(refContent, value, opts) };
+  if (medium === "text") {
+    // A pasted VALUE is definitive and renderable, so it wins. If it doesn't match,
+    // the text may be COMPARISON TEXT (the "Copy comparison text" output) of our
+    // value — compare that too. A comparison-text match can't reconstruct the
+    // reference, so we render OUR figure (it's the same value); a comparison-text
+    // MISMATCH can't be drawn at all.
+    const asValue = compareValues(value, refContent);
+    if (asValue.state === "identical") return { kind: "verdict", verdict: asValue, refValue: refContent };
+    const asCmp = compareComparisonText(refContent, value, opts);
+    if (asCmp.state !== "different") return { kind: "verdict", verdict: asCmp, refValue: value };
+    return { kind: "verdict", verdict: asValue, refValue: looksLikeComparisonText(refContent) ? null : refContent };
+  }
+  if (medium === "svg") {
+    const verdict = compareSvg(refContent, value, opts);
+    return { kind: "verdict", verdict, refValue: verdict.state === "identical" ? value : null };
+  }
   if (medium === "raster") return { kind: "deferred", medium };
   return { kind: "ambiguous" };
 }
@@ -109,19 +131,17 @@ function imageToRaster(img: HTMLImageElement, w: number, h: number): Raster {
   return { rgba: ctx.getImageData(0, 0, w, h).data, w, h };
 }
 
-const svgDataUrl = (svg: string): string => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-
 /**
- * Raster path: decode the reference image, render OUR value at the same pixel
- * size, and disprove-or-bail. Never `identical` (comparison-design.md §6.3).
+ * Raster path: decode the reference image to RGBA and hand it to the core
+ * geometry-anchored engine (comparison-design.md §6.3), which locates the entviz
+ * in the image and samples predicted feature colors. Never `identical`. We do NOT
+ * rasterize our own SVG — the engine reads the image against the render model.
  */
 export async function compareRaster(refSrc: string, value: string, opts: RenderOptions = {}): Promise<Verdict> {
   const refImg = await loadImage(refSrc);
   const w = refImg.naturalWidth || 1;
   const h = refImg.naturalHeight || 1;
-  const reference = imageToRaster(refImg, w, h);
-  const ours = imageToRaster(await loadImage(svgDataUrl(render(value, opts))), w, h);
-  return rasterDisprove(reference, ours);
+  return rasterCompare(imageToRaster(refImg, w, h), value, opts);
 }
 
 const originOf = (url: string): string => {
@@ -188,6 +208,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // null = not walking (show the two entry buttons); otherwise the chosen mode.
   const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
   const walking = walkMode !== null;
+  // The two situational choices (§15.8) are tabs: the reference/machine comparison
+  // and the live voice ceremony.
+  const [tab, setTab] = useState<"reference" | "voice">("reference");
   // The feature the guided walk is currently checking — the walk reports it (it
   // runs with externalFigures), and we ring it on OUR static figures (#reuse).
   const [walkStep, setWalkStep] = useState<WalkStep | null>(null);
@@ -258,15 +281,11 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     ? { symbol: "↻", label: m.urlReady, tone: "neutral" }
     : chipFor(result, m);
 
-  // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG
-  // is never embedded): for a text reference, the pasted value; for an SVG
-  // reference, our value when the machine confirmed `identical` (same value).
-  const refDisplayValue =
-    result.kind === "verdict" && medium === "text"
-      ? refContent
-      : result.kind === "verdict" && medium === "svg" && result.verdict.state === "identical"
-        ? value
-        : null;
+  // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG is
+  // never embedded). `refValue` (from classifyResult) is the value to draw: the
+  // pasted value for a value reference, OUR value on an SVG/comparison-text match,
+  // or null when it can't be drawn. Raster shows the image itself (handled below).
+  const refDisplayValue = result.kind === "verdict" ? (result.refValue ?? null) : null;
 
   // Describe the reference once too (for its focus ring during a walk).
   const refModel = useMemo(() => {
@@ -364,8 +383,129 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         ),
         isUrl ? h("span", { style: hint }, fmt(m.fetchHint, { origin: refOrigin })) : null,
         fetchError ? h("span", { role: "alert", style: { ...hint, color: TONE.bad } }, fmt(m.fetchError, { error: fetchError })) : null,
-        h("span", { style: hint }, m.dropHint),
       );
+
+  // The reference/machine comparison tab: the two figures, the acquisition field,
+  // the machine verdict chip, and the guided-walk launch.
+  const referenceTab = h(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: 10 } },
+    h(
+      "div",
+      { style: panelsStyle, "data-entviz-layout": layout },
+      // Yours — carries the shared size/reshape controls (drives both panels).
+      // During a walk the controls are suppressed and the bare figure goes in a
+      // figureBox so the focus ring overlays cleanly. NOTE: figureBox zeroes the
+      // font/line box (to kill the inline-svg gap), so it must wrap ONLY the bare
+      // figure — never the controls (their button text would vanish).
+      h(
+        "div",
+        { style: panelStyle },
+        h("span", { style: panelLabel }, m.yours),
+        walking
+          ? h(
+              "div",
+              { style: figureBox },
+              h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
+              walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
+            )
+          : h(Entviz, {
+              value, targetAr: dispAr, fontSizePt: dispFs, note,
+              controls: true, reshapable: medium !== "raster",
+              onResize: setDispFs, onReshape: setDispAr,
+            }),
+      ),
+      // Reference — re-rendered at the same shared size/shape; no controls. The
+      // figure (or a drop-target slot of the same footprint) sits directly under
+      // the label, horizontally level with "Yours" for line-of-sight comparison.
+      h(
+        "div",
+        { style: panelStyle },
+        h("span", { style: panelLabel }, m.reference),
+        medium === "raster"
+          ? h(
+              "div",
+              { style: figureBox },
+              h("img", { src: refContent, alt: m.imageAlt, style: { ...placeholderSize, ...rasterRefStyle } }),
+              walking && walkStep ? ringOverlay(ourModel, walkStep, "reference") : null,
+            )
+          : refDisplayValue === null
+          // empty slot, sized to OUR figure's footprint — doubles as the drop target
+          // (the "Reference" label above already says what it is, so the copy is just
+          // the drop hint; #3).
+          ? h("div", { style: { ...placeholderBox, ...placeholderSize } }, m.dropHint)
+          : walking
+            ? h(
+                "div",
+                { style: figureBox },
+                h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
+                walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
+              )
+            : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureCell }),
+        eff && refContent.trim()
+          ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
+          : null,
+      ),
+    ),
+    // The acquisition field spans the WHOLE comparator, below both figures (#5).
+    acquisition,
+    // The machine verdict chip — omitted while merely pending (that pill just
+    // restated the input's own placeholder; #3). Shown for a URL-ready hint and
+    // every real verdict.
+    isUrl || result.kind !== "pending"
+      ? h(
+          "span",
+          { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
+          !isUrl ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
+          h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
+          h("span", null, chip.label),
+        )
+      : null,
+    // Guided-walk launch (M2): a value reference walks value-vs-value; a raster
+    // reference walks OUR figure against the pasted image by eye. Only offered when
+    // there's a renderable reference (a value / a matched comparison text) or a raster.
+    ((medium === "text" && refDisplayValue) || medium === "raster") && refContent.trim()
+      ? walking
+        ? h(EntvizWalk, {
+            value,
+            reference: medium === "raster" ? "" : (refDisplayValue ?? ""),
+            targetAr: dispAr, fontSizePt: dispFs, note, layout,
+            mode: walkMode!, // launch straight into the chosen mode
+            externalFigures: true, // reuse our static figures; just report the step
+            onStep: setWalkStep,
+            onComplete: () => setWalkStep(null),
+            style: { marginTop: 4 },
+          })
+        : h(
+            "div",
+            { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+            small || medium === "raster"
+              ? null
+              : h("button", { type: "button", onClick: () => setWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
+            h("button", { type: "button", onClick: () => setWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
+          )
+      : null,
+  );
+
+  // The voice tab: the live ceremony. paste-bind when a text reference already
+  // machine-matched as identical (they transmitted their value and it matched);
+  // otherwise voice-only (they read their own copy aloud).
+  const canPasteBind = medium === "text" && result.kind === "verdict" && result.verdict.state === "identical";
+  const voiceTab = h(EntvizVoiceCompare, {
+    value, targetAr: dispAr, fontSizePt: dispFs, note,
+    mode: canPasteBind ? "paste-bind" : "voice-only", layout,
+  });
+
+  const tabButton = (key: "reference" | "voice", label: string, icon: ReactNode): ReactNode =>
+    h(
+      "button",
+      {
+        type: "button", role: "tab", "aria-selected": tab === key,
+        onClick: () => setTab(key), style: tab === key ? tabActive : tabInactive,
+      },
+      icon,
+      h("span", null, label),
+    );
 
   return h(
     "div",
@@ -386,123 +526,54 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           },
       style: { display: "inline-flex", flexDirection: "column", gap: 10, font: "inherit", ...style },
     },
-    h("strong", { style: { fontSize: "0.95em" } }, m.heading),
+    // Two situational choices as tabs (§15.8). A host-provided reference isn't
+    // interactive, so it renders the comparison directly under a plain heading.
+    provided
+      ? h("strong", { style: { fontSize: "0.95em" } }, m.heading)
+      : h(
+          "div",
+          { role: "tablist", style: tabBarStyle },
+          tabButton("reference", m.heading, null),
+          tabButton("voice", m.voiceLaunch, personSpeakingIcon()),
+        ),
     secret ? h("span", { role: "alert", style: warnBanner }, m.secretWarning) : null,
-    h(
-      "div",
-      { style: panelsStyle, "data-entviz-layout": layout },
-      // Yours — carries the shared size/reshape controls (drives both panels).
-      // During a walk the controls are suppressed and the bare figure goes in a
-      // figureBox so the focus ring overlays cleanly. NOTE: figureBox zeroes the
-      // font/line box (to kill the inline-svg gap), so it must wrap ONLY the bare
-      // figure — never the controls (their button text would vanish).
-      h(
-        "div",
-        { style: panelStyle },
-        h("span", { style: panelLabel }, m.yours),
-        walking
-          ? h(
-              "div",
-              { style: figureBox },
-              // intrinsic size (NOT panelEntviz's fixed width) so figureBox hugs
-              // the figure and the overlay maps 1:1 — otherwise the ring scales off
-              h(Entviz, { value, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
-              walkStep ? ringOverlay(ourModel, walkStep, "yours") : null,
-            )
-          // No fixed width — the controls wrapper hugs the figure at its intrinsic
-          // (font-driven) size, so resizing grows the panel and the row reflows (#2).
-          : h(Entviz, {
-              value, targetAr: dispAr, fontSizePt: dispFs, note,
-              controls: true, reshapable: medium !== "raster",
-              onResize: setDispFs, onReshape: setDispAr,
-            }),
-      ),
-      // Reference — re-rendered at the same shared size/shape; no controls. The
-      // figure (or a placeholder of the same footprint) sits DIRECTLY under the
-      // label, horizontally level with "Yours" for line-of-sight comparison.
-      h(
-        "div",
-        { style: panelStyle },
-        h("span", { style: panelLabel }, m.reference),
-        medium === "raster"
-          // A pasted/dropped/picked raster reference: show the image itself,
-          // sized (object-fit: contain) into OUR figure's footprint so the two
-          // panels stay the same size side-by-side. During a walk, ring the same
-          // feature on it using OUR geometry (the image shares our layout).
-          ? h(
-              "div",
-              { style: figureBox },
-              h("img", { src: refContent, alt: m.imageAlt, style: { ...placeholderSize, ...rasterRefStyle } }),
-              walking && walkStep ? ringOverlay(ourModel, walkStep, "reference") : null,
-            )
-          : refDisplayValue === null
-          // empty slot, sized to OUR figure's footprint (NOT in figureBox — its
-          // placeholder text must stay visible)
-          ? h("div", { style: { ...placeholderBox, ...placeholderSize }, "aria-hidden": true }, m.referencePlaceholder)
-          : walking
-            ? h(
-                "div",
-                { style: figureBox },
-                h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureFill }),
-                walkStep ? ringOverlay(refModel, walkStep, "reference") : null,
-              )
-            : h(Entviz, { value: refDisplayValue, targetAr: dispAr, fontSizePt: dispFs, note, style: figureCell }),
-        eff && refContent.trim()
-          ? h("span", { style: provenance }, provenanceLabel(eff.provenance, eff.origin, m))
-          : null,
-      ),
-    ),
-    // The acquisition field spans the WHOLE comparator, below both figures (#5).
-    acquisition,
-    h(
-      "span",
-      { role: "status", "aria-live": "polite", style: { ...chipStyle, color: TONE[chip.tone], borderColor: TONE[chip.tone] } },
-      // Label the verdict as the MACHINE's determination (distinct from the human
-      // walk's "no difference found"). Omitted while still pending (an instruction,
-      // not a result).
-      !isUrl && result.kind !== "pending" ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
-      h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
-      h("span", null, chip.label),
-    ),
-    h("span", { style: caption }, m.recognitionNote),
-    // Manual verification: available for a value reference (M2b walks value-vs-value).
-    // Two entry buttons up front (terse labels; hover explains) — Spot-check and
-    // Check (complete); a small value offers only Complete. Each launches the walk
-    // directly in that mode (no intermediate picker).
-    // A value reference walks value-vs-value; a raster reference walks OUR figure
-    // against the pasted image by eye (the walk plan is built from our value; with
-    // externalFigures it renders no figures of its own, so it needs no ref value).
-    (medium === "text" || medium === "raster") && refContent.trim()
-      ? walking
-        ? h(EntvizWalk, {
-            value,
-            reference: medium === "raster" ? "" : refContent,
-            targetAr: dispAr,
-            fontSizePt: dispFs,
-            note,
-            layout,
-            mode: walkMode!, // launch straight into the chosen mode
-            externalFigures: true, // reuse our static figures; just report the step
-            onStep: setWalkStep,
-            onComplete: () => setWalkStep(null),
-            style: { marginTop: 4 },
-          })
-        : h(
-            "div",
-            { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-            // A raster reference offers ONLY Complete: the machine already pixel-
-            // compared the gestalt (for zero authentication credit, §6.3/S10), so
-            // the human's job is the exhaustive text read — a spot-check would just
-            // re-check gestalt the machine covered. (Same suppression as a small value.)
-            small || medium === "raster"
-              ? null
-              : h("button", { type: "button", onClick: () => setWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
-            h("button", { type: "button", onClick: () => setWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
-          )
-      : null,
+    !provided && tab === "voice" ? voiceTab : referenceTab,
   );
 }
 
+// A person with speech waves (a person *speaking*, not a bare speaker — §15.8),
+// inline-SVG in currentColor so there's no icon-library dependency.
+function personSpeakingIcon(): ReactNode {
+  return h(
+    "svg",
+    {
+      "aria-hidden": true, width: "1.1em", height: "1.1em", viewBox: "0 0 24 24",
+      fill: "none", stroke: "currentColor", strokeWidth: 2,
+      strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block" },
+    },
+    h("circle", { cx: 8.5, cy: 7, r: 3 }),
+    h("path", { d: "M3 20v-1a5 5 0 0 1 5-5h1a5 5 0 0 1 3.5 1.5" }),
+    h("path", { d: "M16.5 8a4 4 0 0 1 0 6" }),
+    h("path", { d: "M19 5.5a7 7 0 0 1 0 11" }),
+  );
+}
+
+// The two situational-choice tabs (§15.8): a bottom-bordered tab strip; the active
+// tab is underlined in the action color, the inactive one muted.
+const tabBarStyle: CSSProperties = {
+  display: "flex", gap: 4, borderBottom: "1px solid var(--entviz-compare-placeholder, #d0d7de)",
+};
+const tabBase: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: "0.9em",
+  padding: "7px 12px", cursor: "pointer", background: "none", border: "none",
+  borderBottom: "2px solid transparent", marginBottom: -1,
+};
+const tabActive: CSSProperties = {
+  ...tabBase, fontWeight: 600,
+  color: "var(--entviz-compare-action, #3b34b0)",
+  borderBottomColor: "var(--entviz-compare-action, #3b34b0)",
+};
+const tabInactive: CSSProperties = { ...tabBase, color: "var(--entviz-compare-neutral, #57606a)" };
 const walkLaunchStyle: CSSProperties = {
   alignSelf: "flex-start", font: "inherit", fontSize: "0.85em", padding: "5px 11px",
   borderRadius: 8, cursor: "pointer",
@@ -562,6 +633,5 @@ const warnBanner: CSSProperties = {
 };
 const provenance: CSSProperties = { fontSize: "0.75em", opacity: 0.6 };
 const hint: CSSProperties = { fontSize: "0.72em", opacity: 0.6 };
-const caption: CSSProperties = { fontSize: "0.75em", opacity: 0.6, maxWidth: 380 };
 
 export default EntvizCompare;
