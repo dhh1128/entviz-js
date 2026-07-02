@@ -149,23 +149,23 @@ export function App() {
           </pre>
 
           <label style={{ ...labelStyle, marginTop: 16 }}>
-            Collapsed form (&lt;EntvizPill/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— click to expand · hover for the copy menu</span>
+            Disclosure lifecycle (&lt;EntvizPill/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— Cite · Visualize · Compare. Click to expand; the popover offers “Compare against a reference…”, which opens the comparison in place.</span>
           </label>
           <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe", fontSize: 15, lineHeight: 2.1 }}>
             Run:{" "}
             <code style={{ fontFamily: mono, fontSize: 13 }}>
               gh secret save{" "}
-              <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onError={(m) => console.warn("pill:", m)} />
+              <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} onError={(m) => console.warn("pill:", m)} />
             </code>
             <br />
             Inherits the running font &amp; color:{" "}
-            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />
+            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} />
             {" "}— and again without its badge:{" "}
-            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} showIcon={false} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} />
+            <EntvizPill value={value} label={pillLabel || undefined} showType={showType} showIcon={false} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onCompare={() => console.log("pill: entered compare")} />
           </div>
 
           <label style={{ ...labelStyle, marginTop: 16 }}>
-            Compare (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— check a reference against yours by machine, a guided walk, or a live voice ceremony (M1–M3)</span>
+            Compare directly (&lt;EntvizCompare/&gt;) <span style={{ fontWeight: 400, color: "#888" }}>— the same surface the pill opens, also usable standalone: machine, guided walk, or live voice ceremony (M1–M3)</span>
           </label>
           <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "18px 20px", background: "#fafafe" }}>
             <EntvizCompare value={value} targetAr={targetAr} fontSizePt={fontSizePt} note={note || null} locale={locale || undefined} onVerdict={(v) => console.log("verdict:", v)} />
