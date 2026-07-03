@@ -435,9 +435,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const textBlock = shownParts.length
     ? h(
         "span",
-        // The pill body now provides symmetric vertical padding + line box, so the
-      // text block itself needs none (descenders stay inside the padded box).
-      { style: { display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap" } },
+        // No own overflow-clip: the generous line box (pill lineHeight) already keeps
+      // descenders inside the pill, and the pill body's overflow:hidden handles the
+      // width cap. Clipping here would shear descenders (g, y, p). The tiny upward
+      // translate optically centers the ink: most UI fonts reserve more space above the
+      // cap than below the descender, so line-box centering alone sits the text low.
+      { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", transform: "translateY(-0.06em)" } },
         showType && type
           ? h(
               "span",
@@ -493,10 +496,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       "aria-controls": menuOpen ? menuId : undefined,
       "aria-label": m.actions,
       style: {
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        // stretch to the full pill height + center the glyph, so ⋮ is vertically
+        // centered like the text (not baseline-squished to the bottom). The small
+        // upward translate matches the text's optical-centering nudge so they align.
+        display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "stretch",
         font: "inherit", color: "inherit", background: "none", border: "none",
         padding: "0 0.05em 0 0.15em", margin: 0, cursor: "pointer", lineHeight: 1,
-        opacity: menuOpen ? 0.85 : undefined,
+        transform: "translateY(-0.06em)", opacity: menuOpen ? 0.85 : undefined,
       },
     },
     "⋮",
@@ -508,11 +514,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       style: {
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "currentColor",
-        // Symmetric vertical padding + a modest line box centers the text optically
-        // (equal space above ascenders and below descenders). With a badge, the
-        // inline-start padding is dropped so the badge fills the pill's leading cap;
-        // the trailing padding is tight so the kebab sits near the right border.
-        paddingBlock: "0.18em",
+        // ZERO vertical padding so the badge swatch and the kebab fill the pill's full
+        // height (the leading cap + trailing edge, no margin around them). The optical
+        // centering AND the descender room come from a generous line box (lineHeight,
+        // below): equal space above ascenders / below descenders, and descenders aren't
+        // clipped. Inline-start padding is dropped for the badge cap; trailing is tight.
+        paddingBlock: 0,
         paddingInlineStart: showIcon ? 0 : "0.4em",
         paddingInlineEnd: "0.15em",
         borderRadius: cssVar("radius", "0.3em"),
@@ -521,7 +528,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         overflow: "hidden",
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
-        whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.1,
+        whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.35,
       },
     },
     pillButton,
