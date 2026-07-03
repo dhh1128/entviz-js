@@ -331,6 +331,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // Recognition → verification is a deliberate act: entering compare reveals a
   // reference-requiring surface (never a verdict), and reports to the host.
   const enterCompare = () => { setComparing(true); onCompare?.(); };
+  // …and stepping back out of compare returns to the visualization WITHOUT closing
+  // the popover (the rail's Visualize step is the way back). disclosure.change fires
+  // off the derived state, so no explicit emit here.
+  const exitCompare = () => { setComparing(false); };
 
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
@@ -395,11 +399,19 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         h("span", { key: "dot", style: railDotStyle(active) }),
         lbl,
       ];
-      // The Compare step IS the entry into verification (when the host opts in via
-      // onCompare and we're not already comparing): a real button whose title carries
-      // the fuller action. The other steps are plain, non-interactive labels.
-      return k === "compare" && compareAvailable && !comparing
-        ? h("button", { key: k, type: "button", onClick: enterCompare, title: m.compareAction, "aria-label": m.compareAction, style: { ...s, ...railStepBtnStyle } }, inner)
+      // The rail doubles as navigation within the popover: Compare enters
+      // verification (when the host opts in via onCompare), and — once comparing —
+      // Visualize steps back out of it without closing the popover. Whichever of the
+      // two you're NOT on is a link; the current step and Cite are plain labels.
+      // Compare's terse visible label gets the fuller action as its accessible name;
+      // Visualize keeps its own visible text as the name (so it doesn't collide with
+      // the pill's "View visualization" affordance) and carries the hint as a tooltip.
+      const nav =
+        k === "compare" && compareAvailable && !comparing ? { onClick: enterCompare, title: m.compareAction, ariaLabel: m.compareAction }
+        : k === "visualize" && comparing ? { onClick: exitCompare, title: m.view, ariaLabel: undefined }
+        : null;
+      return nav
+        ? h("button", { key: k, type: "button", onClick: nav.onClick, title: nav.title, "aria-label": nav.ariaLabel, style: { ...s, ...railStepBtnStyle } }, inner)
         : h("span", { key: k, style: s }, inner);
     }),
   );
@@ -643,11 +655,18 @@ const railSepStyle: CSSProperties = { width: 12, height: 1, background: "current
 function railDotStyle(active: boolean): CSSProperties {
   return { width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: active ? 1 : 0.3 };
 }
-// The clickable "Compare" rail step: a bare button in the rail's accent color.
+// The clickable rail steps (Compare / Visualize navigation): bare buttons styled
+// as links. The default is the CSS system color `LinkText` — the host's actual
+// hyperlink color for the current color-scheme, so it stays legible in dark mode
+// instead of a hard-coded blue. A host can still override with the var.
 const railStepBtnStyle: CSSProperties = {
   font: "inherit", letterSpacing: "inherit", textTransform: "inherit",
   background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer",
-  color: "var(--entviz-pill-compare-fg, #3b34b0)",
+  // Full opacity: it's an actionable link, so it must NOT inherit the 0.5 dimming
+  // the inactive (non-interactive) steps use — that dimming is half of why it read
+  // as "barely visible" on a dark theme.
+  opacity: 1,
+  color: "var(--entviz-pill-compare-fg, LinkText)",
 };
 // The popover's explicit close (✕), pinned to the top-trailing corner (RTL-aware).
 const popCloseStyle: CSSProperties = {
