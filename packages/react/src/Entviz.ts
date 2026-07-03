@@ -349,7 +349,12 @@ function gridThumb(cols: number, rows: number): React.ReactElement {
   return React.createElement("svg", { width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`, "aria-hidden": true, style: { display: "block" } }, cells);
 }
 
-const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "flex-start" };
+// Center the figure over its toolbar: the size + reshape + actions strip is
+// usually wider than a small glyph, so flex-start would leave the glyph hugging
+// the left with dead space to its right. Centering keeps the glyph balanced above
+// its own controls (only the controls-on "visualize" view reaches here; the bare
+// figure returns earlier).
+const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "center" };
 // Single-row toolbar below the figure: size group + reshape group, never wrapped.
 const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
 const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
