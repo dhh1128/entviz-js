@@ -354,12 +354,17 @@ const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "c
 const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
 const ctlBtn: React.CSSProperties = {
   font: "inherit", fontSize: "0.95em", lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
-  border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)",
+  // Theme-ADAPTIVE defaults (derived from currentColor) so the toolbar is readable on a
+  // dark host too, not just light. A host still overrides with --entviz-ctl / -bg.
+  border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
+  background: "var(--entviz-ctl-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
 const ctlValue: React.CSSProperties = { font: "inherit", fontSize: "0.9em", opacity: 0.8, minWidth: 34, textAlign: "center" };
 const thumbBtn: React.CSSProperties = {
   display: "inline-flex", padding: 3, borderRadius: 6, cursor: "pointer",
-  border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
+  border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
+  background: "var(--entviz-ctl-bg, color-mix(in srgb, currentColor 8%, transparent))",
+  color: "color-mix(in srgb, currentColor 55%, transparent)",
 };
 const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
 // The dropdown caret: to the trailing side of the thumbnail, vertically centered

@@ -38,7 +38,9 @@ function evzVars(p: Palette): Record<string, string> {
   const b1 = `1px solid ${p.border}`;
   return {
     // <Entviz> toolbar (size ladder, shape picker, copy/export kebab)
-    "--entviz-ctl": p.border, "--entviz-ctl-bg": p.panel, "--entviz-ctl-active": p.accent,
+    // Only the ACCENT is themed; the toolbar button surface/border use the
+    // component's own currentColor-adaptive defaults so they stay readable on dark.
+    "--entviz-ctl-active": p.accent,
     "--entviz-menu-bg": p.panel, "--entviz-menu-fg": p.fg, "--entviz-menu-border": b1,
     "--entviz-toast-bg": p.fg, "--entviz-toast-fg": p.bg,
     // <EntvizPill> chrome

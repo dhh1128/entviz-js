@@ -598,7 +598,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         .entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
         .entviz-pill--hover .entviz-pill__kebab,
         .entviz-pill__kebab:focus-visible { opacity: 0.7; }
-        @keyframes entviz-pill-grow { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+        @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
         .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 0); }
         @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
       `),
