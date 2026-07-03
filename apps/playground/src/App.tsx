@@ -59,12 +59,15 @@ function evzVars(p: Palette): Record<string, string> {
 }
 
 export function App() {
-  const [draft, setDraft] = useState(PRESETS[0].value);
-  const [value, setValue] = useState(PRESETS[0].value);
+  // Default to the largest entropy (a fingerprint-rendering value) so the visualize
+  // view shows a full glyph out of the box.
+  const BIG = PRESETS[PRESETS.length - 1];
+  const [draft, setDraft] = useState(BIG.value);
+  const [value, setValue] = useState(BIG.value);
   const [fontSizePt, setFontSizePt] = useState(12);
   const [note, setNote] = useState("");
   const [locale, setLocale] = useState(""); // "" = auto-detect from the browser
-  const [pillLabel, setPillLabel] = useState("");
+  const [pillLabel, setPillLabel] = useState("pubkey");
   const [showType, setShowType] = useState(true);
   const [themeIdx, setThemeIdx] = useState(0);
 
@@ -189,21 +192,23 @@ export function App() {
             ))}
           </div>
 
-          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
+          {/* The card represents a HOST APPLICATION — so it holds only app content
+              (prose with the pill in situ), never instructions the real app wouldn't
+              show. Extra vertical margin sets it apart as "their surface". */}
+          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", margin: "1.5em 0", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
             <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
               ▦ your application
             </div>
             <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
-              Before you rotate it, save your signing key {pill()} to your secret store — then confirm the
-              one you restore later is the very same key.
+              When a peer shares their public key {pill()}, pin it the first time you see it — then, before you
+              trust what they send next, confirm it’s the very same key.
             </p>
             {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
                 lives in this paragraph, and element opacity would dim its whole
                 subtree — including the position:fixed menu, which then reads as
                 semi-transparent over the page. */}
             <p style={{ fontSize: 13, color: "color-mix(in srgb, currentColor 65%, transparent)", marginTop: 22 }}>
-              Click the pill → <b>Visualize</b> the full render → <b>“Compare against a reference…”</b>. Everything
-              below inherits this theme. Also shown without its badge: {pill({ showIcon: false })}.
+              The same key, shown without its badge: {pill({ showIcon: false })}.
             </p>
           </div>
 
@@ -214,9 +219,10 @@ export function App() {
           ) : null}
 
           <p style={{ fontSize: 12.5, color: "#666", lineHeight: 1.6, marginTop: 18 }}>
-            The lifecycle is <b>Cite · Visualize · Compare</b>: the pill cites the value inline; expanding visualizes the
-            spec-locked glyph with its size/shape/copy controls; and “Compare” opens the full comparison surface
-            (paste / drop / click-the-rect to upload / URL, machine verdict, guided walk, and voice ceremony) in place.
+            Click the pill to walk the <b>Cite · Visualize · Compare</b> lifecycle: it cites the value inline;
+            expanding <b>visualizes</b> the spec-locked glyph with its size / shape / copy controls; and
+            <b> “Compare against another value…”</b> opens the full comparison surface (paste / drop /
+            click-the-rect to upload / URL, machine verdict, guided walk, and voice ceremony) in place.
           </p>
         </section>
       </div>
