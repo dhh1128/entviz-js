@@ -195,15 +195,20 @@ describe("EntvizPill expand + dismiss", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  test("Escape and outside-click dismiss the popover", () => {
+  test("Escape and the ✕ dismiss the popover; an outside click does NOT", () => {
     render(<EntvizPill value={HEX} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
     fireEvent.click(pill);
     expect(screen.getByRole("dialog")).toBeTruthy();
+    // an incidental outside click (e.g. clicking back into the window) must NOT close it
+    fireEvent.mouseDown(document.body);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // Escape closes
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    // reopen; the explicit ✕ closes
     fireEvent.click(pill);
-    fireEvent.mouseDown(document.body);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /close/i }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -396,14 +401,12 @@ describe("EntvizPill edges", () => {
 describe("EntvizPill disclosure lifecycle", () => {
   const expand = () => fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
 
-  test("expanded (no onCompare): rail shows Cite·Visualize, teaching header, no compare affordance", () => {
+  test("expanded (no onCompare): rail shows Cite·Visualize, no compare affordance", () => {
     render(<EntvizPill value={HEX} />);
     expand();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Cite")).toBeTruthy();
     expect(within(dialog).getByText("Visualize")).toBeTruthy();
-    // teaching header (Seam 1)
-    expect(within(dialog).getByText(/read the cells to check a value/i)).toBeTruthy();
     // recognition-only: no compare step, no compare button, no acquisition field
     expect(within(dialog).queryByText("Compare")).toBeNull();
     expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();

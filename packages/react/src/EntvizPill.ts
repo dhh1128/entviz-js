@@ -299,11 +299,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       if (e.key === "Escape") { setOpen(false); setMenuOpen(false); setComparing(false); pillRef.current?.focus(); }
     };
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setMenuOpen(false);
-        setComparing(false);
-      }
+      // Outside-click closes only the transient kebab MENU — never the expanded
+      // popover. Dismissing the popover on any outside click (e.g. clicking back into
+      // the window after switching apps) is disorienting; it closes via ✕, Escape, or
+      // the pill itself instead.
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
@@ -384,22 +384,22 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     : [["cite", m.stepCite], ["visualize", m.stepVisualize]];
   const rail = h(
     "div",
-    { key: "rail", "aria-hidden": true, style: railStyle },
-    railSteps.map(([k, lbl], i) =>
-      h(
-        "span",
-        { key: k, style: { display: "inline-flex", alignItems: "center", gap: 6, opacity: k === activeStep ? 1 : 0.5, fontWeight: k === activeStep ? 600 : 500 } },
+    { key: "rail", style: railStyle },
+    railSteps.map(([k, lbl], i) => {
+      const active = k === activeStep;
+      const s: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, opacity: active ? 1 : 0.5, fontWeight: active ? 600 : 500 };
+      const inner = [
         i > 0 ? h("span", { key: "sep", style: railSepStyle }) : null,
-        h("span", { key: "dot", style: railDotStyle(k === activeStep) }),
+        h("span", { key: "dot", style: railDotStyle(active) }),
         lbl,
-      ),
-    ),
-  );
-  const teach = h("p", { key: "teach", style: teachStyle }, m.teachVisualize);
-  const compareBtn = h(
-    "button",
-    { key: "cmpbtn", type: "button", onClick: enterCompare, style: compareBtnStyle },
-    m.compareAction,
+      ];
+      // The Compare step IS the entry into verification (when the host opts in via
+      // onCompare and we're not already comparing): a real button whose title carries
+      // the fuller action. The other steps are plain, non-interactive labels.
+      return k === "compare" && compareAvailable && !comparing
+        ? h("button", { key: k, type: "button", onClick: enterCompare, title: m.compareAction, "aria-label": m.compareAction, style: { ...s, ...railStepBtnStyle } }, inner)
+        : h("span", { key: k, style: s }, inner);
+    }),
   );
 
   // --- badge ---
@@ -435,9 +435,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const textBlock = shownParts.length
     ? h(
         "span",
-        // paddingBlock keeps descenders (g, y, p) inside the overflow:hidden clip
-      // box — a tight lineHeight:1 box would otherwise shear them off.
-      { style: { display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap", paddingBlock: "0.16em" } },
+        // The pill body now provides symmetric vertical padding + line box, so the
+      // text block itself needs none (descenders stay inside the padded box).
+      { style: { display: "inline-flex", gap: "0.4em", overflow: "hidden", whiteSpace: "nowrap" } },
         showType && type
           ? h(
               "span",
@@ -493,8 +493,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       "aria-controls": menuOpen ? menuId : undefined,
       "aria-label": m.actions,
       style: {
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
         font: "inherit", color: "inherit", background: "none", border: "none",
-        padding: "0 0.15em", margin: 0, cursor: "pointer", lineHeight: 1,
+        padding: "0 0.05em 0 0.15em", margin: 0, cursor: "pointer", lineHeight: 1,
         opacity: menuOpen ? 0.85 : undefined,
       },
     },
@@ -507,19 +508,20 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       style: {
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "currentColor",
-        // Zero vertical padding + a tight line box so the pill hugs its content and
-        // doesn't inflate the line it sits in. With a badge, the inline-start
-        // padding is dropped so the badge fills the pill's leading cap (clipped to
-        // the corner via its own leading radius, above).
-        paddingBlock: 0,
+        // Symmetric vertical padding + a modest line box centers the text optically
+        // (equal space above ascenders and below descenders). With a badge, the
+        // inline-start padding is dropped so the badge fills the pill's leading cap;
+        // the trailing padding is tight so the kebab sits near the right border.
+        paddingBlock: "0.18em",
         paddingInlineStart: showIcon ? 0 : "0.4em",
-        paddingInlineEnd: "0.4em",
+        paddingInlineEnd: "0.15em",
         borderRadius: cssVar("radius", "0.3em"),
-        // Clip the badge swatch's leading corners to the pill radius.
+        // Clip the badge swatch's leading corners to the pill radius, and cap the
+        // overall width so a long label clips instead of blowing out the line.
         overflow: "hidden",
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
-        whiteSpace: "nowrap", maxWidth, lineHeight: 1,
+        whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.1,
       },
     },
     pillButton,
@@ -546,7 +548,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
     : comparing
       ? [rail, h(EntvizCompare, { key: "cmp", value, targetAr, fontSizePt, note, locale, layout: "auto" })]
-      : [rail, teach, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true }), compareAvailable ? compareBtn : null];
+      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true })];
 
   const popover = isOpen
     ? h(
@@ -559,6 +561,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
           className: "entviz-pill__pop",
           style: { ...popoverStyle, ...popFloat.style },
         },
+        // Explicit close, top-trailing corner — not everyone knows outside-click/Escape.
+        h("button", { key: "close", type: "button", onClick: collapse, "aria-label": m.close ?? "Close", title: m.close ?? "Close", style: popCloseStyle }, "✕"),
         popoverBody,
         // §9 accessible per-channel description (visually hidden; referenced by the dialog).
         channels
@@ -629,10 +633,18 @@ const railSepStyle: CSSProperties = { width: 12, height: 1, background: "current
 function railDotStyle(active: boolean): CSSProperties {
   return { width: 6, height: 6, borderRadius: "50%", background: "currentColor", opacity: active ? 1 : 0.3 };
 }
-const teachStyle: CSSProperties = { margin: 0, fontSize: 13, lineHeight: 1.4, opacity: 0.72, maxWidth: 340 };
-const compareBtnStyle: CSSProperties = {
-  alignSelf: "start", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
-  color: "var(--entviz-pill-compare-fg, #3b34b0)", background: "none", border: "none", padding: "4px 0",
+// The clickable "Compare" rail step: a bare button in the rail's accent color.
+const railStepBtnStyle: CSSProperties = {
+  font: "inherit", letterSpacing: "inherit", textTransform: "inherit",
+  background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer",
+  color: "var(--entviz-pill-compare-fg, #3b34b0)",
+};
+// The popover's explicit close (✕), pinned to the top-trailing corner (RTL-aware).
+const popCloseStyle: CSSProperties = {
+  position: "absolute", top: 6, insetInlineEnd: 6, zIndex: 1,
+  width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center",
+  font: "inherit", fontSize: 14, lineHeight: 1, color: "currentColor", opacity: 0.55,
+  background: "none", border: "none", borderRadius: 6, cursor: "pointer",
 };
 const toastStyle: CSSProperties = {
   position: "absolute", top: "100%", marginTop: 6, zIndex: 35,

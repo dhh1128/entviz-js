@@ -8,6 +8,7 @@ const PRESETS: { label: string; value: string }[] = [
   { label: "UUID", value: "550e8400-e29b-41d4-a716-446655440000" },
   { label: "ETH (EIP-55)", value: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" },
   { label: "text → base64url", value: "The quick brown fox jumps over the lazy dog" },
+  { label: "large text (>512 B → fingerprint)", value: "The quick brown fox jumps over the lazy dog. ".repeat(13).trim() },
 ];
 
 function randomHex(bytes: number): string {
@@ -103,7 +104,7 @@ export function App() {
         <h1 style={{ fontSize: 28, margin: "0 0 4px", letterSpacing: -0.5 }}>
           entviz <span style={{ color: "#6c63ff" }}>playground</span>
         </h1>
-        <p style={{ margin: 0, color: "#555", fontSize: 14, maxWidth: "70ch" }}>
+        <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
           An entviz enters the page as a compact <code style={{ fontFamily: mono }}>&lt;EntvizPill/&gt;</code>. Click it
           to <b>Visualize</b> the full render, then <b>Compare</b> it against a reference — all in one place. Tweak the
           inputs on the left; switch the host theme on the right to watch the components adapt.
@@ -203,7 +204,7 @@ export function App() {
             </div>
           ) : null}
 
-          <p style={{ fontSize: 12.5, color: "#666", lineHeight: 1.6, marginTop: 18, maxWidth: "60ch" }}>
+          <p style={{ fontSize: 12.5, color: "#666", lineHeight: 1.6, marginTop: 18 }}>
             The lifecycle is <b>Cite · Visualize · Compare</b>: the pill cites the value inline; expanding visualizes the
             spec-locked glyph with its size/shape/copy controls; and “Compare” opens the full comparison surface
             (paste / drop / click-the-rect to upload / URL, machine verdict, guided walk, and voice ceremony) in place.
