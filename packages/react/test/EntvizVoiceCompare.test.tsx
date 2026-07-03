@@ -74,7 +74,7 @@ describe("EntvizVoiceCompare: verdicts", () => {
   test("names the exact cell by grid address so the reader can be pointed at it", () => {
     render(<EntvizVoiceCompare value={HEX512} rng={rngFrom(4)} />);
     affirm();
-    expect(screen.getByText(/have them read row \d+, column \d+/i)).toBeTruthy();
+    expect(screen.getByText(/have the other party read row \d+, column \d+/i)).toBeTruthy();
     // there is no early "Done" affordance in the voice ceremony
     expect(screen.queryByRole("button", { name: /done/i })).toBeNull();
   });
