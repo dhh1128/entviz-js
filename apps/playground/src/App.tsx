@@ -110,7 +110,7 @@ export function App() {
     <div style={{ fontFamily: sans, color: "#1a1a2e", maxWidth: 980, margin: "0 auto", padding: "32px 20px 64px" }}>
       <header style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 28, margin: "0 0 4px", letterSpacing: -0.5 }}>
-          entviz <span style={{ color: "#6c63ff" }}>playground</span>
+          entviz <span style={{ color: ACCENT }}>playground</span>
         </h1>
         <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
           An entviz enters the page as a compact <code style={{ fontFamily: mono }}>&lt;EntvizPill/&gt;</code>. Click it
@@ -132,7 +132,7 @@ export function App() {
             style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid #ccc", resize: "vertical" }}
           />
           <div style={{ display: "flex", gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
-            <button onClick={build} style={primaryBtn}>Build ⌘↵</button>
+            <button onClick={build} style={primaryBtn} title="⌘↵ / Ctrl+Enter">Build</button>
             <button onClick={surprise} style={ghostBtn}>Randomize</button>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
@@ -148,7 +148,7 @@ export function App() {
           </label>
           <input type="range" min={6} max={30} step={2} value={fontSizePt}
             onChange={(e) => setFontSizePt(Number(e.target.value))}
-            style={{ width: "100%", marginBottom: 16 }} />
+            style={{ width: "100%", marginBottom: 16, accentColor: ACCENT }} />
 
           <label style={labelStyle}>
             Note <span style={{ fontWeight: 400, color: "#888" }}>(≤10 printable-ASCII chars; never hashed)</span>
@@ -232,9 +232,21 @@ export function App() {
   );
 }
 
+// One accent and one control system for the whole page: every button shares the
+// same height, font, radius, and border; ACCENT is the ONLY brand color (title,
+// primary action, selected theme, slider). No more three blues and two heights.
+const ACCENT = "#6c63ff";
+const controlBase: React.CSSProperties = {
+  font: "inherit", fontSize: 13, fontWeight: 600, lineHeight: 1,
+  padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+  border: "1px solid #d8dae6", background: "#fff", color: "#3a3a4a",
+};
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 600, margin: "0 0 6px", color: "#333" };
-const primaryBtn: React.CSSProperties = { background: "#6c63ff", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-const ghostBtn: React.CSSProperties = { background: "#fff", color: "#6c63ff", border: "1px solid #6c63ff", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-const chip: React.CSSProperties = { background: "#eef0ff", color: "#3b34b0", border: "none", borderRadius: 999, padding: "5px 11px", fontSize: 12, cursor: "pointer" };
-const themeBtn: React.CSSProperties = { background: "#fff", color: "#444", border: "1px solid #ccc", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
-const themeBtnActive: React.CSSProperties = { ...themeBtn, background: "#1a1a2e", color: "#fff", borderColor: "#1a1a2e" };
+// filled accent = the emphasized control (primary action; selected theme)
+const primaryBtn: React.CSSProperties = { ...controlBase, background: ACCENT, borderColor: ACCENT, color: "#fff" };
+const themeBtnActive: React.CSSProperties = primaryBtn;
+// outlined = every secondary control (Randomize, inactive theme)
+const ghostBtn: React.CSSProperties = controlBase;
+const themeBtn: React.CSSProperties = controlBase;
+// same control, pill-shaped + lighter, for the quick-fill preset tags
+const chip: React.CSSProperties = { ...controlBase, fontWeight: 500, borderRadius: 999 };
