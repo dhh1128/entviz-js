@@ -353,7 +353,9 @@ const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirectio
 const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
 const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
 const ctlBtn: React.CSSProperties = {
-  font: "inherit", fontSize: "0.95em", lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
+  // color:inherit is load-bearing — a bare <button> otherwise uses the UA's default
+  // (dark) button text color, which is unreadable on a dark host theme.
+  font: "inherit", color: "inherit", fontSize: "0.95em", lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
   // Theme-ADAPTIVE defaults (derived from currentColor) so the toolbar is readable on a
   // dark host too, not just light. A host still overrides with --entviz-ctl / -bg.
   border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",

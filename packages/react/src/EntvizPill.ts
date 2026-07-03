@@ -498,12 +498,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       "aria-controls": menuOpen ? menuId : undefined,
       "aria-label": m.actions,
       style: {
-        // stretch to the full pill height + center the glyph, so ⋮ is vertically
-        // centered like the text (not baseline-squished to the bottom). The small
-        // upward translate matches the text's optical-centering nudge so they align.
-        display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "stretch",
+        // Center the ⋮ on the SAME optical line as the text: inherit the pill's line
+        // box (don't force lineHeight:1, which shrinks the glyph box and drops it low),
+        // and apply the same upward nudge as the text so they align rather than the
+        // kebab sitting below the text.
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
         font: "inherit", color: "inherit", background: "none", border: "none",
-        padding: "0 0.05em 0 0.15em", margin: 0, cursor: "pointer", lineHeight: 1,
+        padding: "0 0.05em 0 0.15em", margin: 0, cursor: "pointer",
         transform: "translateY(-0.06em)", opacity: menuOpen ? 0.85 : undefined,
       },
     },
