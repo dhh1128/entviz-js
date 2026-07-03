@@ -194,8 +194,10 @@ export function App() {
 
           {/* The card represents a HOST APPLICATION — so it holds only app content
               (prose with the pill in situ), never instructions the real app wouldn't
-              show. Extra vertical margin sets it apart as "their surface". */}
-          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", margin: "1.5em 0", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
+              show. Generous vertical margin sets it apart as "their surface" (a large
+              value so it dominates the adjacent siblings' margins rather than
+              collapsing into them). */}
+          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", margin: "40px 0", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
             <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
               ▦ your application
             </div>
