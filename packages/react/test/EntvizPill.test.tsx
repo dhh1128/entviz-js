@@ -409,7 +409,7 @@ describe("EntvizPill disclosure lifecycle", () => {
     expect(within(dialog).getByText("Visualize")).toBeTruthy();
     // recognition-only: no compare step, no compare button, no acquisition field
     expect(within(dialog).queryByText("Compare")).toBeNull();
-    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /compare against another value/i })).toBeNull();
     expect(within(dialog).queryByRole("textbox")).toBeNull();
     // grow-from-pill motion class is applied
     expect(dialog.classList.contains("entviz-pill__pop")).toBe(true);
@@ -420,7 +420,7 @@ describe("EntvizPill disclosure lifecycle", () => {
     expand();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Compare")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /compare against a reference/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compare against another value/i })).toBeTruthy();
     // still recognition-only until the user chooses to verify
     expect(within(dialog).queryByRole("textbox")).toBeNull();
   });
@@ -429,7 +429,7 @@ describe("EntvizPill disclosure lifecycle", () => {
     const onCompare = vi.fn();
     render(<EntvizPill value={UUID} onCompare={onCompare} />);
     expand();
-    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i }));
     expect(onCompare).toHaveBeenCalledTimes(1);
     const dialog = screen.getByRole("dialog");
     // EntvizCompare's reference-acquisition field is now present (the gate)…
@@ -437,20 +437,20 @@ describe("EntvizPill disclosure lifecycle", () => {
     // …and no affirmative verdict is shown at entry (no green "=" chip yet).
     expect(within(dialog).queryByText("=")).toBeNull();
     // the visualize-state affordance/teaching are replaced, not duplicated
-    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /compare against another value/i })).toBeNull();
   });
 
   test("showCompareAffordance={false} keeps the hook but hides the built-in button", () => {
     render(<EntvizPill value={HEX} onCompare={vi.fn()} showCompareAffordance={false} />);
     expand();
-    expect(screen.queryByRole("button", { name: /compare against a reference/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /compare against another value/i })).toBeNull();
     expect(within(screen.getByRole("dialog")).queryByText("Compare")).toBeNull();
   });
 
   test("collapsing resets to the visualize state (no back-slide into a stale compare)", () => {
     render(<EntvizPill value={HEX} onCompare={vi.fn()} />);
     expand();
-    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i }));
     expect(within(screen.getByRole("dialog")).getByRole("textbox")).toBeTruthy();
     // click the pill again to collapse, then reopen
     fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
@@ -458,7 +458,7 @@ describe("EntvizPill disclosure lifecycle", () => {
     expand();
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).queryByRole("textbox")).toBeNull(); // back at visualize
-    expect(screen.getByRole("button", { name: /compare against a reference/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /compare against another value/i })).toBeTruthy();
   });
 
   test("lifecycle chrome is localized", () => {
@@ -486,7 +486,7 @@ describe("EntvizPill onEvent firehose", () => {
     const onEvent = vi.fn();
     render(<EntvizPill value={HEX} onCompare={vi.fn()} onEvent={onEvent} />);
     expand(); // pill → visualize
-    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i })); // visualize → compare
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i })); // visualize → compare
     expect(onEvent).toHaveBeenCalled();
     const evs = onEvent.mock.calls.map((c) => c[0]);
     for (const e of evs) {
@@ -511,7 +511,7 @@ describe("EntvizPill onEvent firehose", () => {
     render(<EntvizPill value={HEX} onCompare={vi.fn()} onEvent={onEvent} />);
     expand();
     expect(last(onEvent, "disclosure.change")).toMatchObject({ state: "visualize", prev: "pill" });
-    fireEvent.click(screen.getByRole("button", { name: /compare against a reference/i }));
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i }));
     expect(last(onEvent, "disclosure.change")).toMatchObject({ state: "compare", prev: "visualize" });
     // collapse (Escape) → back to the pill state
     fireEvent.keyDown(document, { key: "Escape" });
@@ -618,7 +618,7 @@ describe("EntvizPill controlled disclosure (open / onOpenChange)", () => {
     // affirmative "=" verdict at entry.
     render(<EntvizPill value={UUID} open={true} onCompare={vi.fn()} onOpenChange={vi.fn()} />);
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: /compare against a reference/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /compare against another value/i }));
     expect(within(screen.getByRole("dialog")).getByRole("textbox")).toBeTruthy();
     expect(within(screen.getByRole("dialog")).queryByText("=")).toBeNull();
   });

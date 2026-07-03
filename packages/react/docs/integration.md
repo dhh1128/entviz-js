@@ -42,8 +42,8 @@ Compare**, and it's one object revealing itself, not three widgets.
 | Component | Role |
 |---|---|
 | `<Entviz>` | The spec-locked SVG render of one value (optionally with a size/shape/copy toolbar). |
-| `<EntvizPill>` | The collapsed, inline form. Click to expand into `<Entviz>`; opt into an in-popover "Compare against a reference…" that opens `<EntvizCompare>` in place. |
-| `<EntvizCompare>` | The full comparison surface: acquire a reference (paste / drop / click-to-upload / URL), get a machine verdict, or run the guided **walk** or the **voice ceremony**. |
+| `<EntvizPill>` | The collapsed, inline form. Click to expand into `<Entviz>`; opt into an in-popover "Compare against another value…" that opens `<EntvizCompare>` in place. |
+| `<EntvizCompare>` | The full comparison surface: acquire another value to compare against yours (paste / drop / click-to-upload / URL), get a machine verdict, or run the guided **walk** or the **voice ceremony**. |
 | `<EntvizWalk>` / `<EntvizVoiceCompare>` | The guided single-user walk and the two-party voice ceremony. Usually reached *through* `<EntvizCompare>`; exported for direct use. |
 
 ```tsx
@@ -83,7 +83,7 @@ are listed below; see TypeDoc for the full signatures.
 | `label` | `string` | First-party trusted text after the type (unlike the note). |
 | `showType` / `showIcon` | `boolean` | The parser-derived type label / the constant 2×2 badge. |
 | `dir` | `"ltr"\|"rtl"\|"auto"` | Chrome writing direction; the glyph is never mirrored. |
-| `onExpand` / `onCompare` | `() => void` | Entered visualize / entered compare. Providing `onCompare` opts in the in-popover "Compare against a reference…" affordance. |
+| `onExpand` / `onCompare` | `() => void` | Entered visualize / entered compare. Providing `onCompare` opts in the in-popover "Compare against another value…" affordance. |
 | `showCompareAffordance` | `boolean` | Keep `onCompare` telemetry but hide the built-in button. |
 | `open` / `onOpenChange` | `boolean` / `(open) => void` | **Controlled disclosure.** With `open` set, the popover follows it and actions report via `onOpenChange` (host owns state). Controlling `open` cannot skip the reference gate. |
 | `onCopy` | `(kind) => void` | A copy/export action fired. |
@@ -91,7 +91,7 @@ are listed below; see TypeDoc for the full signatures.
 ### `<EntvizCompare>`
 | Prop | Type | Notes |
 |---|---|---|
-| `reference` | `{ kind: "text"\|"svg"; data: string }` | A host-supplied reference (renders directly, no acquisition UI). |
+| `reference` | `{ kind: "text"\|"svg"; data: string }` | A host-supplied value to compare against (renders directly; no acquisition UI). |
 | `layout` | `"side-by-side"\|"stacked"\|"auto"` | Panel arrangement; `"auto"` stacks when narrow (mobile). |
 | `onVerdict` | `(v: Verdict) => void` | Terminal machine verdict. |
 | `allow` | `{ paste?; file?; url?; drop?: boolean }` | **Restrict-only, allowlist-closed.** Absent ⇒ all methods on. *Present* ⇒ a method is on only if its key is exactly `true` (so `{paste:true}` disables file/url/drop). Fails closed. |

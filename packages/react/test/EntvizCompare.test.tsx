@@ -211,7 +211,7 @@ describe("EntvizCompare", () => {
     expect(status()).toContain("=");
     expect(status()).toContain("Identical");
     expect(onVerdict).toHaveBeenCalledWith({ state: "identical" });
-    expect(screen.getByText("Reference: pasted")).toBeTruthy();
+    expect(screen.getByText("Pasted")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: OTHER } });
     expect(status()).toContain("≠");
   });
@@ -258,7 +258,7 @@ describe("EntvizCompare", () => {
     // markup-ish but not a recognized entviz SVG, and not a URL → ambiguous warning
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: "<not-an-entviz>" } });
     expect(status()).toMatch(/recognize/i);
-    expect(screen.getByText("Reference: pasted")).toBeTruthy();
+    expect(screen.getByText("Pasted")).toBeTruthy();
   });
 
   test("file-pick: an SVG file → identical; a PNG file → raster engine (disprove-only)", async () => {
@@ -266,7 +266,7 @@ describe("EntvizCompare", () => {
     const file = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(file, { target: { files: [new File([SVG], "r.svg", { type: "image/svg+xml" })] } });
     await waitFor(() => expect(status()).toContain("Identical"), RWAIT);
-    expect(screen.getByText("Reference: file")).toBeTruthy();
+    expect(screen.getByText("From a file")).toBeTruthy();
     // a raster file runs the geometry-anchored engine → never identical (the mock
     // raster isn't a faithful entviz, so it resolves to an unknown/different, not `=`)
     fireEvent.change(file, { target: { files: [new File([new Uint8Array([1])], "p.png", { type: "image/png" })] } });
@@ -298,10 +298,10 @@ describe("EntvizCompare", () => {
     const png = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
     fireEvent.paste(ta, { clipboardData: { files: [png] } });
     await waitFor(() => expect(ta.value).toBe("[image]"), RWAIT);
-    const refImg = container.querySelector('img[alt="Pasted reference image"]') as HTMLImageElement;
+    const refImg = container.querySelector('img[alt="Pasted image to compare"]') as HTMLImageElement;
     expect(refImg).toBeTruthy();
     expect(refImg.getAttribute("src")).toMatch(/^data:/); // a data URL, sized into the panel
-    expect(screen.getByText("Reference: pasted")).toBeTruthy();
+    expect(screen.getByText("Pasted")).toBeTruthy();
   });
 
   test("pasting non-image content falls through to the normal text paste", () => {
@@ -309,7 +309,7 @@ describe("EntvizCompare", () => {
     const ta = screen.getByRole("textbox", { name: /paste/i }) as HTMLTextAreaElement;
     fireEvent.paste(ta, { clipboardData: { files: [] } }); // no image → handler is a no-op
     expect(ta.value).toBe("");
-    expect(screen.queryByAltText("Pasted reference image")).toBeNull();
+    expect(screen.queryByAltText("Pasted image to compare")).toBeNull();
   });
 
   test("typing over the [image] marker replaces the image with a text value", async () => {
@@ -346,7 +346,7 @@ describe("EntvizCompare", () => {
     expect(screen.getByText(/Will fetch from https:\/\/example.com/)).toBeTruthy(); // origin shown first (§5)
     fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
     await waitFor(() => expect(status()).toContain("Identical"));
-    expect(screen.getByText(/Reference: https:\/\/example.com/)).toBeTruthy();
+    expect(screen.getByText(/From https:\/\/example.com/)).toBeTruthy();
   });
 
   test("URL-fetch failure surfaces an error, not a verdict", async () => {
@@ -363,7 +363,7 @@ describe("EntvizCompare", () => {
     fireEvent.dragOver(root);
     fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
     expect(status()).toContain("Identical");
-    expect(screen.getByText("Reference: dropped")).toBeTruthy();
+    expect(screen.getByText("Dropped in")).toBeTruthy();
     // a drop with neither file nor text is a no-op
     fireEvent.drop(root, { dataTransfer: { files: [], getData: () => "" } });
   });
@@ -395,7 +395,7 @@ describe("EntvizCompare", () => {
     rtlRender(<EntvizCompare value={HEX} reference={{ kind: "svg", data: SVG }} />);
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(status()).toContain("Identical");
-    expect(screen.getByText("Reference: provided")).toBeTruthy();
+    expect(screen.getByText("Provided")).toBeTruthy();
   });
 
   test("offers Spot-check and Complete for a large value; only Complete for a small one", () => {
@@ -438,14 +438,14 @@ describe("EntvizCompare", () => {
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
     const png = new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" });
     fireEvent.paste(screen.getByRole("textbox", { name: /paste/i }), { clipboardData: { files: [png] } });
-    await waitFor(() => expect(screen.queryAllByAltText("Pasted reference image").length).toBe(1), RWAIT);
+    await waitFor(() => expect(screen.queryAllByAltText("Pasted image to compare").length).toBe(1), RWAIT);
     // a raster reference offers ONLY Complete (the human does the exhaustive text
     // read; the machine already pixel-compared the gestalt, §6.3/S10) — no spot-check
     expect(screen.queryByRole("button", { name: /spot-check/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /check \(complete\)/i }));
     // the current feature is ringed on BOTH our figure and the pasted image
     await waitFor(() => expect(container.querySelectorAll('[id^="entviz-walk-spot-"]').length).toBe(2), RWAIT);
-    expect(screen.getByAltText("Pasted reference image")).toBeTruthy(); // image still shown during the walk
+    expect(screen.getByAltText("Pasted image to compare")).toBeTruthy(); // image still shown during the walk
   });
 
   test("warns on secret material; RTL + messages override", () => {
@@ -485,7 +485,7 @@ describe("EntvizCompare integrity (T2 render-tamper resistance)", () => {
     expect(status()).toContain("Identical"); // locked verdict label
     expect(screen.queryByText(/perfect match/i)).toBeNull();
     // the scoping copy is rendered on the MACHINE chip (not just walk/voice) and is the locked default
-    expect(screen.getByText(/does not vouch for the reference/i)).toBeTruthy();
+    expect(screen.getByText(/does not vouch for that other value/i)).toBeTruthy();
     expect(screen.queryByText(/fully trusted/i)).toBeNull();
   });
 
@@ -894,7 +894,7 @@ describe("EntvizCompare config props (allow / includeContent / fetchReference)",
     const png = new File([new Uint8Array([1])], "s.png", { type: "image/png" });
     fireEvent.paste(ta, { clipboardData: { files: [png] } });
     await Promise.resolve();
-    expect(screen.queryByAltText("Pasted reference image")).toBeNull();
+    expect(screen.queryByAltText("Pasted image to compare")).toBeNull();
   });
 
   test("allow={{drop:true}} (file off) shows a plain placeholder, not an upload label", () => {
@@ -929,7 +929,7 @@ describe("EntvizCompare config props (allow / includeContent / fetchReference)",
     fireEvent.dragOver(root);
     fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
     expect(status()).toContain("Identical");
-    expect(screen.getByText("Reference: dropped")).toBeTruthy();
+    expect(screen.getByText("Dropped in")).toBeTruthy();
   });
 
   // --- fetchReference (host-injected fetcher → §6.2 gauntlet) --------------
