@@ -29,6 +29,9 @@ export interface Messages {
   stepCompare: string; // rail: comparison against a supplied reference
   teachVisualize: string; // teaching header shown in the expanded (Visualize) state
   compareAction: string; // "Compare against a reference…" affordance label
+  /** ✕ popover-close aria-label/tooltip. Optional — falls back to English "Close"
+   *  when a locale bundle omits it (an icon label; native review pending). */
+  close?: string;
 }
 
 const en: Messages = {
@@ -51,6 +54,7 @@ const en: Messages = {
   stepCompare: "Compare",
   teachVisualize: "This is the full visualization — read the cells to check a value; a glance can’t.",
   compareAction: "Compare against a reference…",
+  close: "Close",
 };
 
 // Full target set (incl. RTL ar/he and Simplified/Traditional Chinese).
