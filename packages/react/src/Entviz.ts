@@ -7,6 +7,7 @@ import React from "react";
 import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { TEXT } from "./text-scale.ts";
 
 export interface EntvizProps {
   /** The high-entropy value to visualize (key, hash, UUID, address, …). */
@@ -355,13 +356,13 @@ const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignIte
 const ctlBtn: React.CSSProperties = {
   // color:inherit is load-bearing — a bare <button> otherwise uses the UA's default
   // (dark) button text color, which is unreadable on a dark host theme.
-  font: "inherit", color: "inherit", fontSize: "0.95em", lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
+  font: "inherit", color: "inherit", fontSize: TEXT.body, lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
   // Theme-ADAPTIVE defaults (derived from currentColor) so the toolbar is readable on a
   // dark host too, not just light. A host still overrides with --entviz-ctl / -bg.
   border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
   background: "var(--entviz-ctl-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
-const ctlValue: React.CSSProperties = { font: "inherit", fontSize: "0.9em", opacity: 0.8, minWidth: 34, textAlign: "center" };
+const ctlValue: React.CSSProperties = { font: "inherit", fontSize: TEXT.small, opacity: 0.8, minWidth: 34, textAlign: "center" };
 const thumbBtn: React.CSSProperties = {
   display: "inline-flex", padding: 3, borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
@@ -372,7 +373,7 @@ const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active
 // The dropdown caret: to the trailing side of the thumbnail, vertically centered
 // (the button's alignItems), and large enough to read clearly as a menu affordance.
 const shapeCaret: React.CSSProperties = {
-  fontSize: "1.05em", lineHeight: 1, opacity: 0.8, marginInlineStart: "auto",
+  fontSize: TEXT.body, lineHeight: 1, opacity: 0.8, marginInlineStart: "auto",
 };
 // The shape picker's dropdown: the achievable shapes as a small wrapped palette.
 const shapeMenuStyle: React.CSSProperties = {
