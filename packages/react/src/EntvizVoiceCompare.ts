@@ -184,7 +184,7 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   if (!state) {
     return h(
       "div",
-      { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", maxWidth: 460, ...style } },
+      { className, style: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10, font: "inherit", maxWidth: 460, ...style } },
       h("span", { style: prompt }, M.affirmPrompt),
       h("button", { type: "button", style: btn, onClick: begin }, M.affirmYes),
     );
