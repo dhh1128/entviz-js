@@ -922,6 +922,11 @@ const placeholderBox: CSSProperties = {
 };
 const textareaStyle: CSSProperties = {
   font: "1em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
+  // A bare <textarea> uses the UA's light background + dark text, which ignores a
+  // dark host theme. Inherit the text color and derive a subtle surface from
+  // currentColor so it adapts (a host may override --entviz-compare-input-bg/-fg).
+  color: "var(--entviz-compare-input-fg, inherit)",
+  background: "var(--entviz-compare-input-bg, color-mix(in srgb, currentColor 6%, transparent))",
   border: "var(--entviz-compare-input-border, 1px solid #d0d7de)", resize: "vertical",
   // basis 0 (not auto): the textarea takes the space LEFT OVER by the fixed-width
   // buttons instead of imposing its own intrinsic width — so the row never
