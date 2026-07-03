@@ -47,20 +47,19 @@ test("classifyInput: UUID keeps its bare type label", () => {
   assert.equal(classifyInput("550e8400e29b41d4a716446655440000").typeName, "UUID");
 });
 
-test("classifyInput: entropyType is the bare category — no count, no format/sub-label", () => {
-  // plain types: the count that typeName carries is stripped
-  assert.equal(classifyInput("abcdef").entropyType, "hex");
+test("classifyInput: entropyType is the drawn typeName minus the (count) — same token as the glyph", () => {
+  // the count/format in typeName is stripped; the leading token matches the glyph
   assert.equal(classifyInput("abcdef").typeName, "hex(6)"); // visualization keeps the count
-  assert.equal(classifyInput("550e8400e29b41d4a716446655440000").entropyType, "uuid");
-  // unrecognized input → "text" (not "txt(N)->b64url")
-  assert.equal(classifyInput("hi there").entropyType, "text");
-  // compound labels reduce to their leading category (drop the variable sub-label)
-  assert.equal(bareEntropyType("did:key"), "did");
-  assert.equal(bareEntropyType("urn:uuid"), "urn");
-  assert.equal(bareEntropyType("CESR Ed25519"), "cesr");
-  assert.equal(bareEntropyType("hex multihash"), "multihash");
-  assert.equal(bareEntropyType("CIDv1 dag-pb"), "cid");
-  assert.equal(bareEntropyType("BTC legacy"), "btc");
+  assert.equal(classifyInput("abcdef").entropyType, "hex"); // pill drops it
+  assert.equal(classifyInput("550e8400e29b41d4a716446655440000").entropyType, "UUID");
+  // unrecognized input: typeName "txt(N)->b64url" → "txt"
+  assert.equal(classifyInput("hi there").entropyType, "txt");
+  // bareEntropyType strips everything from the first "(" — derived from the LABEL,
+  // not a separate taxonomy, so a "b64(392)" glyph and its pill both read "b64"
+  assert.equal(bareEntropyType("b64(392)"), "b64");
+  assert.equal(bareEntropyType("hex(64)"), "hex");
+  assert.equal(bareEntropyType("txt(585)->b64url"), "txt");
+  assert.equal(bareEntropyType("UUID"), "UUID"); // count-free labels pass through
 });
 
 test("classifyInput: unknown input falls back to UTF-8 -> base64url", () => {

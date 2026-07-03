@@ -224,16 +224,15 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const dirAttr: "rtl" | "ltr" | undefined = rtl ? "rtl" : dir === "ltr" ? "ltr" : undefined;
 
   const opts: RenderOptions = { targetAr, fontSizePt, note };
-  const { type, truncated, channels, svg, error } = useMemo(() => {
+  const { type, channels, svg, error } = useMemo(() => {
     try {
       const ci = classifyInput(value.trim());
       const ch = describeChannels(value, opts);
       return {
-        // The pill shows the bare ENTROPY category (e.g. "hex", "uuid", "did") — no
-        // count, no format note or fingerprint caveat. Those belong on the full
-        // VISUALIZATION label (typeName), not on a compact inline pill.
+        // The pill shows the entviz's OWN type label minus the count (ci.entropyType
+        // = typeName with the "(count)…" dropped) — so pill and glyph read the same
+        // token ("b64", "hex", "UUID"), and no format note / fingerprint caveat.
         type: ci.entropyType,
-        truncated: ch.truncated,
         channels: ch as ChannelDescription | null,
         svg: render(value, opts),
         error: null as string | null,
@@ -241,7 +240,6 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     } catch (e) {
       return {
         type: null as string | null,
-        truncated: false,
         channels: null as ChannelDescription | null,
         svg: null as string | null,
         error: e instanceof Error ? e.message : String(e),
@@ -389,12 +387,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
   };
 
-  // Type is the trusted, derived channel; on a >512-bit input it is prefixed with
-  // the "fingerprint of" marker (the text channel is no longer lossless — §3.1).
-  // `label` is first-party host text. Never the note (self-declared) on the pill.
-  const typeText = truncated && type ? `${m.truncated} ${type}` : type;
-  const shownParts = [showType ? typeText : null, label].filter(Boolean) as string[];
-  const ariaText = shownParts.length ? shownParts.join(", ") : (typeText ?? "unrenderable");
+  // Type is the trusted, derived channel — the BARE entropy type only. The
+  // "fingerprint of" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
+  // concern, so it never appears here. `label` is first-party host text; never the
+  // note (self-declared) on the pill.
+  const shownParts = [showType ? type : null, label].filter(Boolean) as string[];
+  const ariaText = shownParts.length ? shownParts.join(", ") : (type ?? "unrenderable");
   const ariaLabel = fmt(m.ariaView, { type: ariaText });
 
   const ACTIONS: [CopyKind | "view", string, () => void][] = [
@@ -483,18 +481,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // cap than below the descender, so line-box centering alone sits the text low.
       { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", transform: "translateY(-0.06em)" } },
         showType && type
-          ? h(
-              "span",
-              { key: "type", style: { opacity: 0.62 } },
-              truncated
-                ? h(
-                    "span",
-                    { style: { color: cssVar("truncated", "#a00000"), fontWeight: "bold", marginInlineEnd: "0.3em" } },
-                    m.truncated,
-                  )
-                : null,
-              type,
-            )
+          ? h("span", { key: "type", style: { opacity: 0.62 } }, type)
           : null,
         label ? h("span", { key: "label" }, label) : null,
       )
