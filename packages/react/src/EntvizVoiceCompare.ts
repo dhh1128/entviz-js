@@ -28,7 +28,6 @@ import {
 } from "react";
 import {
   buildReadbackPlan,
-  ceremonyCoverage as coverage,
   describeChannels,
   ceremonyRespond as respond,
   startCeremony,
@@ -86,12 +85,12 @@ const M = {
   affirmPrompt:
     "Comparing by voice checks one thing: whether the person on your call is looking at the same value as you. It can't tell you who they are — that's for you to judge — and it can only rule out a man-in-the-middle if your voice channel itself has integrity.",
   affirmYes: "Proceed",
-  // Per-strategy instruction for what to ask the reader to read (§15.5).
-  hintAllCells: "Have them read each highlighted cell aloud, one at a time.",
-  hintFingerprint:
-    "Have them read the highlighted middle cells aloud — those summarize the whole value.",
+  // Per-strategy CONTEXT shown alongside the read-back (§15.5) — the "why these
+  // cells" that the per-cell address prompt below doesn't convey. The plain
+  // read-every-cell case carries no such note (it would only restate the prompt).
+  hintFingerprint: "These highlighted middle cells summarize the whole value.",
   hintBind:
-    "The pasted value already matched by machine. Now have them read these cells aloud to confirm it's really theirs.",
+    "The pasted value already matched by machine — now confirm it's really theirs by voice.",
   homoglyphNote: "One extra cell was added because this alphabet has look-alike characters.",
   match: "Matches",
   differ: "Doesn't match",
@@ -109,10 +108,10 @@ const M = {
   again: "Start over",
 };
 
-// The instruction line for a plan's read-back strategy.
-const HINT: Record<string, string> = {
-  "all-cells": M.hintAllCells,
-  consecutive: M.hintAllCells, // the ring walks the run's cells one at a time, by address
+// The optional context note for a plan's read-back strategy. Only kinds where the
+// note adds something beyond the per-cell address prompt appear here; the plain
+// all-cells / consecutive walk has none (its note would just restate the prompt).
+const CONTEXT: Record<string, string | undefined> = {
   "fingerprint-cells": M.hintFingerprint,
   bind: M.hintBind,
 };
@@ -213,32 +212,24 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   const cell = model!.cells[step!.cellIndex];
   const address = `row ${cell.row + 1}, column ${cell.col + 1}`;
   const readOf = `${state.index + 1} / ${state.plan.cells.length}`;
-  return h(
+  const context = CONTEXT[state.plan.kind];
+
+  // The read-back controls: the "why these cells" context (when any), the step
+  // counter, the per-cell instruction, and the reaction buttons. This whole block
+  // sits in the whitespace to the RIGHT of the figure (or stands alone when the host
+  // draws the figure), so the figure and the instruction share one line.
+  const readout = h(
     "div",
-    { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } },
-    h("span", { style: hint }, HINT[state.plan.kind]),
+    { style: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 16em" } },
+    context ? h("span", { style: hint }, context) : null,
     state.plan.homoglyphExtra > 0 ? h("span", { style: { ...hint, color: "#9a6700" } }, M.homoglyphNote) : null,
-    meter(state),
-    // our figure with the ring (suppressed when the host draws it)
-    externalFigures
-      ? null
-      : h(
-          "div",
-          { style: { display: "flex" }, "data-entviz-layout": layout },
-          h(
-            "div",
-            { style: figureBox },
-            h(Entviz, { value, ...opts, style: { display: "block" } }),
-            step ? ringOverlay(model, step, "yours") : null,
-          ),
-        ),
     h("span", { style: { fontSize: TEXT.small, opacity: 0.7 } }, readOf),
     // name the exact cell so the authenticator can direct the remote reader to it
-    h("span", { "aria-live": "polite" }, `Have them read ${address} aloud. Does it match what you see?`),
+    h("span", { "aria-live": "polite" }, `Have the other party read ${address} aloud. Does it match what you see?`),
     relook
       ? h(
           "div",
-          { style: { display: "flex", gap: 8, alignItems: "center" } },
+          { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
           h("span", { style: { fontSize: TEXT.small } }, M.relook),
           h("button", { type: "button", style: btnBad, onClick: () => apply((s) => respond(s, "differ")) }, M.relookYes),
           h("button", { type: "button", style: btn, onClick: () => setRelook(false) }, M.relookNo),
@@ -250,17 +241,22 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
           h("button", { type: "button", style: btnBad, onClick: () => setRelook(true) }, M.differ),
         ),
   );
-}
 
-// A plain progress bar (fraction of the planned cells read) — read-back progress,
-// not a probability; the ceremony's target is the whole chosen set (§15.5).
-function meter(state: CeremonyState): ReactNode {
-  const cov = coverage(state);
-  return h(
-    "div",
-    { style: meterTrack, role: "progressbar", "aria-valuenow": Math.round(cov * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
-    h("div", { style: { ...meterFill, width: `${cov * 100}%` } }),
-  );
+  // Host draws the figure → just the controls. Otherwise, figure + controls on one
+  // row (wrapping to stacked on a narrow surface).
+  return externalFigures
+    ? h("div", { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } }, readout)
+    : h(
+        "div",
+        { className, style: { display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", font: "inherit", ...style }, "data-entviz-layout": layout },
+        h(
+          "div",
+          { style: figureBox },
+          h(Entviz, { value, ...opts, style: { display: "block" } }),
+          step ? ringOverlay(model, step, "yours") : null,
+        ),
+        readout,
+      );
 }
 
 // Body-size prose (the affirmation prompt): matches the host's running text.
@@ -273,8 +269,5 @@ const btn: CSSProperties = {
   background: "var(--entviz-walk-btn-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
 const btnBad: CSSProperties = { ...btn, borderColor: "#c4314b", color: "#c4314b" };
-const btnGhost: CSSProperties = { ...btn, border: "1px solid transparent", background: "none", opacity: 0.75 };
-const meterTrack: CSSProperties = { height: 6, borderRadius: 999, background: "var(--entviz-walk-track, #eaeef2)", overflow: "hidden" };
-const meterFill: CSSProperties = { height: "100%", background: "var(--entviz-walk-meter, #1a7f37)", transition: "width .15s" };
 
 export default EntvizVoiceCompare;

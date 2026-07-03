@@ -519,7 +519,7 @@ describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.click(voiceTab()!);
     fireEvent.click(screen.getByRole("button", { name: /^proceed$/i }));
-    expect(screen.getByText(/read each highlighted cell/i)).toBeTruthy();
+    expect(screen.getByText(/read row \d+, column \d+/i)).toBeTruthy();
   });
 
   test("after an identical machine match it runs paste-bind (bind a couple of cells)", () => {
