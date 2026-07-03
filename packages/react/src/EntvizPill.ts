@@ -95,20 +95,10 @@ export interface EntvizPillProps {
 // on every entviz (zero identity bits — design §3.1).
 const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
 
-/** Compact display form of the parser type label. Uses the SAME token count the
- *  entviz's own top label shows (hex(N) hex digits → hex·N, not bits), so the pill
- *  and the rendered entviz agree; txt→text. */
-export function prettyType(typeName: string): string {
-  const hex = typeName.match(/^hex\((\d+)\)$/);
-  if (hex) return `hex·${hex[1]}`;
-  if (/^txt\(/.test(typeName)) return "text";
-  if (typeName === "ETH") return "Ethereum";
-  return typeName; // UUID, etc.
-}
-
-/** The unit word in the "Copied value · N <unit>" confirmation. */
+/** The unit word in the "Copied value · N <unit>" confirmation. The pill shows the
+ *  entviz's spec type label verbatim (e.g. "hex(64)"), so hex is detected as such. */
 export function copyUnit(type: string | null): string {
-  return /^hex·/.test(type ?? "") ? "hex chars" : "chars";
+  return /^hex\(/.test(type ?? "") ? "hex chars" : "chars";
 }
 
 // Anchored-floater placement: flip above when there's no room below, then clamp
@@ -209,7 +199,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       const ci = classifyInput(value.trim());
       const ch = describeChannels(value, opts);
       return {
-        type: prettyType(ci.typeName),
+        // The pill shows the type EXACTLY as the entviz's own top label does — the
+        // spec typeName verbatim (e.g. "hex(64)"), no reformatting — so the two agree.
+        type: ci.typeName,
         truncated: ch.truncated,
         channels: ch as ChannelDescription | null,
         svg: render(value, opts),
@@ -570,7 +562,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
     : comparing
       ? [rail, h(EntvizCompare, { key: "cmp", value, targetAr, fontSizePt, note, locale, layout: "auto" })]
-      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true })];
+      // alignSelf centers the (content-width) visualization within the popover's
+      // left-aligned column — the rail spans wider, so without this the glyph hugs
+      // the left. (Its own toolbar is centered under it by Entviz's wrapper.)
+      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, style: { alignSelf: "center" } })];
 
   const popover = isOpen
     ? h(
