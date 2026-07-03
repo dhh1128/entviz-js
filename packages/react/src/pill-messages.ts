@@ -53,7 +53,7 @@ const en: Messages = {
   stepVisualize: "Visualize",
   stepCompare: "Compare",
   teachVisualize: "This is the full visualization — read the cells to check a value; a glance can’t.",
-  compareAction: "Compare against a reference…",
+  compareAction: "Compare against another value…",
   close: "Close",
 };
 
