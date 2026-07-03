@@ -96,10 +96,10 @@ export interface EntvizPillProps {
 // on every entviz (zero identity bits — design §3.1).
 const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
 
-/** The unit word in the "Copied value · N <unit>" confirmation. The pill shows the
- *  entviz's spec type label verbatim (e.g. "hex(64)"), so hex is detected as such. */
+/** The unit word in the "Copied value · N <unit>" confirmation. The pill's type is
+ *  the bare entropy category (e.g. "hex"), so hex is an exact match. */
 export function copyUnit(type: string | null): string {
-  return /^hex\(/.test(type ?? "") ? "hex chars" : "chars";
+  return type === "hex" ? "hex chars" : "chars";
 }
 
 // Anchored-floater placement: flip above when there's no room below, then clamp
@@ -229,9 +229,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       const ci = classifyInput(value.trim());
       const ch = describeChannels(value, opts);
       return {
-        // The pill shows the type EXACTLY as the entviz's own top label does — the
-        // spec typeName verbatim (e.g. "hex(64)"), no reformatting — so the two agree.
-        type: ci.typeName,
+        // The pill shows the bare ENTROPY category (e.g. "hex", "uuid", "did") — no
+        // count, no format note or fingerprint caveat. Those belong on the full
+        // VISUALIZATION label (typeName), not on a compact inline pill.
+        type: ci.entropyType,
         truncated: ch.truncated,
         channels: ch as ChannelDescription | null,
         svg: render(value, opts),

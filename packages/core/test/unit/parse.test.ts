@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parse,
   classifyInput,
+  bareEntropyType,
   fingerprintCore,
   render,
   sanitizeNote,
@@ -44,6 +45,22 @@ test("classifyInput: hex gets a length-bearing label", () => {
 
 test("classifyInput: UUID keeps its bare type label", () => {
   assert.equal(classifyInput("550e8400e29b41d4a716446655440000").typeName, "UUID");
+});
+
+test("classifyInput: entropyType is the bare category — no count, no format/sub-label", () => {
+  // plain types: the count that typeName carries is stripped
+  assert.equal(classifyInput("abcdef").entropyType, "hex");
+  assert.equal(classifyInput("abcdef").typeName, "hex(6)"); // visualization keeps the count
+  assert.equal(classifyInput("550e8400e29b41d4a716446655440000").entropyType, "uuid");
+  // unrecognized input → "text" (not "txt(N)->b64url")
+  assert.equal(classifyInput("hi there").entropyType, "text");
+  // compound labels reduce to their leading category (drop the variable sub-label)
+  assert.equal(bareEntropyType("did:key"), "did");
+  assert.equal(bareEntropyType("urn:uuid"), "urn");
+  assert.equal(bareEntropyType("CESR Ed25519"), "cesr");
+  assert.equal(bareEntropyType("hex multihash"), "multihash");
+  assert.equal(bareEntropyType("CIDv1 dag-pb"), "cid");
+  assert.equal(bareEntropyType("BTC legacy"), "btc");
 });
 
 test("classifyInput: unknown input falls back to UTF-8 -> base64url", () => {
