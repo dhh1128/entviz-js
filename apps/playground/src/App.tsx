@@ -24,12 +24,12 @@ const serif = 'Georgia, "Iowan Old Style", "Times New Roman", serif';
 // A host app sets its OWN typography/colors, plus a handful of `--entviz-*` custom
 // properties, and the components inherit the rest. These four "ambient themes"
 // demonstrate that adaptation — the SAME <EntvizPill> looks native in each.
-type Palette = { name: string; font: string; bg: string; panel: string; fg: string; accent: string; border: string; muted: string };
+type Palette = { name: string; scheme: "light" | "dark"; font: string; bg: string; panel: string; fg: string; accent: string; border: string; muted: string };
 const PALETTES: Palette[] = [
-  { name: "Acme (light)", font: sans, bg: "#f6f7f9", panel: "#ffffff", fg: "#1f2733", accent: "#2f6bff", border: "#d5dae2", muted: "#8a93a2" },
-  { name: "Midnight (dark)", font: sans, bg: "#0f1218", panel: "#1a1f2b", fg: "#c7cdd9", accent: "#8b7dff", border: "#2d3440", muted: "#7a8494" },
-  { name: "Gazette (serif)", font: serif, bg: "#f4eee1", panel: "#fbf7ee", fg: "#2a2620", accent: "#9a3b2e", border: "#ddd2bd", muted: "#8a7f6d" },
-  { name: "Terminal (mono)", font: mono, bg: "#0a0e0a", panel: "#101610", fg: "#b9d3b0", accent: "#57d977", border: "#243024", muted: "#6f8a6b" },
+  { name: "Acme (light)", scheme: "light", font: sans, bg: "#f6f7f9", panel: "#ffffff", fg: "#1f2733", accent: "#2f6bff", border: "#d5dae2", muted: "#8a93a2" },
+  { name: "Midnight (dark)", scheme: "dark", font: sans, bg: "#0f1218", panel: "#1a1f2b", fg: "#c7cdd9", accent: "#8b7dff", border: "#2d3440", muted: "#7a8494" },
+  { name: "Gazette (serif)", scheme: "light", font: serif, bg: "#f4eee1", panel: "#fbf7ee", fg: "#2a2620", accent: "#9a3b2e", border: "#ddd2bd", muted: "#8a7f6d" },
+  { name: "Terminal (mono)", scheme: "dark", font: mono, bg: "#0a0e0a", panel: "#101610", fg: "#b9d3b0", accent: "#57d977", border: "#243024", muted: "#6f8a6b" },
 ];
 
 // Map a palette to the component CSS custom properties a host would set. Anything
@@ -46,7 +46,10 @@ function evzVars(p: Palette): Record<string, string> {
     // <EntvizPill> chrome
     "--entviz-pill-popover-bg": p.panel, "--entviz-pill-popover-border": b1,
     "--entviz-pill-menu-bg": p.panel, "--entviz-pill-menu-fg": p.fg, "--entviz-pill-menu-border": b1,
-    "--entviz-pill-toast-bg": p.fg, "--entviz-pill-toast-fg": p.bg, "--entviz-pill-compare-fg": p.accent,
+    "--entviz-pill-toast-bg": p.fg, "--entviz-pill-toast-fg": p.bg,
+    // NB: deliberately NOT setting --entviz-pill-compare-fg, so the rail links use
+    // their default `LinkText` (the host's current-mode hyperlink color). The card's
+    // `colorScheme` below is what lets that adapt to the dark palettes.
     // <EntvizCompare> / walk (reached by drilling into the pill)
     "--entviz-compare-action": p.accent, "--entviz-compare-neutral": p.muted,
     "--entviz-compare-placeholder": p.border, "--entviz-compare-placeholder-fg": p.muted,
@@ -186,7 +189,7 @@ export function App() {
             ))}
           </div>
 
-          <div style={{ ...evzVars(theme), background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
+          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
             <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
               ▦ your application
             </div>
@@ -194,7 +197,11 @@ export function App() {
               Before you rotate it, save your signing key {pill()} to your secret store — then confirm the
               one you restore later is the very same key.
             </p>
-            <p style={{ fontSize: 13, opacity: 0.65, marginTop: 22 }}>
+            {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
+                lives in this paragraph, and element opacity would dim its whole
+                subtree — including the position:fixed menu, which then reads as
+                semi-transparent over the page. */}
+            <p style={{ fontSize: 13, color: "color-mix(in srgb, currentColor 65%, transparent)", marginTop: 22 }}>
               Click the pill → <b>Visualize</b> the full render → <b>“Compare against a reference…”</b>. Everything
               below inherits this theme. Also shown without its badge: {pill({ showIcon: false })}.
             </p>
