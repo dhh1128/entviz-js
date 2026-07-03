@@ -8,7 +8,10 @@ const PRESETS: { label: string; value: string }[] = [
   { label: "UUID", value: "550e8400-e29b-41d4-a716-446655440000" },
   { label: "ETH (EIP-55)", value: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" },
   { label: "text → base64url", value: "The quick brown fox jumps over the lazy dog" },
-  { label: "large text (fingerprint)", value: "The quick brown fox jumps over the lazy dog. ".repeat(13).trim() },
+  // A real 2048-bit RSA public key (base64 DER of the SubjectPublicKeyInfo — public,
+  // no secret). >512 bits, so it renders as a fingerprint; classifies as base64. This
+  // is the default so the "pubkey" pill label matches the value.
+  { label: "RSA-2048 public key", value: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv6PUUaSriz8CO7cvdTC9VHXbB/cONdugWSsMVsP5UBm73e2HPWVNxN1UsiXxC8ELPBODBPZWeI8Z05geCMed0Qm4CI6DgJEV53jp5fAUZPG7PSMXRCMK3CIfUrkw6SyRW8MrXI7JA24qPLpkSR+dNkb1rd+6Y4t+LFBa6qSqceQV8aXnZ48DzkW6YJ8wU6P357TqRn3Oi5SCSsN8+IYQ43Benu/HcS0ZMQIsjnr0K66dnI+PbVRr+t/TsPN+ioYIPWjs2pJciDLuhTyvXC2IyRIMUkogPiF0hIGaAF1oLJ34nmJj4Vkh+Pkh9/+DPAfkjW+jAaBBRDDoyzik/Pj0jwIDAQAB" },
 ];
 
 function randomHex(bytes: number): string {
