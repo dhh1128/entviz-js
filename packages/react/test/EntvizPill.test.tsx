@@ -10,7 +10,7 @@ import {
   SUPPORTED_LOCALES,
 } from "../src/pill-messages.ts";
 
-const HEX = "0123456789abcdef"; // → hex(16) (32 hex chars would be an undashed UUID)
+const HEX = "0123456789abcdef"; // → entropyType "hex" (32 hex chars would be an undashed UUID)
 const UUID = "550e8400-e29b-41d4-a716-446655440000";
 const BIG = "0123456789abcdef".repeat(16); // >512 bits → truncated
 const BAD = { value: HEX, note: "toolongnote" }; // note > 10 chars → render throws
@@ -26,8 +26,8 @@ afterEach(() => {
 
 describe("pure helpers", () => {
   test("copyUnit", () => {
-    expect(copyUnit("hex(128)")).toBe("hex chars");
-    expect(copyUnit("UUID")).toBe("chars");
+    expect(copyUnit("hex")).toBe("hex chars");
+    expect(copyUnit("uuid")).toBe("chars");
     expect(copyUnit(null)).toBe("chars");
   });
 
@@ -157,8 +157,8 @@ describe("EntvizPill rendering", () => {
     render(<EntvizPill value={HEX} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
     expect(pill.getAttribute("title")).toBe("View visualization");
-    expect(pill.getAttribute("aria-label")).toBe("view visualization, hex(16)");
-    expect(screen.getByText("hex(16)")).toBeTruthy();
+    expect(pill.getAttribute("aria-label")).toBe("view visualization, hex");
+    expect(screen.getByText("hex")).toBeTruthy();
     // badge = a 2x2 grid of 4 constant color cells
     expect(pill.querySelectorAll('span[aria-hidden] > span').length).toBe(4);
   });
@@ -167,7 +167,7 @@ describe("EntvizPill rendering", () => {
     const { rerender } = render(<EntvizPill value={HEX} showIcon={false} />);
     expect(screen.getByRole("button", { name: /view visualization/i }).querySelector("span[aria-hidden]")).toBeNull();
     rerender(<EntvizPill value={HEX} showType={false} label="my key" />);
-    expect(screen.queryByText("hex(16)")).toBeNull();
+    expect(screen.queryByText("hex")).toBeNull();
     expect(screen.getByText("my key")).toBeTruthy();
   });
 

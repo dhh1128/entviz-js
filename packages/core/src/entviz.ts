@@ -1211,11 +1211,28 @@ const OVERLAY_BY_BG: Record<string, [string, number, number]> = {
 // ---------------------------------------------------------------------------
 export interface ClassifiedInput {
   core: string;
+  /** The VISUALIZATION label: the full type with its count and any format note
+   *  (e.g. "hex(64)", "txt(585)->b64url", "CESR Ed25519"). Drawn on the glyph. */
   typeName: string;
+  /** The bare ENTROPY category for a compact label (e.g. a pill): the type with no
+   *  count and no format/sub-label detail — "hex", "base64url", "uuid", "did", "urn",
+   *  "cesr", "cid", "multihash", "eth", … or "text" for unrecognized input. The
+   *  visualization keeps `typeName`; this is the "what kind of value is it" only. */
+  entropyType: string;
   alphabet: Alphabet;
   prefix: string | null;
   suffix: string | null;
   prefixSemantic: boolean;
+}
+
+/** Reduce a parsed type to its bare entropy category: the leading token, with any
+ *  variable sub-label dropped (DID method, URN NID, CESR primitive, multihash
+ *  function, CID codec, address flavor, key type). The count/format suffix is never
+ *  present here — classifyInput adds that to `typeName`, not to `parsed.type`. */
+export function bareEntropyType(parsedType: string): string {
+  if (parsedType.includes("multihash")) return "multihash";
+  if (/^CIDv/i.test(parsedType)) return "cid";
+  return parsedType.split(/[:\s]/, 1)[0].toLowerCase();
 }
 
 // Map a trimmed raw input to its (core, type label, alphabet, prefix, suffix)
@@ -1234,6 +1251,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
     return {
       core: bytesToBase64url(utf8Bytes(rawInput)),
       typeName: `txt(${rawInput.length})->b64url`,
+      entropyType: "text",
       alphabet: BASE64URL,
       prefix: null,
       suffix: null,
@@ -1250,6 +1268,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
   return {
     core: parsed.core,
     typeName,
+    entropyType: bareEntropyType(parsed.type),
     alphabet: parsed.alphabet,
     prefix: parsed.prefix,
     suffix: parsed.suffix,
