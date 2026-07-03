@@ -272,7 +272,8 @@ export function Entviz(props: EntvizProps): React.ReactElement {
         },
         "aria-haspopup": "menu", "aria-expanded": openMenu === "copy",
         "aria-controls": openMenu === "copy" ? copyMenuId : undefined, "aria-label": "actions",
-        style: { ...ctlBtn, lineHeight: 1 },
+        // flex-center the ⋮ glyph so it's vertically centered like the −/+ buttons.
+        style: { ...ctlBtn, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" },
       },
       "⋮",
     ),
@@ -352,10 +353,10 @@ const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirectio
 const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
 const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
 const ctlBtn: React.CSSProperties = {
-  font: "inherit", fontSize: "0.85em", lineHeight: 1, minWidth: 22, padding: "2px 6px", borderRadius: 6, cursor: "pointer",
+  font: "inherit", fontSize: "0.95em", lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)",
 };
-const ctlValue: React.CSSProperties = { font: "inherit", fontSize: "0.8em", opacity: 0.8, minWidth: 34, textAlign: "center" };
+const ctlValue: React.CSSProperties = { font: "inherit", fontSize: "0.9em", opacity: 0.8, minWidth: 34, textAlign: "center" };
 const thumbBtn: React.CSSProperties = {
   display: "inline-flex", padding: 3, borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-ctl, #d0d7de)", background: "var(--entviz-ctl-bg, #fff)", color: "#8a93a2",
@@ -368,13 +369,16 @@ const shapeCaret: React.CSSProperties = {
 };
 // The shape picker's dropdown: the achievable shapes as a small wrapped palette.
 const shapeMenuStyle: React.CSSProperties = {
-  position: "absolute", top: "calc(100% + 4px)", insetInlineStart: 0, zIndex: 20,
+  // Open UPWARD (bottom-anchored): the toolbar sits below the figure, and inside a
+  // popover a downward menu would push past the fold and force a scrollbar.
+  position: "absolute", bottom: "calc(100% + 4px)", insetInlineStart: 0, zIndex: 20,
   display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 180,
   background: "var(--entviz-menu-bg, #fff)", border: "var(--entviz-menu-border, 1px solid #ddd)",
   borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 6,
 };
 const copyMenuStyle: React.CSSProperties = {
-  position: "absolute", top: "calc(100% + 4px)", insetInlineEnd: 0, zIndex: 20,
+  // Open UPWARD (see shapeMenuStyle) so it doesn't overflow the popover / force a scroll.
+  position: "absolute", bottom: "calc(100% + 4px)", insetInlineEnd: 0, zIndex: 20,
   display: "flex", flexDirection: "column", minWidth: 180,
   background: "var(--entviz-menu-bg, #fff)", color: "var(--entviz-menu-fg, #1a1a2e)",
   border: "var(--entviz-menu-border, 1px solid #ddd)", borderRadius: 8,
