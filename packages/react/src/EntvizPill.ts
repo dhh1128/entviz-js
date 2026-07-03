@@ -25,6 +25,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   classifyInput,
   describeChannels,
@@ -142,6 +143,34 @@ export function a11yDescription(channels: ChannelDescription, m: Messages): stri
 
 // position:fixed so it's measured against the viewport and never clipped under
 // the fold; recomputed on resize/scroll. The placement math is placeFloater().
+// Tag names that CANNOT legally contain flow content (a <div>): <p>, headings, and
+// text-level/phrasing wrappers. The pill is inline, so it is routinely placed inside
+// one of these — but its expanded popover renders <div>s, which would be invalid
+// (and get reparented by the HTML parser) there. See flowHost.
+const PHRASING = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6", "DT", "PRE", "FIGCAPTION",
+  "SPAN", "A", "ABBR", "B", "BDI", "BDO", "CITE", "CODE", "DATA", "DFN", "EM",
+  "I", "KBD", "MARK", "Q", "S", "SAMP", "SMALL", "STRONG", "SUB", "SUP", "TIME",
+  "U", "VAR", "LABEL", "OUTPUT",
+]);
+
+/** The nearest ancestor of `anchor` that may legally contain flow content (a
+ *  <div>). Walking out of every phrasing/`<p>` wrapper lets a portaled popover be
+ *  valid HTML no matter where the inline pill sits — while staying inside the host's
+ *  theme scope, so its CSS vars / color / font still inherit (no copying needed). */
+function flowHost(anchor: HTMLElement | null): HTMLElement | null {
+  let el = anchor?.parentElement ?? null;
+  while (el && PHRASING.has(el.tagName)) el = el.parentElement;
+  return el;
+}
+
+/** Portal a floating layer (popover / menu) to the nearest flow-content ancestor so
+ *  it escapes any prose `<p>` the pill lives in. SSR-safe: renders in place when
+ *  there is no document. */
+function toPortal(node: ReactNode, anchor: HTMLElement | null): ReactNode {
+  return typeof document === "undefined" ? node : createPortal(node, flowHost(anchor) ?? document.body);
+}
+
 function useFloating(anchorRef: RefObject<HTMLElement | null>, open: boolean, rtl: boolean) {
   const ref = useRef<HTMLSpanElement>(null);
   const [style, setStyle] = useState<CSSProperties>({
@@ -186,6 +215,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // stamps source="pill" and swallows a throwing host handler (events.ts).
   const seqRef = useRef(0);
   const emit = (init: EntvizEventInit) => emitEvent(onEvent, "pill", seqRef, init);
+  useInjectStyles();
 
   const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
   const m: Messages = { ...base, ...overrides };
@@ -296,8 +326,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // Outside-click closes only the transient kebab MENU — never the expanded
       // popover. Dismissing the popover on any outside click (e.g. clicking back into
       // the window after switching apps) is disorienting; it closes via ✕, Escape, or
-      // the pill itself instead.
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+      // the pill itself instead. The menu is PORTALED out of the wrapper, so a click
+      // inside it isn't inside wrapRef — check the menu node too, else it would close
+      // itself before an item's click lands.
+      const t = e.target as Node;
+      const inside = wrapRef.current?.contains(t) || menuFloat.ref.current?.contains(t);
+      if (!inside) setMenuOpen(false);
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
@@ -543,12 +577,15 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   );
 
   const menu = menuOpen
-    ? h(
-        "span",
-        { ref: menuFloat.ref, id: menuId, role: "menu", "aria-label": m.actions, onKeyDown: onMenuKey, style: { ...menuStyle, ...menuFloat.style } },
-        ACTIONS.map(([kind, lbl, fn]) =>
-          h("button", { key: kind, role: "menuitem", type: "button", onClick: fn, style: menuItemStyle }, lbl),
+    ? toPortal(
+        h(
+          "span",
+          { ref: menuFloat.ref, id: menuId, role: "menu", dir: dirAttr, "aria-label": m.actions, onKeyDown: onMenuKey, style: { ...menuStyle, ...menuFloat.style } },
+          ACTIONS.map(([kind, lbl, fn]) =>
+            h("button", { key: kind, role: "menuitem", type: "button", onClick: fn, style: menuItemStyle }, lbl),
+          ),
         ),
+        wrapRef.current,
       )
     : null;
 
@@ -568,23 +605,27 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, style: { alignSelf: "center" } })];
 
   const popover = isOpen
-    ? h(
-        "span",
-        {
-          ref: popFloat.ref,
-          role: "dialog",
-          "aria-label": ariaLabel,
-          "aria-describedby": error ? undefined : descId,
-          className: "entviz-pill__pop",
-          style: { ...popoverStyle, ...popFloat.style },
-        },
-        // Explicit close, top-trailing corner — not everyone knows outside-click/Escape.
-        h("button", { key: "close", type: "button", onClick: collapse, "aria-label": m.close ?? "Close", title: m.close ?? "Close", style: popCloseStyle }, "✕"),
-        popoverBody,
-        // §9 accessible per-channel description (visually hidden; referenced by the dialog).
-        channels
-          ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m))
-          : null,
+    ? toPortal(
+        h(
+          "span",
+          {
+            ref: popFloat.ref,
+            role: "dialog",
+            dir: dirAttr,
+            "aria-label": ariaLabel,
+            "aria-describedby": error ? undefined : descId,
+            className: "entviz-pill__pop",
+            style: { ...popoverStyle, ...popFloat.style },
+          },
+          // Explicit close, top-trailing corner — not everyone knows outside-click/Escape.
+          h("button", { key: "close", type: "button", onClick: collapse, "aria-label": m.close ?? "Close", title: m.close ?? "Close", style: popCloseStyle }, "✕"),
+          popoverBody,
+          // §9 accessible per-channel description (visually hidden; referenced by the dialog).
+          channels
+            ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m))
+            : null,
+        ),
+        wrapRef.current,
       )
     : null;
 
@@ -604,15 +645,29 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     popover,
     h("span", { "aria-live": "polite", style: srOnly }, toast),
     toast ? h("span", { style: { ...toastStyle, [rtl ? "left" : "right"]: 0 } }, toast) : null,
-    h("style", null, `
-        .entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
-        .entviz-pill--hover .entviz-pill__kebab,
-        .entviz-pill__kebab:focus-visible { opacity: 0.7; }
-        @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
-        .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 0); }
-        @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
-      `),
   );
+}
+
+// The pill's kebab-reveal + popover-grow CSS. Injected ONCE into <head> rather than
+// rendered as a <style> child — a <style> is not phrasing content, so it would be
+// invalid inside the prose <p> the inline pill routinely lives in. Global rules apply
+// to the portaled popover just the same.
+const PILL_CSS = `
+.entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
+.entviz-pill--hover .entviz-pill__kebab,
+.entviz-pill__kebab:focus-visible { opacity: 0.7; }
+@keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
+.entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 0); }
+@media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
+`;
+function useInjectStyles(): void {
+  useLayoutEffect(() => {
+    if (typeof document === "undefined" || document.getElementById("entviz-pill-styles")) return;
+    const el = document.createElement("style");
+    el.id = "entviz-pill-styles";
+    el.textContent = PILL_CSS;
+    document.head.appendChild(el);
+  }, []);
 }
 
 const srOnly: CSSProperties = {
