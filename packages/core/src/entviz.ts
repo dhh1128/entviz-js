@@ -1214,10 +1214,11 @@ export interface ClassifiedInput {
   /** The VISUALIZATION label: the full type with its count and any format note
    *  (e.g. "hex(64)", "txt(585)->b64url", "CESR Ed25519"). Drawn on the glyph. */
   typeName: string;
-  /** The bare ENTROPY category for a compact label (e.g. a pill): the type with no
-   *  count and no format/sub-label detail — "hex", "base64url", "uuid", "did", "urn",
-   *  "cesr", "cid", "multihash", "eth", … or "text" for unrecognized input. The
-   *  visualization keeps `typeName`; this is the "what kind of value is it" only. */
+  /** The compact label for a pill: the SAME type the visualization draws, minus the
+   *  count and any format note — literally `typeName` with everything from the first
+   *  "(" dropped. "hex(64)"→"hex", "b64(392)"→"b64", "txt(585)->b64url"→"txt";
+   *  count-free labels (UUID, ETH, …) pass through unchanged. It is DERIVED from
+   *  `typeName`, not a separate taxonomy, so the pill and the glyph always agree. */
   entropyType: string;
   alphabet: Alphabet;
   prefix: string | null;
@@ -1225,14 +1226,12 @@ export interface ClassifiedInput {
   prefixSemantic: boolean;
 }
 
-/** Reduce a parsed type to its bare entropy category: the leading token, with any
- *  variable sub-label dropped (DID method, URN NID, CESR primitive, multihash
- *  function, CID codec, address flavor, key type). The count/format suffix is never
- *  present here — classifyInput adds that to `typeName`, not to `parsed.type`. */
-export function bareEntropyType(parsedType: string): string {
-  if (parsedType.includes("multihash")) return "multihash";
-  if (/^CIDv/i.test(parsedType)) return "cid";
-  return parsedType.split(/[:\s]/, 1)[0].toLowerCase();
+/** The bare entropy type for a compact label: the visualization's `typeName` with the
+ *  trailing "(count)…" dropped (take what's before the first "("). Derived from the
+ *  drawn label so a pill never diverges from the glyph. */
+export function bareEntropyType(typeName: string): string {
+  const paren = typeName.indexOf("(");
+  return (paren === -1 ? typeName : typeName.slice(0, paren)).trim();
 }
 
 // Map a trimmed raw input to its (core, type label, alphabet, prefix, suffix)
@@ -1248,10 +1247,11 @@ export function classifyInput(rawInput: string): ClassifiedInput {
     if (rawInput.length > MAX_INPUT_CHARS) {
       throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
     }
+    const typeName = `txt(${rawInput.length})->b64url`;
     return {
       core: bytesToBase64url(utf8Bytes(rawInput)),
-      typeName: `txt(${rawInput.length})->b64url`,
-      entropyType: "text",
+      typeName,
+      entropyType: bareEntropyType(typeName), // "txt"
       alphabet: BASE64URL,
       prefix: null,
       suffix: null,
@@ -1268,7 +1268,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
   return {
     core: parsed.core,
     typeName,
-    entropyType: bareEntropyType(parsed.type),
+    entropyType: bareEntropyType(typeName),
     alphabet: parsed.alphabet,
     prefix: parsed.prefix,
     suffix: parsed.suffix,

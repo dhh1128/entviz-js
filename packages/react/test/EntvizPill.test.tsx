@@ -171,11 +171,13 @@ describe("EntvizPill rendering", () => {
     expect(screen.getByText("my key")).toBeTruthy();
   });
 
-  test(">512-bit input shows the 'fingerprint of' truncation marker", () => {
+  test(">512-bit input: the pill shows the bare type, NOT the 'fingerprint of' caveat", () => {
+    // the fingerprint caveat is a visualization note; it must never appear on the pill
     render(<EntvizPill value={BIG} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
-    expect(pill.getAttribute("aria-label")).toContain("fingerprint of");
-    expect(screen.getByText("fingerprint of")).toBeTruthy();
+    expect(pill.getAttribute("aria-label")).not.toContain("fingerprint of");
+    expect(screen.queryByText(/fingerprint of/i)).toBeNull();
+    expect(screen.getByText("hex")).toBeTruthy(); // typeName "hex(256)" → entropyType "hex"
   });
 
   test("a render error fires onError; the pill still renders (unrenderable)", () => {
