@@ -461,6 +461,21 @@ describe("EntvizPill disclosure lifecycle", () => {
     expect(screen.getByRole("button", { name: /compare against another value/i })).toBeTruthy();
   });
 
+  test("the Visualize rail step steps back out of compare without closing the popover", () => {
+    render(<EntvizPill value={HEX} onCompare={vi.fn()} />);
+    expand();
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("textbox")).toBeTruthy(); // in compare
+    // the Visualize step is now a link back to the visualization
+    fireEvent.click(within(dialog).getByRole("button", { name: /^visualize$/i }));
+    // popover stays open, but we're back at the visualize state (no reference field)
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
+    // and the compare affordance is offered again
+    expect(screen.getByRole("button", { name: /compare against another value/i })).toBeTruthy();
+  });
+
   test("lifecycle chrome is localized", () => {
     render(<EntvizPill value={HEX} locale="fr" onCompare={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /voir la visualisation/i }));
