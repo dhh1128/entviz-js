@@ -95,10 +95,12 @@ export interface EntvizPillProps {
 // on every entviz (zero identity bits — design §3.1).
 const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
 
-/** Compact display form of the parser type label (hex(N)→hex·bits, txt→text). */
+/** Compact display form of the parser type label. Uses the SAME token count the
+ *  entviz's own top label shows (hex(N) hex digits → hex·N, not bits), so the pill
+ *  and the rendered entviz agree; txt→text. */
 export function prettyType(typeName: string): string {
   const hex = typeName.match(/^hex\((\d+)\)$/);
-  if (hex) return `hex·${Number(hex[1]) * 4}`;
+  if (hex) return `hex·${hex[1]}`;
   if (/^txt\(/.test(typeName)) return "text";
   if (typeName === "ETH") return "Ethereum";
   return typeName; // UUID, etc.

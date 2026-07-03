@@ -4,7 +4,7 @@ import { render as renderEntviz } from "@entviz/core";
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
 const PRESETS: { label: string; value: string }[] = [
-  { label: "hex (256-bit)", value: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+  { label: "hex (64 digits)", value: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
   { label: "UUID", value: "550e8400-e29b-41d4-a716-446655440000" },
   { label: "ETH (EIP-55)", value: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" },
   { label: "text → base64url", value: "The quick brown fox jumps over the lazy dog" },
