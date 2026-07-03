@@ -128,6 +128,31 @@ describe("pill-messages", () => {
 // --- rendering ------------------------------------------------------------
 
 describe("EntvizPill rendering", () => {
+  test("stays valid HTML inside prose in EVERY state (no flow content ever lands in the <p>)", () => {
+    render(
+      <p>
+        save <EntvizPill value={UUID} onCompare={vi.fn()} /> to disk
+      </p>,
+    );
+    const p = document.querySelector("p")!;
+    // A <p> may hold only phrasing content. The pill must never place a block/flow
+    // element inside it in ANY state — its overlays (popover, compare) portal to a
+    // flow-content ancestor, and its CSS injects to <head>. If any of that regresses,
+    // a <div>/<style>/etc. appears under the <p> and this fails. This is the guard
+    // that keeps the pill valid everywhere in prose.
+    const FLOW = "div,p,section,article,aside,nav,header,footer,main,ul,ol,li,table,style,h1,h2,h3,h4,h5,h6,figure,form,fieldset,hr,pre,blockquote";
+    const proseClean = (label: string) =>
+      expect(p.querySelectorAll(FLOW).length, `flow content leaked into <p> (${label})`).toBe(0);
+
+    proseClean("collapsed");
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i })); // expand → visualize
+    // the popover was portaled to a flow-content ancestor, not left inside the <p>
+    expect(p.contains(screen.getByRole("dialog"))).toBe(false);
+    proseClean("visualize");
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i })); // → compare
+    proseClean("compare");
+  });
+
   test("renders the pill with badge, type, tooltip, and aria-label", () => {
     render(<EntvizPill value={HEX} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
