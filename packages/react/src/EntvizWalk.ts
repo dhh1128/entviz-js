@@ -37,6 +37,7 @@ import {
 import { Entviz } from "./Entviz.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 import { safeRng } from "./rng-guard.ts";
+import { TEXT } from "./text-scale.ts";
 
 /** Panel arrangement shared by the comparator and the walk. */
 export type EntvizLayout = "side-by-side" | "stacked" | "auto";
@@ -368,7 +369,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     // coverage meter, with Quick/Good milestone ticks for a spot-check
     coverageMeter(state),
     // live verdict so the user sees where they stand on the scale
-    h("span", { "aria-live": "polite", style: { fontSize: "0.85em", color: past ? "#1a7f37" : "#57606a" } }, past ? M.pastGood : M.belowGood),
+    h("span", { "aria-live": "polite", style: { fontSize: TEXT.small, color: past ? "#1a7f37" : "#57606a" } }, past ? M.pastGood : M.belowGood),
     // the step — figures are suppressed when the host draws them (externalFigures)
     step.kind === "probe"
       ? probePanel(oursModel, probeText, onProbeReveal)
@@ -380,13 +381,13 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
             panel("Yours", value, opts, oursModel, step),
             panel("Reference", reference, opts, refModel, step),
           ),
-    h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, promptFor(step)),
+    h("span", { "aria-live": "polite", style: { fontSize: TEXT.body } }, promptFor(step)),
     // controls
     relook
       ? h(
           "div",
           { style: { display: "flex", gap: 8, alignItems: "center" } },
-          h("span", { style: { fontSize: "0.85em" } }, M.relook),
+          h("span", { style: { fontSize: TEXT.small } }, M.relook),
           h("button", { type: "button", style: btnBad, onClick: () => advance("differ") }, M.relookYes),
           h("button", { type: "button", style: btn, onClick: () => setRelook(false) }, M.relookNo),
         )
@@ -461,11 +462,14 @@ const overlayStyle: CSSProperties = { position: "absolute", inset: 0, width: "10
 // the overlay aligns to the figure pixel-for-pixel.
 export const figureBox: CSSProperties = { position: "relative", display: "inline-block", lineHeight: 0, fontSize: 0 };
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
-const panelLabel: CSSProperties = { fontSize: "0.8em", opacity: 0.7 };
-const hint: CSSProperties = { fontSize: "0.8em", opacity: 0.7, maxWidth: 420 };
+const panelLabel: CSSProperties = { fontSize: TEXT.small, opacity: 0.7 };
+const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.7, maxWidth: 420 };
 const btn: CSSProperties = {
-  font: "inherit", fontSize: "0.9em", padding: "6px 12px", borderRadius: 8, cursor: "pointer",
-  border: "1px solid var(--entviz-walk-btn, #d0d7de)", background: "var(--entviz-walk-btn-bg, #fff)",
+  // color:inherit + currentColor-derived surfaces so the buttons read on a dark host
+  // too (a bare <button> otherwise uses the UA's dark default text).
+  font: "inherit", color: "inherit", fontSize: TEXT.body, padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+  border: "1px solid var(--entviz-walk-btn, color-mix(in srgb, currentColor 28%, transparent))",
+  background: "var(--entviz-walk-btn-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
 const btnBad: CSSProperties = { ...btn, borderColor: "#c4314b", color: "#c4314b" };
 const btnGhost: CSSProperties = { ...btn, border: "1px solid transparent", background: "none", opacity: 0.75 };
@@ -473,6 +477,6 @@ const meterTrack: CSSProperties = { height: 6, borderRadius: 999, background: "v
 const meterFill: CSSProperties = { height: "100%", background: "var(--entviz-walk-meter, #1a7f37)", transition: "width .15s" };
 // Quick/Good milestone marks on the coverage bar.
 const tickMark: CSSProperties = { width: 2, height: 10, marginTop: -2, background: "var(--entviz-walk-tick, #9aa3af)" };
-const tickLabel: CSSProperties = { fontSize: "0.62em", color: "#9aa3af", marginTop: 1, whiteSpace: "nowrap" };
+const tickLabel: CSSProperties = { fontSize: TEXT.fine, color: "#9aa3af", marginTop: 1, whiteSpace: "nowrap" };
 
 export default EntvizWalk;

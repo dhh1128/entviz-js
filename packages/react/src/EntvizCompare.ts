@@ -30,6 +30,7 @@ import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
 import { fmt, isRtlLocale } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit, type Medium, type VerdictState } from "./events.ts";
+import { TEXT } from "./text-scale.ts";
 
 export interface EntvizCompareProps {
   // --- the user's own value + its render inputs (deterministic) ---
@@ -720,7 +721,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           "span",
           { role: "status", "aria-live": "polite", style: { ...chipStyle, background: VERDICT_SKIN[chip.tone].bg, color: VERDICT_SKIN[chip.tone].fg, borderColor: "transparent" } },
           !isUrl ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
-          h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: "1.1em" } }, chip.symbol),
+          h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: TEXT.body } }, chip.symbol),
           h("span", null, chip.label),
         )
       : null,
@@ -811,7 +812,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     // Two situational choices as tabs (§15.8). A host-provided reference isn't
     // interactive, so it renders the comparison directly under a plain heading.
     provided
-      ? h("strong", { style: { fontSize: "1em" } }, m.heading)
+      ? h("strong", { style: { fontSize: TEXT.body } }, m.heading)
       : h(
           "div",
           { role: "tablist", style: tabBarStyle },
@@ -883,7 +884,7 @@ const tabBarStyle: CSSProperties = {
   display: "flex", gap: 4, borderBottom: "1px solid var(--entviz-compare-placeholder, #d0d7de)",
 };
 const tabBase: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: "1em",
+  display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: TEXT.body,
   padding: "7px 12px", cursor: "pointer", background: "none", border: "none",
   borderBottom: "2px solid transparent", marginBottom: -1,
 };
@@ -894,14 +895,14 @@ const tabActive: CSSProperties = {
 };
 const tabInactive: CSSProperties = { ...tabBase, color: "var(--entviz-compare-neutral, #57606a)" };
 const walkLaunchStyle: CSSProperties = {
-  alignSelf: "flex-start", font: "inherit", fontSize: "0.95em", padding: "5px 11px",
+  alignSelf: "flex-start", font: "inherit", fontSize: TEXT.body, padding: "5px 11px",
   borderRadius: 8, cursor: "pointer",
   border: "1px solid var(--entviz-compare-action, #3b34b0)",
   color: "var(--entviz-compare-action, #3b34b0)", background: "none",
 };
 
 const panelStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 200 };
-const panelLabel: CSSProperties = { fontSize: "0.95em", opacity: 0.7 };
+const panelLabel: CSSProperties = { fontSize: TEXT.small, opacity: 0.7 };
 // The reference figure hugs its intrinsic (font-driven) size so it tracks resize.
 const figureCell: CSSProperties = { display: "inline-block" };
 // A raster reference image, sized (with placeholderSize) into our figure's footprint.
@@ -918,7 +919,7 @@ const placeholderBox: CSSProperties = {
   boxSizing: "border-box", overflow: "hidden", display: "flex", flexDirection: "column",
   alignItems: "center", justifyContent: "center", cursor: "pointer",
   border: "1px dashed var(--entviz-compare-placeholder, #d0d7de)", borderRadius: 8,
-  color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: "0.9em", textAlign: "center", padding: 8,
+  color: "var(--entviz-compare-placeholder-fg, #9aa3af)", fontSize: TEXT.small, textAlign: "center", padding: 8,
 };
 const textareaStyle: CSSProperties = {
   font: "1em ui-monospace, monospace", padding: "6px 8px", borderRadius: 6,
@@ -934,23 +935,23 @@ const textareaStyle: CSSProperties = {
   flex: "1 1 0", minWidth: 0, boxSizing: "border-box",
 };
 const fetchBtn: CSSProperties = {
-  font: "inherit", fontSize: "0.9em", padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+  font: "inherit", fontSize: TEXT.body, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-compare-action, #3b34b0)", color: "var(--entviz-compare-action, #3b34b0)", background: "none",
 };
 const machineCheckLabel: CSSProperties = {
-  fontSize: "0.8em", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7,
+  fontSize: TEXT.small, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7,
 };
 const chipStyle: CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start",
-  padding: "4px 10px", borderRadius: 999, border: "1px solid", font: "inherit", fontSize: "1em",
+  padding: "4px 10px", borderRadius: 999, border: "1px solid", font: "inherit", fontSize: TEXT.body,
 };
 const warnBanner: CSSProperties = {
   background: "var(--entviz-compare-warn-bg, #fff8c5)", color: "var(--entviz-compare-warn-fg, #633c01)",
-  border: "1px solid var(--entviz-compare-warn-border, #d4a72c)", borderRadius: 6, padding: "6px 10px", fontSize: "0.92em",
+  border: "1px solid var(--entviz-compare-warn-border, #d4a72c)", borderRadius: 6, padding: "6px 10px", fontSize: TEXT.body,
 };
-const provenance: CSSProperties = { fontSize: "0.85em", opacity: 0.6 };
-const hint: CSSProperties = { fontSize: "0.82em", opacity: 0.6 };
+const provenance: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
+const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 // The §2.4 scoping caveat under an affirmative verdict ("equal to THIS reference…").
-const scopingNote: CSSProperties = { fontSize: "0.85em", opacity: 0.72, maxWidth: "46ch", alignSelf: "flex-start" };
+const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72, maxWidth: "46ch", alignSelf: "flex-start" };
 
 export default EntvizCompare;

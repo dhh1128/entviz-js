@@ -43,6 +43,7 @@ import { Entviz } from "./Entviz.ts";
 import { ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
 import { safeRng } from "./rng-guard.ts";
+import { TEXT } from "./text-scale.ts";
 
 export interface EntvizVoiceCompareProps {
   value: string;
@@ -184,8 +185,7 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     return h(
       "div",
       { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", maxWidth: 460, ...style } },
-      h("strong", null, M.title),
-      h("span", { style: hint }, M.affirmPrompt),
+      h("span", { style: prompt }, M.affirmPrompt),
       h("button", { type: "button", style: btn, onClick: begin }, M.affirmYes),
     );
   }
@@ -216,7 +216,6 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   return h(
     "div",
     { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } },
-    h("strong", null, M.title),
     h("span", { style: hint }, HINT[state.plan.kind]),
     state.plan.homoglyphExtra > 0 ? h("span", { style: { ...hint, color: "#9a6700" } }, M.homoglyphNote) : null,
     meter(state),
@@ -233,14 +232,14 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
             step ? ringOverlay(model, step, "yours") : null,
           ),
         ),
-    h("span", { style: { fontSize: "0.85em", opacity: 0.7 } }, readOf),
+    h("span", { style: { fontSize: TEXT.small, opacity: 0.7 } }, readOf),
     // name the exact cell so the authenticator can direct the remote reader to it
-    h("span", { "aria-live": "polite", style: { fontSize: "0.9em" } }, `Have them read ${address} aloud. Does it match what you see?`),
+    h("span", { "aria-live": "polite" }, `Have them read ${address} aloud. Does it match what you see?`),
     relook
       ? h(
           "div",
           { style: { display: "flex", gap: 8, alignItems: "center" } },
-          h("span", { style: { fontSize: "0.85em" } }, M.relook),
+          h("span", { style: { fontSize: TEXT.small } }, M.relook),
           h("button", { type: "button", style: btnBad, onClick: () => apply((s) => respond(s, "differ")) }, M.relookYes),
           h("button", { type: "button", style: btn, onClick: () => setRelook(false) }, M.relookNo),
         )
@@ -264,10 +263,14 @@ function meter(state: CeremonyState): ReactNode {
   );
 }
 
-const hint: CSSProperties = { fontSize: "0.8em", opacity: 0.75, maxWidth: 460 };
+// Body-size prose (the affirmation prompt): matches the host's running text.
+const prompt: CSSProperties = { fontSize: TEXT.body, maxWidth: 460, lineHeight: 1.5 };
+// Secondary chrome (hints, the homoglyph note, re-look copy).
+const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.75, maxWidth: 460 };
 const btn: CSSProperties = {
-  font: "inherit", fontSize: "0.9em", padding: "6px 12px", borderRadius: 8, cursor: "pointer",
-  border: "1px solid var(--entviz-walk-btn, #d0d7de)", background: "var(--entviz-walk-btn-bg, #fff)",
+  font: "inherit", color: "inherit", fontSize: TEXT.body, padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+  border: "1px solid var(--entviz-walk-btn, color-mix(in srgb, currentColor 28%, transparent))",
+  background: "var(--entviz-walk-btn-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
 const btnBad: CSSProperties = { ...btn, borderColor: "#c4314b", color: "#c4314b" };
 const btnGhost: CSSProperties = { ...btn, border: "1px solid transparent", background: "none", opacity: 0.75 };
