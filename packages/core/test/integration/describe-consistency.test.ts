@@ -158,11 +158,12 @@ for (const [name, value, opts] of CASES) {
       approxRect(firstRect(body) as R, g.cellRects[idx], `cell ${idx}`);
     });
 
-    // color bar: x≈1, y≈1, width = a real band's width, height = viewBox − 2
+    // color bar: x≈2, y≈2 (inset by MARGIN=1 + 1px border), width = a real
+    // band's width, height = viewBox − 2*MARGIN − 2 (== viewBox − 4)
     const bandRect = firstRect(svg.split('data-channel="color-bar"')[1]) as R;
-    assert.ok(Math.abs(g.colorBar.x - 1) <= APPROX && Math.abs(g.colorBar.y - 1) <= APPROX, "colorBar origin");
+    assert.ok(Math.abs(g.colorBar.x - 2) <= APPROX && Math.abs(g.colorBar.y - 2) <= APPROX, "colorBar origin");
     assert.ok(Math.abs(g.colorBar.w - bandRect.w) <= APPROX, "colorBar width = band width");
-    assert.ok(Math.abs(g.colorBar.h - (gvb[3] - 2)) <= APPROX, "colorBar height = viewBox−2");
+    assert.ok(Math.abs(g.colorBar.h - (gvb[3] - 4)) <= APPROX, "colorBar height = viewBox−4");
 
     // the two gutter marker discs (left, right), as bounding boxes
     const discs = [...svg.matchAll(/<circle\b[^>]*?\bcx="([-\d.]+)"[^>]*?\bcy="([-\d.]+)"[^>]*?\br="([-\d.]+)"[^>]*?data-bar-marker="(left|right)"/g)];

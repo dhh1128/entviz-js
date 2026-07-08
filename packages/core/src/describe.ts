@@ -38,6 +38,7 @@ import {
   twoBitFirstAppearance,
   fingerprintMiddleDigest,
   computeGeometry,
+  MARGIN,
   enumerateInteriorCorners,
   enumerateExternalCorners,
   gridCandidates,
@@ -248,7 +249,9 @@ function buildModel(value: string, opts: RenderOptions = {}): ChannelDescription
   const fontSizePt = opts.fontSizePt ?? 12;
   const hasBottom = Boolean(suffix) || Boolean(sanitizeNote(opts.note ?? null));
   const geom = computeGeometry(fontSizePt, grid, hasBottom);
-  const barHeight = geom.boundingH - 2;
+  // v12: color bar height spans the inner field minus the two border pixels
+  // (== boundingH - 2*MARGIN - 2). Mirrors drawColorBar's barHeight exactly.
+  const barHeight = geom.boundingH - 2 * MARGIN - 2;
   const slots = Math.max(4, Math.min(16, Math.floor(barHeight / 12)));
   const secondDigest = fingerprintMiddleDigest(core);
   const markers: MarkerDescription = {
@@ -305,11 +308,13 @@ function computeLayoutGeometry(
   const gridRect: Rect = { x: gridLeft, y: gridTop, w: gridW, h: gridH };
 
   // Color bar: the bands stack to fill the gutter, so the union is the whole bar.
-  const barLeft = 1, barTop = 1;
-  const colorBar: Rect = { x: barLeft, y: barTop, w: barWidth, h: boundingH - 2 };
+  // v12: inset by MARGIN (barLeft/barTop = MARGIN + 1; barHeight = boundingH -
+  // 2*MARGIN - 2), mirroring drawColorBar.
+  const barLeft = MARGIN + 1, barTop = MARGIN + 1, barHeight = boundingH - 2 * MARGIN - 2;
+  const colorBar: Rect = { x: barLeft, y: barTop, w: barWidth, h: barHeight };
 
   // The two gutter marker discs (mirrors drawColorBar's slot/radius/inset math).
-  const slotH = (boundingH - 2) / slots;
+  const slotH = barHeight / slots;
   const radius = barWidth * 0.17;
   const inset = barWidth * 0.06;
   const discRect = (slot: number, side: "left" | "right"): Rect => {

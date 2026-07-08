@@ -22,7 +22,7 @@ test("cli: a render vector writes an SVG to stdout and exits 0", () => {
   );
   assert.equal(r.status, 0);
   assert.match(r.stdout, /^<svg/);
-  assert.match(r.stdout, /data-entviz-version="v11"/);
+  assert.match(r.stdout, /data-entviz-version="v12"/);
 });
 
 test("cli: params default when omitted (target_ar=1, font_size_pt=12, note=null)", () => {

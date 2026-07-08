@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v11), including the
+ * A faithful port of the Python reference (docs/spec.md, v12), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). The full identifier-parser
  * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/
@@ -25,7 +25,7 @@ import {
 } from "./bytes.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v11";
+export const SPEC_VERSION = "v12";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -33,6 +33,11 @@ export const SPEC_VERSION = "v11";
 // release (the value would lie about which build produced an SVG).
 export const LIB_VERSION = (pkg as { version: string }).version;
 const DPI = 96;
+// v12 (issue #31): a transparent quiet ring of this many user units on all
+// four sides of the canvas, so the gray frame never sits on the canvas edge
+// (where fractional render scales clip it). Frame + white fill + all content
+// are inset by MARGIN; the outer ring is left unpainted.
+export const MARGIN = 1;
 
 // ---------------------------------------------------------------------------
 // Alphabets
@@ -1297,11 +1302,13 @@ export function computeGeometry(fontSizePt: number, grid: Grid, hasBottom: boole
   const barWidth = 2 * boxHeight;
   const gridW = cellWidth * grid.cols;
   const gridH = cellHeight * grid.rows;
-  const boundingW = 1 + barWidth + 1 + gm + gridW + gm + 1;
+  const innerW = 1 + barWidth + 1 + gm + gridW + gm + 1;
   const bottomRegion = hasBottom ? nucleusHeight + gm : gm;
-  const boundingH = 1 + gm + nucleusHeight + gridH + bottomRegion + 1;
-  const gridLeft = 1 + barWidth + 1 + gm;
-  const gridTop = 1 + gm + nucleusHeight;
+  const innerH = 1 + gm + nucleusHeight + gridH + bottomRegion + 1;
+  const boundingW = innerW + 2 * MARGIN;
+  const boundingH = innerH + 2 * MARGIN;
+  const gridLeft = MARGIN + 1 + barWidth + 1 + gm;
+  const gridTop = MARGIN + 1 + gm + nucleusHeight;
   return {
     fs, nucleusWidth, nucleusHeight, boxWidth, boxHeight, cellWidth, cellHeight,
     gm, barWidth, gridW, gridH, boundingW, boundingH, gridLeft, gridTop,
@@ -1569,8 +1576,8 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     .set("height", gridH);
 
   // White bounding-rect fill (first painted element, before the grid group).
-  svg.child("rect").set("x", 0).set("y", 0)
-    .set("width", boundingW).set("height", boundingH).set("fill", "#ffffff");
+  svg.child("rect").set("x", MARGIN).set("y", MARGIN)
+    .set("width", boundingW - 2 * MARGIN).set("height", boundingH - 2 * MARGIN).set("fill", "#ffffff");
 
   // grid channel
   const gridG = svg.child("g").set("data-channel", "grid");
@@ -1729,11 +1736,11 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, typeName, prefix, suffix, labelTextPx, note, truncated);
 
   // Borders
-  borderLine(svg, 0, 0.5, boundingW, 0.5);
-  borderLine(svg, boundingW - 0.5, 0, boundingW - 0.5, boundingH);
-  borderLine(svg, 0, boundingH - 0.5, boundingW, boundingH - 0.5);
-  borderLine(svg, 0.5, 0, 0.5, boundingH);
-  borderLine(svg, 1 + barWidth + 0.5, 0, 1 + barWidth + 0.5, boundingH);
+  borderLine(svg, MARGIN, MARGIN + 0.5, boundingW - MARGIN, MARGIN + 0.5);
+  borderLine(svg, boundingW - MARGIN - 0.5, MARGIN, boundingW - MARGIN - 0.5, boundingH - MARGIN);
+  borderLine(svg, MARGIN, boundingH - MARGIN - 0.5, boundingW - MARGIN, boundingH - MARGIN - 0.5);
+  borderLine(svg, MARGIN + 0.5, MARGIN, MARGIN + 0.5, boundingH - MARGIN);
+  borderLine(svg, MARGIN + 1 + barWidth + 0.5, MARGIN, MARGIN + 1 + barWidth + 0.5, boundingH - MARGIN);
 
   return svg.render();
 }
@@ -1813,7 +1820,7 @@ export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], 
       (paletteOrder.get(a[0]) as number) - (paletteOrder.get(b[0]) as number),
   );
   const total = used.reduce((s, [, cnt]) => s + cnt ** 4, 0);
-  const barLeft = 1, barTop = 1, barHeight = boundingH - 2;
+  const barLeft = MARGIN + 1, barTop = MARGIN + 1, barHeight = boundingH - 2 * MARGIN - 2;
   const barCx = barLeft + barWidth / 2;
   const barG = svg.child("g").set("data-channel", "color-bar");
   let y = barTop;
