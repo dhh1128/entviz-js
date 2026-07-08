@@ -27,9 +27,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  classifyInput,
+  characterize,
   describeChannels,
   render,
+  type Characterization,
   type ChannelDescription,
   type RenderOptions,
 } from "@entviz/core";
@@ -102,6 +103,24 @@ export function copyUnit(type: string | null): string {
   return type === "hex" ? "hex chars" : "chars";
 }
 
+/** The pill's primary type token, read straight from the structured
+ *  characterization — `scheme ?? encoding` (== `entropyType`), never
+ *  string-parsed out of the drawn label. So the pill reads "cesr", "did",
+ *  "uuid", "hex" without touching the label's count/format/"fingerprint of"
+ *  presentation. Returns null when the value could not be characterized. */
+export function pillType(ch: Characterization | null): string | null {
+  return ch ? ch.entropyType : null;
+}
+
+/** The optional secondary role token, from the closed-enum `role` axis (key /
+ *  signature / digest / address / identifier). Rendered as a small caption
+ *  beside the type when the recognizer asserted one; null (and omitted) for a
+ *  bare encoding where entviz does not guess. This is a STRUCTURED field, not a
+ *  substring of the label — so it appears only where it is honestly known. */
+export function pillRole(ch: Characterization | null): string | null {
+  return ch ? ch.role : null;
+}
+
 // Anchored-floater placement: flip above when there's no room below, then clamp
 // horizontally into the viewport (RTL right-aligns). Pure math, unit-tested.
 export function placeFloater(
@@ -121,7 +140,11 @@ export function placeFloater(
 // The accessible, color-independent description of the expanded entviz (design
 // §9): every discrete verification channel as text, so AT users reach parity.
 // Pure: takes the already-computed channel data + the localized template.
-export function a11yDescription(channels: ChannelDescription, m: Messages): string {
+export function a11yDescription(
+  channels: ChannelDescription,
+  m: Messages,
+  type?: string | null,
+): string {
   const rc = (ci: number) => `${Math.floor(ci / channels.cols)},${ci % channels.cols}`;
   const cells = channels.cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");
   const bars = channels.colorBarLetters.join(" ");
@@ -129,7 +152,10 @@ export function a11yDescription(channels: ChannelDescription, m: Messages): stri
   const bmin = channels.markers.blankMap ? rc(channels.markers.blankMap.minCell) : "—";
   const bmax = channels.markers.blankMap ? rc(channels.markers.blankMap.maxCell) : "—";
   return fmt(m.desc, {
-    type: channels.typeName,
+    // Prefer the STRUCTURED entropy type (scheme ?? encoding) when supplied, so
+    // the accessible description reads the same clean token as the pill —
+    // falling back to the render model's drawn label only if it wasn't passed.
+    type: type ?? channels.typeName,
     cells,
     bars,
     quartiles,
@@ -224,22 +250,27 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const dirAttr: "rtl" | "ltr" | undefined = rtl ? "rtl" : dir === "ltr" ? "ltr" : undefined;
 
   const opts: RenderOptions = { targetAr, fontSizePt, note };
-  const { type, channels, svg, error } = useMemo(() => {
+  const { type, role, channels, svg, error } = useMemo(() => {
     try {
-      const ci = classifyInput(value.trim());
-      const ch = describeChannels(value, opts);
+      // v13: read the STRUCTURED characterization (scheme/role/qualifiers/
+      // entropyType) instead of string-parsing the drawn label. `type` is the
+      // canonical `scheme ?? encoding` (== entropyType) — so pill and glyph read
+      // the same token ("cesr", "did", "uuid", "hex") with no count, format note,
+      // or "fingerprint of" caveat leaking in. `role` is the honest closed-enum
+      // axis, present only where the generic recognizer asserted one.
+      const ch = characterize(value.trim());
+      const chan = describeChannels(value, opts);
       return {
-        // The pill shows the entviz's OWN type label minus the count (ci.entropyType
-        // = typeName with the "(count)…" dropped) — so pill and glyph read the same
-        // token ("b64", "hex", "UUID"), and no format note / fingerprint caveat.
-        type: ci.entropyType,
-        channels: ch as ChannelDescription | null,
+        type: pillType(ch),
+        role: pillRole(ch),
+        channels: chan as ChannelDescription | null,
         svg: render(value, opts),
         error: null as string | null,
       };
     } catch (e) {
       return {
         type: null as string | null,
+        role: null as string | null,
         channels: null as ChannelDescription | null,
         svg: null as string | null,
         error: e instanceof Error ? e.message : String(e),
@@ -470,7 +501,14 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       )
     : null;
 
-  // --- pill text (truncation marker + type + label) ---
+  // --- pill text (type + optional role caption + label) ---
+  // Built from the STRUCTURED characterization axes, not a parsed label string:
+  //  - `type`  = entropyType (scheme ?? encoding), the primary token.
+  //  - `role`  = the closed-enum semantic role, shown as a small caption ONLY when
+  //              the recognizer asserted one (bare encodings show no role — entviz
+  //              does not guess). It's a redundant recognition cue, never an
+  //              equality claim.
+  //  - `label` = first-party host text.
   const textBlock = shownParts.length
     ? h(
         "span",
@@ -482,6 +520,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", transform: "translateY(-0.06em)" } },
         showType && type
           ? h("span", { key: "type", style: { opacity: 0.62 } }, type)
+          : null,
+        showType && type && role
+          ? h("span", { key: "role", style: pillRoleStyle }, role)
           : null,
         label ? h("span", { key: "label" }, label) : null,
       )
@@ -610,7 +651,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
           popoverBody,
           // §9 accessible per-channel description (visually hidden; referenced by the dialog).
           channels
-            ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m))
+            ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m, type))
             : null,
         ),
         wrapRef.current,
@@ -657,6 +698,16 @@ function useInjectStyles(): void {
     document.head.appendChild(el);
   }, []);
 }
+
+// The role caption (key / signature / digest / address / identifier): a small,
+// low-emphasis token beside the type. Dimmer + smaller than the type so it reads
+// as a secondary, redundant recognition cue — never competing with the primary
+// entropy type.
+const pillRoleStyle: CSSProperties = {
+  opacity: 0.42,
+  fontSize: "0.82em",
+  alignSelf: "center",
+};
 
 const srOnly: CSSProperties = {
   position: "absolute",
