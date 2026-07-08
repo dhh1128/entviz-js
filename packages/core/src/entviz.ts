@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v12), including the
+ * A faithful port of the Python reference (docs/spec.md, v13), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). The full identifier-parser
  * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/
@@ -23,9 +23,10 @@ import {
   bytesToHex,
   bytesToBase64url,
 } from "./bytes.ts";
+import { characterize, compactJson } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v12";
+export const SPEC_VERSION = "v13";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -1566,6 +1567,23 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   // OMITTED when false (matches the render model: truncated defaults to false).
   if (truncated) svg.set("data-truncated", "true");
 
+  // v13 entropy characterization (spec: "Entropy characterization"), emitted as
+  // data-* attributes so a consumer — including a port under conformance test —
+  // reports its OWN structured characterization off the SVG rather than having
+  // the checker recompute it. These attributes carry no ink (reporting-only) and
+  // do not affect geometry or the raster. String axes are emitted verbatim (null
+  // scheme/role -> empty string); sizeBits as its decimal; qualifiers/parts as
+  // compact JSON (the El.set escaper XML-escapes it on the way onto the attr).
+  const ch = characterize(rawInput);
+  svg.set("data-encoding", ch.encoding);
+  svg.set("data-scheme", ch.scheme ?? "");
+  svg.set("data-role", ch.role ?? "");
+  svg.set("data-size-basis", ch.sizeBasis);
+  svg.set("data-entropy-type", ch.entropyType);
+  svg.set("data-size-bits", String(ch.sizeBits));
+  svg.set("data-qualifiers", compactJson(ch.qualifiers));
+  svg.set("data-parts", compactJson(ch.parts));
+
   // defs + clipPath (grid rect)
   const defs = svg.child("defs");
   const cp = defs.child("clipPath").set("id", clipId);
@@ -1960,6 +1978,19 @@ export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gri
     .set("fill", fill).set("stroke", fill)
     .set("fill-opacity", fillOp).set("stroke-opacity", edgeOp).set("stroke-width", strokeW);
 }
+
+// v13 entropy characterization model (the 8 structured axes) — the canonical
+// scheme/role/qualifiers/entropyType a consumer (labels, React pills) reads
+// instead of string-parsing the drawn label. Re-exported from the single
+// @entviz/core entry point.
+export {
+  characterize,
+  type Characterization,
+  type Role,
+  type SizeBasis,
+  type Bind,
+  type Part,
+} from "./characterize.ts";
 
 // Structured channel readouts (comparisonText, describeChannels) — derived from
 // the same render model, re-exported so they ship from the single @entviz/core

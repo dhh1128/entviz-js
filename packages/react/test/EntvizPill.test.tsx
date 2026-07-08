@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describeChannels } from "@entviz/core";
+import { characterize, describeChannels } from "@entviz/core";
 import { EntvizPill } from "../src/index.ts";
-import { a11yDescription, copyUnit, placeFloater } from "../src/EntvizPill.ts";
+import { a11yDescription, copyUnit, pillRole, pillType, placeFloater } from "../src/EntvizPill.ts";
 import {
   fmt,
   isRtlLocale,
@@ -12,6 +12,8 @@ import {
 
 const HEX = "0123456789abcdef"; // → entropyType "hex" (32 hex chars would be an undashed UUID)
 const UUID = "550e8400-e29b-41d4-a716-446655440000";
+const CESR = "EBfdlu8R27Fbx_ehrqwImnK_8Cm79sqbAQ4caaZG_LFv"; // scheme "cesr", role "digest"
+const DID = "did:ethr:0x5:0xf3beac30c498d9e26865f34fcaa57dbb935b0d74"; // scheme "did", role "identifier"
 const BIG = "0123456789abcdef".repeat(16); // >512 bits → truncated
 const BAD = { value: HEX, note: "toolongnote" }; // note > 10 chars → render throws
 
@@ -77,6 +79,46 @@ describe("pure helpers", () => {
     expect(s).toMatch(/g r b k/); // color-bar letters
     const big = a11yDescription(describeChannels(BIG), m);
     expect(big).toContain("·"); // a blank separator appears in the cells readout
+  });
+
+  test("a11yDescription prefers the structured entropy type when supplied", () => {
+    const m = resolveMessages("en").messages;
+    // The render model's drawn label for a CESR value is "CESR Blake3-256:";
+    // passing the STRUCTURED entropyType ("cesr") makes the description read the
+    // clean token instead of the label string.
+    const structured = a11yDescription(describeChannels(CESR), m, "cesr");
+    expect(structured).toContain("cesr");
+    expect(structured).not.toContain("Blake3-256");
+    // omitting the override falls back to the drawn label (the render model's typeName)
+    const fallback = a11yDescription(describeChannels(CESR), m);
+    expect(fallback).toContain("CESR");
+  });
+});
+
+// --- structured characterization consumption (spec v13) --------------------
+// The pill reads scheme/role/qualifiers/entropyType off the structured
+// characterization — it no longer string-parses the drawn label. These tests
+// pin that structured path directly.
+
+describe("structured characterization", () => {
+  test("pillType returns entropyType (scheme ?? encoding), not a parsed label", () => {
+    expect(pillType(characterize(HEX))).toBe("hex");
+    expect(pillType(characterize(UUID))).toBe("uuid");
+    expect(pillType(characterize(CESR))).toBe("cesr");
+    expect(pillType(characterize(DID))).toBe("did");
+    // the drawn label would carry a count / "Blake3-256:"; the structured type never does
+    expect(pillType(characterize(CESR))).not.toContain("(");
+    expect(pillType(characterize(CESR))).not.toContain("Blake3");
+    expect(pillType(null)).toBeNull();
+  });
+
+  test("pillRole is the closed-enum role, present only where the recognizer asserts one", () => {
+    expect(pillRole(characterize(CESR))).toBe("digest");
+    expect(pillRole(characterize(DID))).toBe("identifier");
+    expect(pillRole(characterize("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"))).toBe("address");
+    // a bare encoding gets NO role (entviz does not guess)
+    expect(pillRole(characterize(HEX))).toBeNull();
+    expect(pillRole(null)).toBeNull();
   });
 });
 
@@ -178,6 +220,28 @@ describe("EntvizPill rendering", () => {
     expect(pill.getAttribute("aria-label")).not.toContain("fingerprint of");
     expect(screen.queryByText(/fingerprint of/i)).toBeNull();
     expect(screen.getByText("hex")).toBeTruthy(); // typeName "hex(256)" → entropyType "hex"
+  });
+
+  test("renders the structured scheme + role from the characterization", () => {
+    // A CESR value: the pill reads scheme "cesr" (the type token) and the
+    // closed-enum role "digest" as a secondary caption — both structured fields,
+    // not substrings of the drawn "CESR Blake3-256:" label.
+    render(<EntvizPill value={CESR} />);
+    expect(screen.getByText("cesr")).toBeTruthy();
+    expect(screen.getByText("digest")).toBeTruthy();
+    // the label's algorithm text never leaks onto the pill
+    expect(screen.queryByText(/Blake3-256/)).toBeNull();
+    const pill = screen.getByRole("button", { name: /view visualization/i });
+    expect(pill.getAttribute("aria-label")).toBe("view visualization, cesr");
+  });
+
+  test("a bare encoding shows the type but no role caption (entviz does not guess)", () => {
+    render(<EntvizPill value={HEX} />);
+    expect(screen.getByText("hex")).toBeTruthy();
+    // none of the closed-enum role words appears for a bare hex value
+    for (const role of ["key", "signature", "digest", "address", "identifier"]) {
+      expect(screen.queryByText(role)).toBeNull();
+    }
   });
 
   test("a render error fires onError; the pill still renders (unrenderable)", () => {
