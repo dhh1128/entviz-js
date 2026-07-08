@@ -40,10 +40,20 @@ labels) is complete and proven correct by the corpus.
 ## Usage
 
 ```ts
-import { render } from "@entviz/core";
+import { render, characterize } from "@entviz/core";
 const svg = render("550e8400-e29b-41d4-a716-446655440000");      // -> SVG string
 const svg2 = render("0123…", { targetAr: 2.0, fontSizePt: 16, note: "git" });
+
+const ch = characterize("550e8400-e29b-41d4-a716-446655440000");
+// { encoding: "hex", scheme: "uuid", role: "identifier", qualifiers: {},
+//   sizeBasis: "decoded", sizeBits: 128, parts: [...], entropyType: "uuid" }
 ```
+
+`characterize()` returns the structured [entropy characterization](https://dhh1128.github.io/entviz/integration-guide/#the-characterization-model)
+(also emitted as `data-*` attributes on the rendered SVG); `@entviz/react`'s
+`<EntvizPill/>` is the reference UI that consumes those structured fields rather
+than parsing the label string. For embedding entviz across all five languages,
+see the [Developer Integration Guide](https://dhh1128.github.io/entviz/integration-guide/).
 
 ## Develop
 
