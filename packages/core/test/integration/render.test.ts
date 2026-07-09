@@ -10,16 +10,19 @@ test("render is deterministic and stamps the spec version + viewBox", () => {
   const a = render("0123456789abcdef0123456789abcdef");
   const b = render("0123456789abcdef0123456789abcdef");
   assert.equal(a, b);
-  assert.equal(SPEC_VERSION, "v13");
+  assert.equal(SPEC_VERSION, "v14");
   assert.match(a, new RegExp(`data-entviz-version="${SPEC_VERSION}"`));
   assert.match(a, /viewBox="0 0 /);
   assert.match(a, /data-cols="\d+"/);
   assert.match(a, /data-rows="\d+"/);
 });
 
-test("render: the txt-to-b64url fallback labels the input and renders", () => {
+test("render: the UTF-8 fallback labels the input and renders", () => {
+  // v14: the top label is a projection of the characterization — the UTF-8
+  // fallback (scheme=null, size_basis=utf8) reads "text, <N>-byte", NOT the old
+  // "txt(N)->b64url" fusing. "hello, world" is 12 bytes.
   const svg = render("hello, world");
-  assert.match(svg, /txt\(12\)-&gt;b64url/); // the gt char is XML-escaped in the label
+  assert.match(svg, /text, 12-byte/);
 });
 
 test("render: a base64url-alphabet entviz renders full-size cell text", () => {

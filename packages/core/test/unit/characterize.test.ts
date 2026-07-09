@@ -127,21 +127,24 @@ test("BTC segwit variant", () => {
 });
 
 test("LTC legacy variant + LTC bech32 (no variant)", () => {
-  const legacy = characterize("L" + "a".repeat(33));
+  // v14: both paths are checksum-verified, so use real addresses.
+  const legacy = characterize("LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc1");
   assert.equal(legacy.scheme, "ltc");
   assert.equal(legacy.role, "address");
   assert.deepEqual(legacy.qualifiers, { network: "mainnet", variant: "legacy" });
-  const bech = characterize("ltc1qhw6dgkk52v9eqzukju7vrqpw0jt4wll6e6n4q5");
+  const bech = characterize("ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n9");
   assert.equal(bech.scheme, "ltc");
   assert.equal(bech.qualifiers.variant, undefined);
 });
 
 test("ADA Byron and Shelley variants — address role", () => {
-  const byron = characterize("Ae2" + "1".repeat(50) + "2".repeat(6));
+  // v14: Byron carries no splittable checksum (whole body is the core); Shelley
+  // bech32 is verified, so both use real addresses.
+  const byron = characterize("Ae2tdPwUPEZ4YjgvykNpoFeYUxoyhNj2kg8KfKWN2FizsSpLUPv68MpTVDo");
   assert.equal(byron.scheme, "ada");
   assert.equal(byron.role, "address");
   assert.equal(byron.qualifiers.variant, "byron");
-  const shelley = characterize("addr1" + "q".repeat(50) + "p".repeat(6));
+  const shelley = characterize("addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x");
   assert.equal(shelley.scheme, "ada");
   assert.equal(shelley.qualifiers.variant, "shelley");
 });
@@ -158,7 +161,9 @@ test("bitcoincash — network recovered from HRP; testnet variant", () => {
   const main = characterize("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a");
   assert.equal(main.scheme, "bch");
   assert.equal(main.qualifiers.network, "mainnet");
-  const test = characterize("bchtest:qpm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq");
+  // v14: CashAddr checksum verified; a valid bchtest address (checksum computed
+  // under the "bchtest" HRP, so it differs from the mainnet body's checksum).
+  const test = characterize("bchtest:qpm2qsznhks23z7629mms6s4cwef74vcwvqcw003ap");
   assert.equal(test.qualifiers.network, "testnet");
 });
 
@@ -241,4 +246,99 @@ test("leading/trailing whitespace is trimmed before parsing", () => {
   const c = characterize("  deadbeefcafe  ");
   assert.equal(c.encoding, "hex");
   assert.equal(c.sizeBits, 48);
+});
+
+// ---------------------------------------------------------------------------
+// Label projection (spec v14). renderLabel is a PURE projection of the eight
+// characterization fields through one grammar (PRIMARY[, MOD]…[, SIZE] on top;
+// ...<suffix> (<note>) on the bottom). Each row below mirrors the locked
+// before→after table in reviews/v14-label-redesign.md.
+// ---------------------------------------------------------------------------
+import { renderLabel } from "../../src/characterize.ts";
+
+const topOf = (input: string, truncated = false, suffix: string | null = null, note: string | null = null) =>
+  renderLabel(characterize(input), truncated, suffix, note).top;
+
+test("renderLabel: before→after table (PRIMARY / MOD / SIZE grammar)", () => {
+  // scheme==null bare encodings show the encoding + size; SIZE unit follows basis.
+  assert.equal(topOf("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"), "hex, 256-bit");
+  assert.equal(topOf("Lorem ipsum dolor sit amet consectetur adipisci"), "text, 47-byte");
+  // Self-describing prefix schemes reconstruct their prefix, no size.
+  assert.equal(topOf("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"), "did:key");
+  assert.equal(topOf("urn:isbn:0451450523"), "urn:isbn");
+  // CESR: primitive as a MOD with the redundant " pubkey" role word dropped
+  // (corpus vectors cesr-aid-b / cesr-aid-d / cesr-said-e).
+  assert.equal(topOf("BKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx"), "CESR, Ed25519 nt");
+  assert.equal(topOf("DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx"), "CESR, Ed25519");
+  assert.equal(topOf("EBfdlu8R27Fbx_ehrqwImnK_8Cm79sqbAQ4caaZG_LFv"), "CESR, Blake3-256");
+  // Fixed-size schemes omit SIZE entirely.
+  assert.equal(topOf("550e8400-e29b-41d4-a716-446655440000"), "UUID");
+  assert.equal(topOf("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"), "ETH");
+});
+
+test("renderLabel: SSH shows algorithm MOD + bit size; CIDv1 shows codec MOD", () => {
+  const ssh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtJVH9hM+2DyhmgRZBfeIDoVqCTbXY+0nKlS5pTkkXY user@example.com";
+  assert.equal(topOf(ssh), "SSH, ed25519, 264-bit");
+  const cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+  assert.equal(topOf(cid), "CIDv1, dag-pb");
+});
+
+test("renderLabel: multihash size + non-default hash MOD", () => {
+  // A hex multihash (sha2-256 elided) reads "multihash, <bits>-bit".
+  assert.equal(topOf("1220" + "ab".repeat(32)), "multihash, 256-bit");
+  // A multihash whose hash departs from sha2-256 surfaces the hash as a MOD.
+  // Constructed directly since the parser elides the hash into qualifiers only
+  // on departure paths; renderLabel is a pure function of the fields.
+  const mh = {
+    encoding: "base64", scheme: "multihash", role: "digest" as const,
+    qualifiers: { hash: "sha3-256" }, sizeBasis: "decoded" as const,
+    sizeBits: 256, parts: [], entropyType: "multihash",
+  };
+  assert.equal(renderLabel(mh).top, "multihash, sha3-256, 256-bit");
+});
+
+test("renderLabel: CIDv1 non-default hash surfaces as a MOD; CIDv0 has no MOD", () => {
+  const cidHash = {
+    encoding: "base32", scheme: "cid", role: "identifier" as const,
+    qualifiers: { version: 1, codec: "dag-pb", hash: "blake2b-256" },
+    sizeBasis: "decoded" as const, sizeBits: 256, parts: [], entropyType: "cid",
+  };
+  assert.equal(renderLabel(cidHash).top, "CIDv1, dag-pb, blake2b-256");
+  const cid0 = {
+    encoding: "base58", scheme: "cid", role: "identifier" as const,
+    qualifiers: { version: 0, codec: "dag-pb", hash: "sha2-256" },
+    sizeBasis: "decoded" as const, sizeBits: 256, parts: [], entropyType: "cid",
+  };
+  assert.equal(renderLabel(cid0).top, "CIDv0");
+});
+
+test("renderLabel: gitoid / swhid reconstruct their self-describing prefix", () => {
+  assert.equal(
+    topOf("gitoid:blob:sha256:473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"),
+    "gitoid:blob:sha256",
+  );
+  assert.equal(
+    topOf("swh:1:rev:309cf2674ee7a0749978cf8265ab91a60aea0f7d"),
+    "swh:1:rev",
+  );
+});
+
+test("renderLabel: blockchain testnet network surfaces as a MOD; mainnet silent", () => {
+  // A valid bchtest CashAddr -> testnet MOD.
+  assert.equal(topOf("bchtest:qpm2qsznhks23z7629mms6s4cwef74vcwvqcw003ap"), "BCH, testnet");
+  // Mainnet is silent (no MOD).
+  assert.equal(topOf("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"), "BCH");
+});
+
+test("renderLabel: >512-bit truncation adds the loud 'fingerprint of ' marker", () => {
+  const big = "0123456789abcdef".repeat(16); // 256 hex = 1024 bits
+  assert.equal(topOf(big, true), "fingerprint of hex, 1024-bit");
+});
+
+test("renderLabel: bottom strip = ...<suffix> (<note>)", () => {
+  const ch = characterize("deadbeefcafe");
+  assert.equal(renderLabel(ch, false, "vfNa", null).bottom, "...vfNa");
+  assert.equal(renderLabel(ch, false, "vfNa", "git").bottom, "...vfNa (git)");
+  assert.equal(renderLabel(ch, false, null, "git").bottom, "(git)");
+  assert.equal(renderLabel(ch, false, null, null).bottom, "");
 });

@@ -13,7 +13,9 @@ test("render: a >512-bit input no longer throws; it takes the large-input path",
 test("render: large input shows the loud 'fingerprint of' marker + byte-length type", () => {
   const svg = render(BIG_HEX);
   assert.match(svg, /fingerprint of /);
-  assert.match(svg, /hex\(256\):/); // type parenthetical carries the size
+  // v14: the top label is the projected characterization; a >512-bit hex input
+  // reads "fingerprint of hex, <bits>-bit" (256 hex chars = 1024 bits decoded).
+  assert.match(svg, /hex, 1024-bit/);
   assert.match(svg, /fill="#a00000"/); // bold dark-red marker
 });
 

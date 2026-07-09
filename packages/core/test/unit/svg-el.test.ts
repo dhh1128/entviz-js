@@ -77,22 +77,29 @@ test("drawQuartileMark: a triangle polygon in each of the four corners", () => {
   }
 });
 
-test("drawLabels: top strip variants (type only, type+prefix, prefix only, empty)", () => {
-  const top = (typeName: string, prefix: string | null) => {
+// v14: the top strip is the render_label projection string, rendered verbatim
+// (no ':' fusing). When truncated, a "fingerprint of " prefix is split into a
+// bold dark-red tspan with the projected label following.
+test("drawLabels: top strip renders the projected label verbatim", () => {
+  const top = (topText: string, truncated = false) => {
     const svg = new El("svg");
-    drawLabels(svg, 10, 100, 30, 200, 20, typeName, prefix, null, 12, null);
+    drawLabels(svg, 10, 100, 30, 200, 20, topText, null, 12, null, truncated);
     return svg.render();
   };
-  assert.match(top("hex(6)", null), />hex\(6\):</);
-  assert.match(top("ETH", "0xabc"), />ETH: 0xabc\.\.\.</);
-  assert.match(top("", "swh:1:rev:x"), />swh:1:rev:x\.\.\.</);
-  assert.match(top("", null), /<text[^>]*><\/text>/); // empty label still emitted
+  assert.match(top("hex, 48-bit"), />hex, 48-bit</);
+  assert.match(top("CESR, Ed25519 nt"), />CESR, Ed25519 nt</);
+  assert.match(top("did:key"), />did:key</);
+  assert.match(top(""), /<text[^>]*><\/text>/); // empty label still emitted
+  // Truncated: bold dark-red "fingerprint of " marker + the projected label.
+  const tr = top("fingerprint of hex, 1024-bit", true);
+  assert.match(tr, /fill="#a00000"[^>]*font-weight="bold"[^>]*>fingerprint of </);
+  assert.match(tr, />hex, 1024-bit</);
 });
 
 test("drawLabels: bottom strip variants (suffix, suffix+note, note only)", () => {
   const bottom = (suffix: string | null, note: string | null) => {
     const svg = new El("svg");
-    drawLabels(svg, 10, 100, 30, 200, 20, "hex(6)", null, suffix, 12, note);
+    drawLabels(svg, 10, 100, 30, 200, 20, "hex, 48-bit", suffix, 12, note, false);
     return svg.render();
   };
   assert.match(bottom("ab", null), /\.\.\.ab</);
