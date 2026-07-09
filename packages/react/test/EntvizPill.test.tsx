@@ -251,6 +251,18 @@ describe("EntvizPill rendering", () => {
     expect(onError.mock.calls[0][0]).toMatch(/note/i);
     expect(screen.getByRole("button", { name: /unrenderable/i })).toBeTruthy();
   });
+
+  test("v14: a checksum-rejected value fails closed — onError fires, no fake type is shown", () => {
+    // a valid EIP-55 address with its last checksum char flipped (d→D): characterize()
+    // now THROWS instead of rendering it as a valid address (v14 verified checksums).
+    const onError = vi.fn();
+    render(<EntvizPill value="0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD" onError={onError} />);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toMatch(/checksum/i); // a meaningful, specific reason
+    // it must NOT silently masquerade as a valid ETH address
+    expect(screen.queryByText("eth")).toBeNull();
+    expect(screen.getByRole("button", { name: /unrenderable/i })).toBeTruthy();
+  });
 });
 
 // --- expand / dismiss -----------------------------------------------------
