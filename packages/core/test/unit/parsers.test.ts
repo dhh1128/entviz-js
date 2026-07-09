@@ -159,16 +159,28 @@ test("parse: Ripple address -> XRP/base58", () => {
 });
 
 test("parse: Litecoin bech32 (ltc1)", () => {
-  const p = parse("ltc1qhw6dgkk52v9eqzukju7vrqpw0jt4wll6e6n4q5")!;
+  // v14: the specific ltc1 parser now verifies the bech32 polymod, so the test
+  // vector must be a checksum-VALID address (the corpus `litecoin` vector).
+  const p = parse("ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n9")!;
   assert.equal(p.type, "LTC");
   assert.equal(p.alphabet, BECH32);
 });
 
 test("parse: Litecoin legacy (L..) -> base58", () => {
-  // 'L' + 33 base58 chars.
-  const p = parse("L" + "a".repeat(33))!;
+  // v14: Litecoin legacy is base58check-verified, so a real address is needed.
+  const p = parse("LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc1")!;
   assert.equal(p.type, "LTC legacy");
   assert.equal(p.prefix, "L");
+});
+
+test("parse: Litecoin legacy bad checksum -> rejected (v14)", () => {
+  // Structural L-prefix + right length, corrupted last char -> base58check fails.
+  assert.throws(() => parse("LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc2"), /base58check/);
+});
+
+test("parse: Litecoin bech32 bad checksum -> rejected (v14)", () => {
+  // From the corpus err-ltc-bad-checksum vector.
+  assert.throws(() => parse("ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n8"), /bech32/);
 });
 
 test("parse: Bitcoin Cash CashAddr with prefix", () => {
@@ -184,21 +196,32 @@ test("parse: Bitcoin Cash CashAddr without prefix", () => {
   assert.equal(p.prefix, null);
 });
 
-test("parse: Cardano short Byron (Ae2)", () => {
+test("parse: Bitcoin Cash CashAddr bad checksum -> rejected (v14)", () => {
+  // v14: the 40-bit CashAddr BCH checksum is verified; a structural match with a
+  // corrupted checksum (last char q vs a) REJECTS. From err-bch-bad-checksum.
+  assert.throws(() => parse("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6q"), /CashAddr/);
+});
+
+test("parse: Cardano short Byron (Ae2) -> whole body is the core, no suffix (v14)", () => {
+  // v14: Byron has no splittable trailing base58 checksum (CRC-32-in-CBOR
+  // instead), so the last 6 chars stay IN the core and suffix is null.
   const p = parse("Ae2" + "1".repeat(50) + "2".repeat(6))!;
   assert.equal(p.type, "ADA Byron");
   assert.equal(p.prefix, "Ae2");
-  assert.equal(p.suffix!.length, 6);
+  assert.equal(p.suffix, null);
+  assert.equal(p.core, "1".repeat(50) + "2".repeat(6));
 });
 
-test("parse: Cardano long Byron (DdzFF)", () => {
+test("parse: Cardano long Byron (DdzFF) -> no suffix (v14)", () => {
   const p = parse("DdzFF" + "1".repeat(65) + "2".repeat(6))!;
   assert.equal(p.type, "ADA Byron");
   assert.equal(p.prefix, "DdzFF");
+  assert.equal(p.suffix, null);
 });
 
 test("parse: Cardano Shelley (addr1) -> bech32, checksum suffix", () => {
-  const p = parse("addr1" + "q".repeat(50) + "p".repeat(6))!;
+  // v14: Shelley bech32 polymod is now verified, so a checksum-VALID address.
+  const p = parse("addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x")!;
   assert.equal(p.type, "ADA Shelley");
   assert.equal(p.alphabet, BECH32);
   assert.equal(p.suffix!.length, 6);
@@ -280,10 +303,11 @@ test("parse: 20-char alnum failing the reserved-'00' rule -> not LEI", () => {
   assert.notEqual(p.type, "LEI");
 });
 
-test("parse: 20-char alnum with bad checksum -> not LEI", () => {
-  // valid shape + '00' but wrong check digits.
-  const p = parse("5493001KJTIIGC8Y1R99")!;
-  assert.notEqual(p.type, "LEI");
+test("parse: 20-char alnum with bad checksum -> rejected (v14)", () => {
+  // v14: valid LEI shape + reserved '00' but wrong MOD 97-10 check digits is an
+  // unambiguous LEI match, so a bad checksum REJECTS (the bound suffix is shown,
+  // so it must verify) rather than falling through to a generic base36 encoding.
+  assert.throws(() => parse("5493001KJTIIGC8Y1R99"), /MOD 97-10/);
 });
 
 // --- SWHID / gitoid (prefix-semantic) ------------------------------------
@@ -330,10 +354,11 @@ test("parse: generic bech32 (cosmos) -> checksum-valid, hrp1 prefix", () => {
   assert.equal(p.suffix!.length, 6);
 });
 
-test("parse: <letters>1<chars> with bad checksum -> not bech32", () => {
-  // Looks bech32-shaped but the polymod won't validate -> falls through.
-  const p = parse("abcdef1qqqqqqqqqqqqqq");
-  assert.notEqual(p?.type, "bech32");
+test("parse: <letters>1<chars> with bad checksum -> rejected (v14)", () => {
+  // v14: an <hrp>1<8+ bech32 chars> shape is a clear bech32 match and the 6-char
+  // checksum is the bound suffix, so an invalid polymod REJECTS (rather than
+  // falling through to a bare encoding that renders a bad-checksum address).
+  assert.throws(() => parse("abcdef1qqqqqqqqqqqqqq"), /bech32/);
 });
 
 test("parse: IPFS CIDv0 (Qm..) -> base58", () => {

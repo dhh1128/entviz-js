@@ -1,6 +1,6 @@
 /**
- * Entropy characterization model (spec v13) — a faithful TypeScript port of the
- * Python reference `entviz/characterize.py`.
+ * Entropy characterization model (spec v13) + label projection (spec v14) — a
+ * faithful TypeScript port of the Python reference `entviz/characterize.py`.
  *
  * The parser (`parse` in ./entviz.ts) produces a `Parsed` display record whose
  * `type` string fuses several orthogonal facts (scheme, semantic role, network/
@@ -280,6 +280,160 @@ function partsFromParsed(parsed: Parsed): Part[] {
   parts.push({ text: parsed.core, bind: "core" });
   if (parsed.suffix) parts.push({ text: parsed.suffix, bind: "none" });
   return parts;
+}
+
+// ---------------------------------------------------------------------------
+// Label projection (spec v14).
+//
+// The visible top/bottom label strips are a PURE PROJECTION of the eight
+// characterization fields through one grammar — no per-parser string fusing.
+// Every implementation renders the same strips by running this same function
+// over the shared fields. Faithful port of Python's render_label in
+// entviz/characterize.py. See docs/spec.md -> "Label strips" and
+// reviews/v14-label-redesign.md.
+//
+//   top    = [fingerprint of ]PRIMARY[, MOD]...[, SIZE]
+//   bottom = ...<suffix>[ (<note>)]
+//
+// Slot separator is ", " (comma-space); no trailing ':' or '...'.
+// ---------------------------------------------------------------------------
+
+// Bare-encoding display shortenings for the PRIMARY slot when scheme is null and
+// the basis is decoded (the encoding name IS the primary). Mirrors the pre-v14
+// pipeline renaming base64->b64, base64url->b64url; the other alphabet names
+// (hex, base32, base58, bech32, crockford32, decimal) show verbatim.
+const ENCODING_PRIMARY: Record<string, string> = {
+  base64: "b64",
+  base64url: "b64url",
+};
+
+// scheme -> visible PRIMARY short-name for the non-self-describing schemes. The
+// characterization `scheme` field is lowercase (btc/eth/...); the label uses the
+// conventional display casing (BTC/ETH/UUID/...). CID is special-cased (CIDv0 /
+// CIDv1 from qualifiers.version); the self-describing prefix schemes
+// (did/urn/gitoid/swhid) reconstruct their prefix from qualifiers and never
+// reach this map.
+const SCHEME_PRIMARY: Record<string, string> = {
+  eth: "ETH",
+  btc: "BTC",
+  ltc: "LTC",
+  bch: "BCH",
+  ada: "ADA",
+  xrp: "XRP",
+  stellar: "XLM",
+  eos: "EOS",
+  uuid: "UUID",
+  ulid: "ULID",
+  lei: "LEI",
+  snowflake: "snowflake",
+  ssh: "SSH",
+  cesr: "CESR",
+  bech32: "bech32",
+  multihash: "multihash",
+};
+
+// Blockchain schemes whose network qualifier, when it departs from mainnet,
+// surfaces as a MOD (testnet loud; mainnet silent). The legacy/segwit `variant`
+// is DROPPED entirely (v14).
+const BLOCKCHAIN_SCHEMES = new Set([
+  "btc", "ltc", "bch", "ada", "eth", "xrp", "stellar", "eos", "bech32",
+]);
+
+// The PRIMARY slot: the always-present head of the top label.
+function labelPrimary(ch: Characterization): string {
+  const scheme = ch.scheme;
+  const q = ch.qualifiers;
+  if (scheme === null) {
+    // Bare encoding or UTF-8 fallback.
+    if (ch.sizeBasis === "utf8") return "text";
+    const enc = ch.encoding;
+    return ENCODING_PRIMARY[enc] ?? enc;
+  }
+  if (scheme === "did") return `did:${q.method}`;
+  if (scheme === "urn") return `urn:${q.nid}`;
+  if (scheme === "gitoid") return `gitoid:${q.object ?? ""}:${q.algorithm ?? ""}`;
+  if (scheme === "swhid") return `swh:1:${q.object ?? ""}`;
+  if (scheme === "cid") return q.version === 0 ? "CIDv0" : "CIDv1";
+  return SCHEME_PRIMARY[scheme] ?? scheme;
+}
+
+// The MOD slots (zero or more): silent-default / loud-departure facets.
+function labelMods(ch: Characterization): string[] {
+  const scheme = ch.scheme;
+  const q = ch.qualifiers;
+  const mods: string[] = [];
+  if (scheme === "cesr") {
+    // The primitive with the redundant role word dropped: strip a trailing
+    // " pubkey" (role=key/digest is implied by the primitive).
+    let algo = String(q.algorithm ?? "");
+    if (algo.endsWith(" pubkey")) algo = algo.slice(0, -" pubkey".length);
+    if (algo) mods.push(algo);
+  } else if (scheme === "ssh") {
+    const algo = q.algorithm;
+    if (algo) mods.push(String(algo));
+  } else if (scheme === "cid") {
+    // CIDv0 is dag-pb/sha2-256 by definition -> no MOD. CIDv1: codec always,
+    // hash only on departure from sha2-256.
+    if (q.version !== 0) {
+      const codec = q.codec;
+      if (codec) mods.push(String(codec));
+      const hashName = q.hash;
+      if (hashName && hashName !== "sha2-256") mods.push(String(hashName));
+    }
+  } else if (scheme === "multihash") {
+    const hashName = q.hash;
+    if (hashName && hashName !== "sha2-256") mods.push(String(hashName));
+  } else if (BLOCKCHAIN_SCHEMES.has(scheme)) {
+    // Network only on departure (testnet); mainnet silent. Variant dropped.
+    const network = q.network;
+    if (network && network !== "mainnet") mods.push(String(network));
+  }
+  return mods;
+}
+
+// The SIZE slot (zero or one), or null when omitted.
+function labelSize(ch: Characterization): string | null {
+  const scheme = ch.scheme;
+  const sizeBits = ch.sizeBits;
+  if (scheme === null) {
+    if (ch.sizeBasis === "utf8") return `${Math.floor(sizeBits / 8)}-byte`;
+    return `${sizeBits}-bit`;
+  }
+  if (scheme === "ssh" || scheme === "multihash") return `${sizeBits}-bit`;
+  return null;
+}
+
+/**
+ * Project a characterization into the (top, bottom) label strips (v14).
+ *
+ * Pure function of the eight characterization fields (plus the presentation
+ * facts the fields don't carry: whether the input was >512-bit `truncated`, the
+ * bound `suffix` checksum, and the out-of-band user `note`).
+ *
+ *  - top    = `[fingerprint of ]PRIMARY[, MOD]...[, SIZE]` — ", " joined, no
+ *    trailing `:` or `...`. The `fingerprint of ` marker is reflected here so a
+ *    text-only consumer still sees it (the renderer styles it as a tspan).
+ *  - bottom = `...<suffix>` then ` (<note>)` — the bound (now-verified) checksum
+ *    and the user caption. Empty string when neither is present.
+ *
+ * Returns plain strings; the renderer maps top/bottom onto the SVG label strips.
+ */
+export function renderLabel(
+  ch: Characterization,
+  truncated = false,
+  suffix: string | null = null,
+  note: string | null = null,
+): { top: string; bottom: string } {
+  const slots = [labelPrimary(ch), ...labelMods(ch)];
+  const size = labelSize(ch);
+  if (size !== null) slots.push(size);
+  let top = slots.join(", ");
+  if (truncated) top = "fingerprint of " + top;
+
+  let bottom = "";
+  if (suffix) bottom = `...${suffix}`;
+  if (note) bottom = bottom ? `${bottom} (${note})` : `(${note})`;
+  return { top, bottom };
 }
 
 /**

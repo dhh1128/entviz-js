@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v13), including the
+ * A faithful port of the Python reference (docs/spec.md, v14), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). The full identifier-parser
  * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/
@@ -15,7 +15,7 @@
  * the browser-safe helpers in bytes.ts (no node:crypto/node:fs/Buffer), so the
  * renderer bundles cleanly for the browser too — see isomorphic.test.ts.
  */
-import { sha512 } from "@noble/hashes/sha2.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import {
   utf8Bytes,
@@ -23,10 +23,10 @@ import {
   bytesToHex,
   bytesToBase64url,
 } from "./bytes.ts";
-import { characterize, compactJson } from "./characterize.ts";
+import { characterize, compactJson, renderLabel } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v13";
+export const SPEC_VERSION = "v14";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -802,11 +802,117 @@ const IPFS_CIDV0_RE = new RegExp(`^(Qm)(${B58C}{44})$`);
 const IPFS_CIDV1_RE = new RegExp(`^(b)(${BASE32E}{58,112})$`);
 const EOS_RE = /(^[a-z1-5.]{1,11}[a-z1-5]$)|(^[a-z1-5.]{12}[a-j1-5]$)/;
 
+// v14 checksum-rejection errors. A bound checksum is SHOWN in the label (the
+// "...<suffix>" bottom strip), so it must be VERIFIED; a structural match with a
+// bad checksum is an ERROR (rejected → the input is an error vector), matching
+// the existing EIP-55 behavior. See docs/spec.md "Checksum verification" and
+// reviews/v14-label-redesign.md.
+
+// Decode a base58 (Bitcoin alphabet) string to raw bytes, preserving leading-
+// zero bytes (each leading '1' is a 0x00 byte). Used only for checksum
+// verification; the visualized core is the original text. Returns null when a
+// char is outside the base58 alphabet (cannot be a valid base58check body).
+function base58DecodeBytes(s: string): Uint8Array | null {
+  let n = 0n;
+  for (const c of s) {
+    const v = BASE58_ALPHABET.indexOf(c);
+    if (v < 0) return null;
+    n = n * 58n + BigInt(v);
+  }
+  const body: number[] = [];
+  while (n > 0n) {
+    body.unshift(Number(n & 0xffn));
+    n >>= 8n;
+  }
+  let pad = 0;
+  for (const c of s) {
+    if (c === "1") pad++;
+    else break;
+  }
+  return new Uint8Array([...new Array(pad).fill(0), ...body]);
+}
+
+// True iff `s` decodes to `payload || checksum` where checksum is the first 4
+// bytes of double-SHA256(payload). The near-universal base58check construction
+// used by Bitcoin/Litecoin legacy addresses.
+function base58checkOk(s: string): boolean {
+  const raw = base58DecodeBytes(s);
+  if (raw === null || raw.length < 5) return false;
+  const payload = raw.slice(0, -4);
+  const checksum = raw.slice(-4);
+  const digest = sha256(sha256(payload));
+  for (let i = 0; i < 4; i++) if (digest[i] !== checksum[i]) return false;
+  return true;
+}
+
+// CashAddr generator constants (5 rows of the 40-bit BCH code used by Bitcoin
+// Cash — a DIFFERENT code from bech32's 30-bit BIP-173 polymod). BigInt because
+// the accumulator is 40-bit and exceeds JS's 32-bit bitwise range.
+const CASHADDR_GEN = [
+  0x98f2bc8e61n, 0x79b76d99e2n, 0xf33e5fb3c4n, 0xae2eabe2a8n, 0x1e4f43e470n,
+];
+
+// The 40-bit BCH checksum polymod used by Bitcoin Cash CashAddr (NOT the bech32
+// polymod). `values` is a list of 5-bit ints. Valid iff it returns 0n.
+function cashaddrPolymod(values: number[]): bigint {
+  let c = 1n;
+  for (const d of values) {
+    const c0 = c >> 35n;
+    c = ((c & 0x07ffffffffn) << 5n) ^ BigInt(d);
+    for (let i = 0; i < 5; i++) {
+      if ((c0 >> BigInt(i)) & 1n) c ^= CASHADDR_GEN[i];
+    }
+  }
+  return c ^ 1n;
+}
+
+// True iff CashAddr `payload` (bech32-charset body INCLUDING the trailing 8
+// checksum chars) carries a valid BCH checksum under `prefix` (lowercase, e.g.
+// "bitcoincash" / "bchtest"). Bitcoin Cash's integrity check is a 40-bit BCH
+// code, not the bech32 polymod — hence a dedicated verifier.
+function cashaddrVerify(prefix: string, payload: string): boolean {
+  const body: number[] = [];
+  for (const x of payload.toLowerCase()) {
+    const v = BECH32_ALPHABET.indexOf(x);
+    if (v < 0) return false;
+    body.push(v);
+  }
+  const values: number[] = [];
+  for (const x of prefix) values.push(x.charCodeAt(0) & 0x1f);
+  values.push(0);
+  values.push(...body);
+  return cashaddrPolymod(values) === 0n;
+}
+
+// A bech32 checksum constant of 1 (bech32) or 0x2bc830a3 (bech32m) is valid;
+// anything else is a corrupt address. `hrp` is the human-readable part WITHOUT
+// the trailing '1' separator; `data` is the bech32 char string INCLUDING the 6
+// trailing checksum chars.
+function bech32ChecksumValid(hrp: string, data: string): boolean {
+  const c = bech32ChecksumConst(hrp, data);
+  return c === 1 || c === 0x2bc830a3;
+}
+
 function parseBitcoin(text: string): Parsed | null {
   let m = text.match(BITCOIN_LEGACY_RE);
-  if (m) return { type: "BTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  if (m) {
+    // v14: the 4-byte double-SHA256 checksum is surfaced as the suffix, so it
+    // MUST verify. A structural match with a bad checksum rejects.
+    if (!base58checkOk(m[0])) throw new Error(`Bitcoin legacy address ${text} fails its base58check (double-SHA256) checksum`);
+    return { type: "BTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  }
   m = text.match(BITCOIN_SEGWIT_RE);
-  if (m) return { type: "BTC SegWit", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1].toLowerCase(), suffix: null };
+  if (m) {
+    // Bitcoin SegWit uses bech32 (BIP-173). v14: verify the polymod (the
+    // specific parser previously skipped it). group[1] is "bc1"/"tb1" (HRP + the
+    // '1' separator); the polymod HRP is the HRP alone, so strip the separator.
+    const prefix = m[1].toLowerCase();
+    const data = m[2].toLowerCase();
+    if (!bech32ChecksumValid(prefix.replace(/1$/, ""), data)) {
+      throw new Error(`Bitcoin segwit address ${text} fails its bech32 checksum`);
+    }
+    return { type: "BTC SegWit", core: data, alphabet: BECH32, prefix, suffix: null };
+  }
   return null;
 }
 
@@ -818,26 +924,64 @@ function parseRipple(text: string): Parsed | null {
 
 function parseLitecoin(text: string): Parsed | null {
   let m = text.match(LITECOIN_LEGACY_RE);
-  if (m) return { type: "LTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
+  if (m) {
+    // v14: Litecoin legacy is base58check; verify the double-SHA256 checksum —
+    // a bad checksum rejects.
+    if (!base58checkOk(m[0])) throw new Error(`Litecoin legacy address ${text} fails its base58check (double-SHA256) checksum`);
+    return { type: "LTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
+  }
   m = text.match(LITECOIN_RE);
-  if (m) return { type: "LTC", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1].toLowerCase(), suffix: null };
+  if (m) {
+    // Modern "ltc1…" uses bech32. v14: verify the polymod (the specific parser
+    // previously skipped it) — the polymod HRP is "ltc" (strip the separator).
+    const prefix = m[1].toLowerCase();
+    const data = m[2].toLowerCase();
+    if (!bech32ChecksumValid(prefix.replace(/1$/, ""), data)) {
+      throw new Error(`Litecoin address ${text} fails its bech32 checksum`);
+    }
+    return { type: "LTC", core: data, alphabet: BECH32, prefix, suffix: null };
+  }
   return null;
 }
 
 function parseBitcoinCash(text: string): Parsed | null {
   const m = text.match(BITCOIN_CASH_RE);
+  if (!m) return null;
   // CashAddr uses the bech32 alphabet (not RFC 4648 base32) despite the name.
-  if (m) return { type: "BCH", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1] ?? null, suffix: null };
-  return null;
+  // v14: verify the 40-bit CashAddr BCH checksum (a DIFFERENT code from bech32's
+  // polymod). group[1] is the optional "bitcoincash:"/"bchtest:" prefix (with
+  // the ':') or undefined; the checksum HRP is the prefix WITHOUT the colon,
+  // defaulting to "bitcoincash" for a bare q…/p… address. The payload (group 2,
+  // INCLUDING its 8 trailing checksum chars) is what the BCH code covers.
+  const prefix = (m[1] ?? "bitcoincash:").replace(/:$/, "").toLowerCase();
+  if (!cashaddrVerify(prefix, m[2])) {
+    throw new Error(`Bitcoin Cash address ${text} fails its CashAddr checksum`);
+  }
+  return { type: "BCH", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1] ?? null, suffix: null };
 }
 
 function parseCardano(text: string): Parsed | null {
   let m = text.match(CARDANO_SHORT_BYRON_RE);
-  if (m) return { type: "ADA Byron", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  // v14: Cardano Byron addresses do NOT carry a trailing base58check checksum —
+  // their integrity check is a CRC-32 over the CBOR-encoded address INSIDE the
+  // decoded payload, not a splittable suffix. Per the v14 rule "only surface a
+  // bound checksum if it was VERIFIED", the whole Byron body is the core and
+  // suffix=null; we do NOT attempt CBOR/CRC-32 verification (out of scope).
+  if (m) return { type: "ADA Byron", core: m[2] + m[3], alphabet: BASE58, prefix: m[1], suffix: null };
   m = text.match(CARDANO_LONG_BYRON_RE);
-  if (m) return { type: "ADA Byron", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
+  if (m) return { type: "ADA Byron", core: m[2] + m[3], alphabet: BASE58, prefix: m[1], suffix: null };
   m = text.match(CARDANO_SHELLEY_RE);
-  if (m) return { type: "ADA Shelley", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1], suffix: m[3].toLowerCase() };
+  if (m) {
+    // Cardano Shelley uses bech32. v14: verify the polymod on this specific path
+    // too. group[1] is "addr1"/"stake1"/… (HRP + '1'); the polymod data is
+    // body+checksum (group 2 + group 3).
+    const hrp = m[1];
+    const data = (m[2] + m[3]).toLowerCase();
+    if (!bech32ChecksumValid(hrp.toLowerCase().replace(/1$/, ""), data)) {
+      throw new Error(`Cardano Shelley address ${text} fails its bech32 checksum`);
+    }
+    return { type: "ADA Shelley", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1], suffix: m[3].toLowerCase() };
+  }
   return null;
 }
 
@@ -914,8 +1058,13 @@ function leiChecksumOk(lei: string): boolean {
 function parseLei(text: string): Parsed | null {
   if (!LEI_RE.test(text)) return null;
   const upper = text.toUpperCase();
+  // Missing the reserved "00" -> not a clear LEI; fall through so a bare 20-char
+  // base36 string can still be recognized as an encoding.
   if (upper.slice(4, 6) !== "00") return null;
-  if (!leiChecksumOk(upper)) return null;
+  // v14: 20 base36 chars WITH the reserved "00" is an unambiguous LEI match, and
+  // the MOD 97-10 check digits are the bound suffix — so a bad checksum REJECTS
+  // rather than falling through to a generic base36 encoding.
+  if (!leiChecksumOk(upper)) throw new Error(`LEI ${upper} fails its MOD 97-10 checksum`);
   return { type: "LEI", core: upper.slice(0, 18), alphabet: BASE36, prefix: null, suffix: upper.slice(18) };
 }
 
@@ -985,8 +1134,12 @@ function parseBech32(text: string): Parsed | null {
   if (!m) return null;
   const hrp = m[1].toLowerCase();
   const data = m[2].toLowerCase();
-  const c = bech32ChecksumConst(hrp, data);
-  if (c !== 1 && c !== 0x2bc830a3) return null;
+  // v14: a `<hrp>1<data>` string with 8+ bech32 chars is a clear bech32
+  // structural match, and the 6-char checksum is surfaced as the bound suffix —
+  // so an invalid polymod REJECTS rather than falling through to a bare bech32
+  // encoding (which would render an address that fails its own checksum). Same
+  // "no entviz from an invalid checksum" rule the bc1/ltc1 parsers now follow.
+  if (!bech32ChecksumValid(hrp, data)) throw new Error(`bech32 address ${text} fails its bech32 checksum`);
   return { type: "bech32", core: data.slice(0, -6), alphabet: BECH32, prefix: `${hrp}1`, suffix: data.slice(-6) };
 }
 
@@ -1495,7 +1648,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   if (rawInput.length > MAX_INPUT_CHARS) {
     throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
   }
-  const { core, typeName, alphabet, prefix, suffix, prefixSemantic } = classifyInput(rawInput);
+  const { core, alphabet, prefix, suffix, prefixSemantic } = classifyInput(rawInput);
   // v11 PREFIX-FOLD: the PRIMARY fingerprint hashes `prefix ‖ core` for a
   // semantic prefix (DID method / URN NID), else the bare core. The
   // fingerprint-MIDDLE digest (color-bar markers) stays over the bare `core`.
@@ -1750,8 +1903,14 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   // Layer 5a: color bar
   drawColorBar(svg, digest, style.edgeColors, barWidth, boundingH, cellTextPx, fingerprintMiddleDigest(core));
 
-  // Layer 5b: labels
-  drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, typeName, prefix, suffix, labelTextPx, note, truncated);
+  // Layer 5b: labels. v14: the top strip is a pure projection of the v13
+  // characterization through the shared render_label grammar (PRIMARY[, MOD]…
+  // [, SIZE]), NOT the old per-parser typeName/prefix fusing. `ch` is the same
+  // characterization emitted as data-* attributes above; the styled
+  // "fingerprint of " marker and the note tspan are applied structurally in
+  // drawLabels from the truncated/note flags. See reviews/v14-label-redesign.md.
+  const { top: labelTop } = renderLabel(ch, truncated);
+  drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, labelTop, suffix, labelTextPx, note, truncated);
 
   // Borders
   borderLine(svg, MARGIN, MARGIN + 0.5, boundingW - MARGIN, MARGIN + 0.5);
@@ -1890,23 +2049,26 @@ export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], 
   }
 }
 
-export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, typeName: string, prefix: string | null, suffix: string | null, textPx: number, note: string | null, truncated: boolean) {
+// v14: `topText` is the render_label projection of the characterization
+// (PRIMARY[, MOD]…[, SIZE]); when `truncated` it begins with the loud
+// "fingerprint of " marker, which is split back out and rendered as a bold
+// dark-red leading tspan with the projected label following in #666. The bottom
+// strip ("...<suffix>" + " (<note>)") is unchanged.
+const TRUNC_MARKER = "fingerprint of ";
+export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, topText: string, suffix: string | null, textPx: number, note: string | null, truncated: boolean) {
   // font-family is inherited from the root <svg>; each label <text> carries
   // only a compact font-size presentation attribute.
   const topG = svg.child("g").set("data-channel", "label-top");
-  let restText: string;
-  if (typeName) restText = prefix ? `${typeName}: ${prefix}...` : `${typeName}:`;
-  else restText = prefix ? `${prefix}...` : "";
   const topCy = gridTop - nucleusHeight / 2;
   const el = topG.child("text").set("x", gridLeft).set("y", topCy).set("fill", "#666666").set("font-size", textPx).set("dominant-baseline", "central");
-  if (truncated) {
+  if (truncated && topText.startsWith(TRUNC_MARKER)) {
     // A >512-bit input's text channel is no longer lossless: a loud bold
-    // dark-red "fingerprint of" marker precedes the standard #666 label. The
-    // byte length is carried by the type parenthetical (e.g. hex(256)).
-    el.child("tspan").set("fill", "#a00000").set("font-weight", "bold").text = "fingerprint of ";
-    el.child("tspan").text = restText;
+    // dark-red "fingerprint of" marker precedes the standard #666 label.
+    const rest = topText.slice(TRUNC_MARKER.length);
+    el.child("tspan").set("fill", "#a00000").set("font-weight", "bold").text = TRUNC_MARKER;
+    el.child("tspan").text = rest;
   } else {
-    el.text = restText;
+    el.text = topText;
   }
   if (suffix || note) {
     const bottomG = svg.child("g").set("data-channel", "label-bottom");
@@ -1985,6 +2147,7 @@ export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gri
 // @entviz/core entry point.
 export {
   characterize,
+  renderLabel,
   type Characterization,
   type Role,
   type SizeBasis,
