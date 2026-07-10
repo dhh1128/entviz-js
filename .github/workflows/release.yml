@@ -102,15 +102,33 @@ jobs:
                  --tiers A --only "${subset}" )
 
       # Publish via OIDC Trusted Publishing — no NODE_AUTH_TOKEN. npm verifies
-      # the OIDC identity against the trusted publisher registered on
-      # @entviz/core (this repo + this workflow file) and auto-attaches a
-      # provenance attestation.
+      # the OIDC identity against the trusted publisher registered on each
+      # package (this repo + this workflow file) and auto-attaches a provenance
+      # attestation. Each package requires its OWN trusted publisher registered
+      # on npm (@entviz/core and @entviz/react are separate npm packages).
       #
-      # Core only for now (chosen first-release scope). @entviz/react is held
-      # back until proven; to publish it later, add (after core, which it
-      # depends on):
-      #   npm publish -w @entviz/react --provenance --access public
-      # Its version already tracks core in lockstep via scripts/release.py, and
-      # it would need its own trusted publisher registered on npm.
+      # Both steps are idempotent: they skip a version already on npm, so the
+      # release is safely re-runnable (e.g. to publish a newly-added package for
+      # an existing tag, or to retry a transient failure, without republishing
+      # what already shipped). @entviz/react is published AFTER @entviz/core
+      # because it depends on it (its version tracks core in lockstep via
+      # scripts/release.py).
       - name: Publish @entviz/core to npm (OIDC, with provenance)
-        run: npm publish -w @entviz/core --provenance --access public
+        run: |
+          set -euo pipefail
+          v="$(node -p "require('./packages/core/package.json').version")"
+          if npm view "@entviz/core@${v}" version >/dev/null 2>&1; then
+            echo "@entviz/core@${v} already on npm — skipping"
+          else
+            npm publish -w @entviz/core --provenance --access public
+          fi
+
+      - name: Publish @entviz/react to npm (OIDC, with provenance)
+        run: |
+          set -euo pipefail
+          v="$(node -p "require('./packages/react/package.json').version")"
+          if npm view "@entviz/react@${v}" version >/dev/null 2>&1; then
+            echo "@entviz/react@${v} already on npm — skipping"
+          else
+            npm publish -w @entviz/react --provenance --access public
+          fi
