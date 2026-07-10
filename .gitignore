@@ -9,3 +9,6 @@ __pycache__/
 
 # Generated TypeDoc API reference (run: npm run docs)
 docs/api/
+
+# Assembled GitHub Pages publish tree (built in the pages.yml workflow)
+/_site/

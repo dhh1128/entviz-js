@@ -3,10 +3,14 @@
 [![npm (@entviz/react)](https://img.shields.io/npm/v/@entviz/react.svg?label=%40entviz%2Freact)](https://www.npmjs.com/package/@entviz/react)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-A thin React component over [`@entviz/core`](https://www.npmjs.com/package/@entviz/core):
-drop a comparable SVG fingerprint of any high-entropy value into a web or mobile
-UI. See the [entviz](https://github.com/dhh1128/entviz) project for what an
-entviz is and why.
+React components over [`@entviz/core`](https://www.npmjs.com/package/@entviz/core):
+drop a comparable SVG fingerprint of any high-entropy value (key, hash, UUID,
+address, DID, …) into a web or mobile UI. See the
+[entviz project](https://github.com/dhh1128/entviz) for what an entviz is, why
+it exists, and the algorithm spec.
+
+The components, the playground, and this package's source live in the
+[`entviz-js`](https://github.com/dhh1128/entviz-js) repo.
 
 ## Install
 
@@ -40,7 +44,7 @@ embeds no caller markup) and carries a `viewBox`, so it scales to the wrapping
 element's width. If rendering throws (e.g. an invalid `note`), `onError` is
 called and an empty labelled `<span>` is rendered instead.
 
-### Props
+### `<Entviz />` props
 
 | Prop | Type | Description |
 |---|---|---|
@@ -50,7 +54,50 @@ called and an empty labelled `<span>` is rendered instead.
 | `note` | `string \| null` | Optional ≤10-char printable-ASCII caption (never hashed). |
 | `className`, `style` | — | Applied to the wrapping `<span>`. |
 | `title` | `string` | Accessible label (`aria-label`). |
+| `controls` | `boolean` | Show opt-in size + reshape controls beside the figure (default `false`). |
 | `onError` | `(message: string) => void` | Called if rendering throws. |
+
+## Components
+
+The package exports five components. `Entviz` is the primitive render; the other
+four are higher-level flows built on it. All ship as raw `.ts` source (no build
+step) authored with `React.createElement`, so they carry no JSX-transform
+requirement onto consumers.
+
+| Component | What it does |
+|---|---|
+| `Entviz` | Renders a single high-entropy value as an entviz SVG — the thin, deterministic primitive the others build on. |
+| `EntvizPill` | The collapsed, inline "pill" form: a constant badge plus the parser-derived type, with a copy menu and an expand-to-popover affordance. It consumes the structured characterization from the core renderer (not a label string), and deliberately never shows the note, value characters, or any value-derived visual — it affords locate / expand / copy, never an equality decision. |
+| `EntvizCompare` | Helps a human decide whether *their* value matches a *reference*, by comparing two entviz visualizations side by side. The reference is acquired by paste / file-pick / drag-drop / URL-fetch and always re-rendered through the pinned font (a pasted SVG is never embedded). |
+| `EntvizWalk` | The guided human walk: the user is walked one feature at a time, with a focus ring drawn around the feature on both figures, reporting Matches / Differs — including a transparent planted probe. Yields "no difference found", never a bare `identical`. |
+| `EntvizVoiceCompare` | The remote two-party voice ceremony: one-way authentication on a single device, where the other party reads highlighted glyphs aloud over a trusted voice/video call and the authenticator reports Matches / Doesn't-match cell by cell. |
+
+Each component's TypeScript prop types are documented in the
+[API reference](https://dhh1128.github.io/entviz-js/api/).
+
+## Try it live
+
+- Hosted playground: **<https://dhh1128.github.io/entviz-js/>** — paste a
+  high-entropy value, hit **Build**, and tweak the props (`targetAr`,
+  `fontSizePt`, `note`, display width) live.
+- Run it locally from the repo root:
+
+  ```sh
+  npm install
+  npm run dev -w @entviz/playground
+  # → http://localhost:5173
+  ```
+
+## Docs
+
+- **Developer Integration Guide** —
+  <https://dhh1128.github.io/entviz/integration-guide/> (how to adopt entviz in
+  your app; what an entviz is and why).
+- **API reference** — <https://dhh1128.github.io/entviz-js/api/> (TypeDoc for
+  `@entviz/core` and `@entviz/react`).
+
+> This README is what npm renders on the package page, so it re-publishes with
+> the next version bump — that's fine.
 
 ## License
 
