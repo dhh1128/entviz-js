@@ -883,10 +883,14 @@ function personSpeakingIcon(): ReactNode {
 const tabBarStyle: CSSProperties = {
   display: "flex", gap: 4, borderBottom: "1px solid var(--entviz-compare-placeholder, #d0d7de)",
 };
+// Uses longhand font-/border-bottom- properties (not the `font` / `borderBottom`
+// shorthands) because tabActive toggles fontWeight and borderBottomColor on top of
+// this base: React warns when a longhand is added/removed across rerenders while a
+// conflicting shorthand is set. Longhands throughout keep the active↔inactive swap clean.
 const tabBase: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: TEXT.body,
+  display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: TEXT.body,
   padding: "7px 12px", cursor: "pointer", background: "none", border: "none",
-  borderBottom: "2px solid transparent", marginBottom: -1,
+  borderBottomWidth: 2, borderBottomStyle: "solid", borderBottomColor: "transparent", marginBottom: -1,
 };
 const tabActive: CSSProperties = {
   ...tabBase, fontWeight: 600,

@@ -129,7 +129,7 @@ export function ringOverlay(model: ChannelDescription | null, step: WalkStep, id
       h("rect", {
         key: i,
         x: r.x, y: r.y, width: r.w, height: r.h, rx: 2,
-        fill: "none", stroke: RING, "stroke-width": 3,
+        fill: "none", stroke: RING, strokeWidth: 3,
       }),
     ),
   );
