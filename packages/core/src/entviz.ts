@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v14), including the
+ * A faithful port of the Python reference (docs/spec.md, v15), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). The full identifier-parser
  * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/

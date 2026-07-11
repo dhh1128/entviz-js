@@ -60,9 +60,11 @@ called and an empty labelled `<span>` is rendered instead.
 ## Components
 
 The package exports five components. `Entviz` is the primitive render; the other
-four are higher-level flows built on it. All ship as raw `.ts` source (no build
-step) authored with `React.createElement`, so they carry no JSX-transform
-requirement onto consumers.
+four are higher-level flows built on it. All ship as raw `.ts` source authored
+with `React.createElement`, so they carry no JSX-transform requirement onto
+consumers. Because the package publishes `.ts` (not compiled JS), bundlers that
+skip `node_modules` from TypeScript transpilation (webpack, Next.js) must be told
+to include `@entviz/*` — see [Bundler configuration](./docs/integration.md#bundler-configuration-these-packages-ship-raw-typescript).
 
 | Component | What it does |
 |---|---|

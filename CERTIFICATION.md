@@ -1,6 +1,6 @@
 # Conformance certification — @entviz/core
 
-**Spec:** entviz v11 · **Corpus:** entviz `compliance/` (pinned `v0.11.1`) ·
+**Spec:** entviz v15 · **Corpus:** entviz `compliance/` (pinned `v0.15.0`) ·
 **Tiers:** A (render model) + B (canonical raster, cairosvg) · **Result:**
 **full conformance — every corpus vector passes**, with no skip list and no
 subset.
@@ -10,16 +10,16 @@ Run from the entviz repo against the whole corpus:
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers A
-# -> 84/84 vectors passed   (70 render + 6 error + 7 invariant pairs + 1 spec-version match)
+# -> 90/90 vectors passed   (render + error + invariant pairs + spec-version match)
 
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers B
-# -> 77/77 vectors passed   (70 render + 6 error + 1 spec-version match; raster via cairosvg)
+# -> 83/83 vectors passed   (raster via cairosvg)
 ```
 
 CI runs both tiers on every push as hard gates (`.github/workflows/ci.yml`:
 `conformance` + `conformance-tier-b`), cross-checking out the reference corpus
-at the pinned tag `v0.11.1`.
+at the pinned tag `v0.15.0`.
 
 ## Coverage
 

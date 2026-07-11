@@ -27,9 +27,31 @@ and the canonical [`../../../../entviz/docs/threat-model.md`](https://github.com
 npm install @entviz/react @entviz/core react
 ```
 
-`@entviz/react` ships raw `.ts` authored with `React.createElement` (no JSX, no
-build step required by consumers). It has one runtime dependency, `@entviz/core`
-(isomorphic; no Node built-ins), and `react >= 17` as a peer.
+`@entviz/react` ships raw `.ts` authored with `React.createElement` (no JSX). It
+has one runtime dependency, `@entviz/core` (isomorphic; no Node built-ins), and
+`react >= 17` as a peer.
+
+### Bundler configuration (these packages ship raw TypeScript)
+
+`@entviz/react` and `@entviz/core` publish `.ts` source, not compiled JavaScript
+— there is no build step in the packages themselves. Toolchains that already
+transpile TypeScript consume them with no extra setup: **Vite**, **Vitest**,
+**Bun**, **Deno**, and **Node ≥ 22.6** (native type-stripping). Some bundlers,
+though, skip `node_modules` from TypeScript transpilation by default and must be
+told to include these packages:
+
+- **Next.js**: add them to `transpilePackages` in `next.config.js` —
+  `transpilePackages: ["@entviz/react", "@entviz/core"]`.
+- **webpack**: your `ts-loader`/`babel-loader` rule usually carries
+  `exclude: /node_modules/`; add an `include` (or narrow the `exclude`) so
+  `@entviz/*` is transpiled.
+- **Jest**: make sure `transformIgnorePatterns` doesn't exclude `@entviz/*`.
+- **Node < 22.6** (or with `--no-experimental-strip-types`): run via a loader
+  such as `tsx`, or precompile the packages yourself.
+
+If a dependency-side `Unexpected token`, `Cannot use import statement outside a
+module`, or "unexpected `.ts`" error appears at build time, an untranspiled
+`@entviz/*` package is the cause.
 
 ---
 

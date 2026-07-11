@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 TypeScript implementation of [**entviz**](https://github.com/dhh1128/entviz)
-(spec **v11**) — turn a high-entropy value (cryptographic key, hash, signature,
+(spec **v15**) — turn a high-entropy value (cryptographic key, hash, signature,
 UUID, blockchain address, post-quantum key, …) into a comparable SVG diagram so
 a human can decide *at a glance* whether two values are the same or different.
 
@@ -15,10 +15,13 @@ runtime dependency is the audited, zero-transitive-dependency
 [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
 Keccak-256); no `node:crypto`/`node:fs`/`Buffer`, so it bundles cleanly for the
 web (this is what backs [`@entviz/react`](https://www.npmjs.com/package/@entviz/react)).
-Runs under Node's native type-stripping (Node ≥ 22.6) — the package ships
-source, no build step. Certified against the shared entviz conformance corpus
-(Tier A render model + Tier B canonical raster) for every input whose parser is
-ported.
+Runs under Node's native type-stripping (Node ≥ 22.6) — the package ships raw
+`.ts`, no build step. Vite, Vitest, Bun, and Deno consume it as-is; bundlers that
+skip `node_modules` from TypeScript transpilation (webpack, Next.js) must be told
+to include `@entviz/core` — see [Bundler
+configuration](https://github.com/dhh1128/entviz-js/blob/main/packages/react/docs/integration.md#bundler-configuration-these-packages-ship-raw-typescript).
+Fully certified against the shared entviz conformance corpus (Tier A render model
++ Tier B canonical raster), no skip list.
 
 ## Install
 
@@ -61,13 +64,15 @@ guarantees are defined in the [spec](https://github.com/dhh1128/entviz/blob/main
 
 ## Conformance & scope
 
-`SPEC_VERSION` is stamped on every render (`data-entviz-version`). Ported
-parsers: hex, UUID (dashed/undashed), Ethereum (EIP-55), **DID** (W3C DID Core —
-v11 prefix-fold), **URN** (RFC 8141), and the UTF-8→base64url fallback, plus the
-note / font-size error handling and the **>512-bit large-input branch** (head +
-Crockford-base32 fingerprint-middle + tail). The blockchain / CESR / SSH / SWHID /
-gitoid / LEI / snowflake / CID / ULID / base32 / bech32 / base58 parsers are
-mechanical follow-ons; the shared core is complete and corpus-proven. See
+`SPEC_VERSION` is stamped on every render (`data-entviz-version`). The **complete
+parser dispatch** is ported: hex/multihash, UUID (dashed/undashed/nil/max),
+Ethereum (EIP-55), CESR, SSH keys, Bitcoin / Litecoin / Bitcoin Cash / Ripple /
+Cardano / Stellar / EOS addresses, bech32 (SegWit + Cosmos), **DID** (W3C DID
+Core) and **URN** (RFC 8141) prefix-fold, SWHID, gitoid, LEI, Snowflake, ULID,
+IPFS CID (v0/v1), base32/base58/base64url, and the UTF-8→base64url fallback, plus
+the note / font-size error handling and the **>512-bit large-input branch** (head
++ Crockford-base32 fingerprint-middle + tail). Fully certified — 90/90 Tier A +
+83/83 Tier B, no skip list. See
 [`CERTIFICATION.md`](https://github.com/dhh1128/entviz-js/blob/main/CERTIFICATION.md).
 
 ## License
