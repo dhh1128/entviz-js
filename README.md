@@ -67,8 +67,9 @@ npm run test:full   # unit + integration, with the full-coverage thresholds
 
 Tests are split into `test/unit/` (pure stage functions — must **not** call
 `render()`) and `test/integration/` (end-to-end `render()`), with enforced
-coverage floors. See [`AGENTS.md`](AGENTS.md) → *Two test suites + coverage
-guardrail* before adding code.
+coverage floors. New here? Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)**
+(setup, the isomorphic-core / no-JSX / `tick` rules, the two-suite test gate, and
+the PR flow); [`AGENTS.md`](AGENTS.md) has the deeper agent-oriented detail.
 
 ## Conformance
 
