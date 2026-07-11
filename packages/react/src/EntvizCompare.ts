@@ -323,6 +323,15 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // triggers via htmlFor — so "click the rect to upload" works and survives a
   // re-pick, and the rect stays a drop target too.
   const fileInputId = useId();
+  // WAI-ARIA tabs pattern (A11Y-F3): wire each tab to its panel so a screen reader
+  // can traverse tab→panel — the tab carries aria-controls=<panelId>, the panel
+  // carries role="tabpanel" + id=<panelId> + aria-labelledby=<tabId>.
+  const referenceTabId = useId();
+  const referencePanelId = useId();
+  const voiceTabId = useId();
+  const voicePanelId = useId();
+  const tabIds = { reference: referenceTabId, voice: voiceTabId } as const;
+  const panelIds = { reference: referencePanelId, voice: voicePanelId } as const;
 
   // Shared display size/shape (#3): the resize/reshape controls live on OUR
   // figure and drive BOTH panels. Initialized from the host's render inputs.
@@ -794,6 +803,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       "button",
       {
         type: "button", role: "tab", "aria-selected": tab === key,
+        id: tabIds[key], "aria-controls": panelIds[key],
         onClick: () => onSetTab(key), style: tab === key ? tabActive : tabInactive,
       },
       icon,
@@ -832,7 +842,14 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           tabButton("voice", m.voiceLaunch, personSpeakingIcon()),
         ),
     secret ? h("span", { role: "alert", style: warnBanner }, m.secretWarning) : null,
-    !provided && tab === "voice" ? voiceTab : referenceTab,
+    // A host-provided reference has no tablist, so its comparison is rendered bare
+    // (no tabpanel). Otherwise wrap the visible panel with the WAI-ARIA tabpanel
+    // wiring pointing back at its tab (A11Y-F3).
+    provided
+      ? referenceTab
+      : tab === "voice"
+      ? h("div", { role: "tabpanel", id: voicePanelId, "aria-labelledby": voiceTabId }, voiceTab)
+      : h("div", { role: "tabpanel", id: referencePanelId, "aria-labelledby": referenceTabId }, referenceTab),
   );
 }
 

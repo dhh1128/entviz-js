@@ -134,6 +134,9 @@ describe("pill-messages", () => {
       for (const k of ["stepCite", "stepVisualize", "stepCompare", "teachVisualize", "compareAction"] as const) {
         expect(messages[k].length).toBeGreaterThan(0);
       }
+      // the popover-close label is localized in every shipped bundle (L10N-F3);
+      // no locale should fall back to the English "Close".
+      expect(messages.close?.length ?? 0).toBeGreaterThan(0);
     }
   });
 
@@ -750,5 +753,13 @@ describe("EntvizPill popover accessibility", () => {
     // Before the fix, focus stayed on the pill button (a sibling of the portaled
     // dialog), so keyboard/SR users had to back-navigate to reach the content.
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+  });
+
+  test("the popover close button meets the WCAG 2.5.8 minimum touch target (A11Y-F5)", () => {
+    render(<EntvizPill value={HEX} />);
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+    const closeBtn = within(screen.getByRole("dialog")).getByRole("button", { name: /close/i });
+    expect(parseInt(closeBtn.style.width, 10)).toBeGreaterThanOrEqual(24);
+    expect(parseInt(closeBtn.style.height, 10)).toBeGreaterThanOrEqual(24);
   });
 });

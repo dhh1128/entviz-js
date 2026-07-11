@@ -544,6 +544,28 @@ describe("EntvizCompare: the voice ceremony tab (§15.8)", () => {
     // a plain heading instead of a tablist
     expect(screen.getByText("Compare visualizations")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
+    // ...and with no tablist there is no tabpanel either (the bare comparison)
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+  });
+
+  test("the WAI-ARIA tabs pattern is complete: the selected tab controls the visible tabpanel, which labels back (A11Y-F3)", () => {
+    rtlRender(<EntvizCompare value={HEX} />);
+    // the reference tab is selected by default → its panel is the visible tabpanel
+    const selectedRef = refTab();
+    expect(selectedRef.getAttribute("aria-selected")).toBe("true");
+    let panel = screen.getByRole("tabpanel");
+    expect(panel.id).toBeTruthy();
+    expect(selectedRef.getAttribute("aria-controls")).toBe(panel.id); // tab → panel
+    expect(panel.getAttribute("aria-labelledby")).toBe(selectedRef.id); // panel → tab
+    // switching to the voice tab moves the panel wiring to the voice tab/panel
+    fireEvent.click(voiceTab()!);
+    const selectedVoice = voiceTab()!;
+    expect(selectedVoice.getAttribute("aria-selected")).toBe("true");
+    panel = screen.getByRole("tabpanel");
+    expect(selectedVoice.getAttribute("aria-controls")).toBe(panel.id);
+    expect(panel.getAttribute("aria-labelledby")).toBe(selectedVoice.id);
+    // exactly one tabpanel is rendered at a time (the active one)
+    expect(screen.getAllByRole("tabpanel").length).toBe(1);
   });
 });
 

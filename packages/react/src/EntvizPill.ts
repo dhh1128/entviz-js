@@ -39,6 +39,7 @@ import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { fmt, isRtlLocale, resolveMessages, type Messages } from "./pill-messages.ts";
 import { useEmit, type DisclosureState, type EntvizEvent } from "./events.ts";
+import { onMenuKeyNav } from "./keyboard.ts";
 
 export type { CopyKind };
 
@@ -422,14 +423,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     }
   };
 
-  const onMenuKey = (e: ReactKeyboardEvent) => {
-    const items = [...(menuFloat.ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-    const i = items.indexOf(document.activeElement as HTMLElement);
-    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
-    else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
-    else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
-  };
+  // The kebab menu is PORTALED out of the wrapper, so its items live under
+  // menuFloat.ref, not the key event's currentTarget.
+  const onMenuKey = (e: ReactKeyboardEvent) =>
+    onMenuKeyNav(e, () => [...(menuFloat.ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]);
 
   // Type is the trusted, derived channel — the BARE entropy type only. The
   // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
@@ -644,7 +641,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // alignSelf centers the (content-width) visualization within the popover's
       // left-aligned column — the rail spans wider, so without this the glyph hugs
       // the left. (Its own toolbar is centered under it by Entviz's wrapper.)
-      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, style: { alignSelf: "center" } })];
+      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, messages: m, style: { alignSelf: "center" } })];
 
   const popover = isOpen
     ? toPortal(
@@ -776,8 +773,10 @@ const railStepBtnStyle: CSSProperties = {
 };
 // The popover's explicit close (✕), pinned to the top-trailing corner (RTL-aware).
 const popCloseStyle: CSSProperties = {
+  // ≥24×24 px hit target (WCAG 2.5.8, AA) — the ✕ is the only reliable dismiss on
+  // touch (Escape/outside-click aren't touch gestures). (A11Y-F5)
   position: "absolute", top: 6, insetInlineEnd: 6, zIndex: 1,
-  width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center",
+  width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center",
   font: "inherit", fontSize: 14, lineHeight: 1, color: "currentColor", opacity: 0.55,
   background: "none", border: "none", borderRadius: 6, cursor: "pointer",
 };

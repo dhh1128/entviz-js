@@ -3,10 +3,22 @@
  * SVG, making it trivial to drop a comparable visual fingerprint into any web
  * or mobile UI. A thin wrapper over the certified @entviz/core renderer.
  */
-import React from "react";
+import {
+  createElement as h,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
+} from "react";
 import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { useEmit, type EntvizEvent } from "./events.ts";
+import { onMenuKeyNav } from "./keyboard.ts";
+import { resolveMessages, type Messages } from "./pill-messages.ts";
 import { TEXT } from "./text-scale.ts";
 
 export interface EntvizProps {
@@ -20,7 +32,7 @@ export interface EntvizProps {
   note?: string | null;
   /** Extra props applied to the wrapping element (className, style, …). */
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
   /** Accessible label; defaults to a description that includes the note. */
   title?: string;
   /** Called with the error message if rendering throws (e.g. bad note). */
@@ -38,6 +50,13 @@ export interface EntvizProps {
   /** Reshape handler. When given, the aspect ratio is CONTROLLED; otherwise
    *  managed internally. Receives the `targetAr` of the chosen grid shape. */
   onReshape?: (targetAr: number) => void;
+  /** BCP-47 locale for the `controls` toolbar chrome (size/shape/copy labels +
+   *  copy toasts). Auto-detected from the browser when omitted. Ignored when
+   *  `controls` is off (the bare figure has no chrome). */
+  locale?: string;
+  /** Pre-resolved chrome messages for the toolbar, overriding `locale`. `<EntvizPill>`
+   *  passes its own resolved bundle down so the embedded toolbar matches the pill. */
+  messages?: Messages;
   /** The typed event firehose (see events.ts). Notify-only, in addition to the
    *  specific callbacks (render.error / display.resize / display.reshape / copy). */
   onEvent?: (e: EntvizEvent) => void;
@@ -54,9 +73,9 @@ export interface EntvizProps {
  * it) — that would reintroduce an XSS vector this wrapper currently does not
  * have. The root <svg> carries a viewBox, so the entviz scales responsively.
  */
-export function Entviz(props: EntvizProps): React.ReactElement {
+export function Entviz(props: EntvizProps): ReactElement {
   const { value, targetAr, fontSizePt, note, className, style, title, onError,
-    controls = false, reshapable = true, onResize, onReshape, onEvent } = props;
+    controls = false, reshapable = true, onResize, onReshape, locale, messages, onEvent } = props;
 
   // The event firehose: a stable `emit` bound to the latest onEvent, stamping
   // source="entviz", monotonic seq, and swallowing a throwing host handler (events.ts).
@@ -66,8 +85,8 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   // owns the value — e.g. the comparator drives both figures), else managed
   // internally. With controls off, fs/ar are exactly the props — the bare
   // component is unchanged and pure.
-  const [stateFs, setStateFs] = React.useState(() => fontSizePt ?? DEFAULT_FONT_SIZE_PT);
-  const [stateAr, setStateAr] = React.useState(() => targetAr ?? 1);
+  const [stateFs, setStateFs] = useState(() => fontSizePt ?? DEFAULT_FONT_SIZE_PT);
+  const [stateAr, setStateAr] = useState(() => targetAr ?? 1);
   const fsControlled = onResize !== undefined;
   const arControlled = onReshape !== undefined;
   const fs = controls ? (fsControlled ? (fontSizePt ?? DEFAULT_FONT_SIZE_PT) : stateFs) : fontSizePt;
@@ -76,20 +95,20 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   // Toolbar popup state — the shape picker and the copy/export kebab are both
   // dropdowns; at most one is open. Hooks run for every instance (rules of
   // hooks) but no-op until a menu opens.
-  const [openMenu, setOpenMenu] = React.useState<null | "shape" | "copy">(null);
-  const [toast, setToast] = React.useState<string | null>(null);
-  const shapeWrapRef = React.useRef<HTMLDivElement>(null);
-  const shapeBtnRef = React.useRef<HTMLButtonElement>(null);
-  const copyWrapRef = React.useRef<HTMLDivElement>(null);
-  const kebabRef = React.useRef<HTMLButtonElement>(null);
-  const toastTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shapeMenuId = React.useId();
-  const copyMenuId = React.useId();
+  const [openMenu, setOpenMenu] = useState<null | "shape" | "copy">(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const shapeWrapRef = useRef<HTMLDivElement>(null);
+  const shapeBtnRef = useRef<HTMLButtonElement>(null);
+  const copyWrapRef = useRef<HTMLDivElement>(null);
+  const kebabRef = useRef<HTMLButtonElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shapeMenuId = useId();
+  const copyMenuId = useId();
   const openWrapRef = openMenu === "copy" ? copyWrapRef : shapeWrapRef;
   const openTriggerRef = openMenu === "copy" ? kebabRef : shapeBtnRef;
-  React.useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
   // Dismiss the open menu on Escape (focus returns to its trigger) and outside-click.
-  React.useEffect(() => {
+  useEffect(() => {
     if (!openMenu) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpenMenu(null); openTriggerRef.current?.focus(); } };
     const onDown = (e: MouseEvent) => {
@@ -100,14 +119,14 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
   }, [openMenu, openWrapRef, openTriggerRef]);
   // Move focus to the first item when a menu opens (ARIA menu pattern).
-  React.useEffect(() => {
+  useEffect(() => {
     if (!openMenu) return;
     const id = requestAnimationFrame(() =>
       openWrapRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
     return () => cancelAnimationFrame(id);
   }, [openMenu, openWrapRef]);
 
-  const { svg, error } = React.useMemo(() => {
+  const { svg, error } = useMemo(() => {
     const opts: RenderOptions = { targetAr: ar, fontSizePt: fs, note };
     try {
       return { svg: render(value, opts), error: null as string | null };
@@ -121,8 +140,8 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   // render.error (notify-only): mirror the onError path onto the firehose,
   // firing only when the error message TRANSITIONS (a fresh/changed failure),
   // never re-emitting the same error every render.
-  const prevErrorRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
+  const prevErrorRef = useRef<string | null>(null);
+  useEffect(() => {
     if (error && error !== prevErrorRef.current) emit({ type: "render.error", message: error });
     prevErrorRef.current = error;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -136,14 +155,14 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const defaultLabel = note ? `entviz visualization, note ${note}` : "entviz visualization";
 
   if (svg === null) {
-    return React.createElement("span", {
+    return h("span", {
       className,
       style,
       role: "img",
       "aria-label": title ?? "entviz (render error)",
     });
   }
-  const figure = React.createElement("span", {
+  const figure = h("span", {
     ...(controls ? {} : { className, style }),
     role: "img",
     "aria-label": title ?? defaultLabel,
@@ -153,7 +172,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   if (!controls) return figure;
 
   // --- opt-in controls (size ladder + reshape picker), beside the figure ------
-  const h = React.createElement;
+  // Toolbar chrome: a host-supplied bundle wins; else resolve from the locale
+  // (auto-detected when unset). Only reached when controls are on. (L10N-F2)
+  const m: Messages = messages ?? resolveMessages(locale).messages;
   const curPt = fs ?? DEFAULT_FONT_SIZE_PT;
   const setFs = (v: number) => (fsControlled ? onResize!(v) : setStateFs(v));
   const setAr = (v: number) => (arControlled ? onReshape!(v) : setStateAr(v));
@@ -175,23 +196,18 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     try {
       await copyEntviz(kind, { value, opts: { targetAr: ar, fontSizePt: fs, note }, svg });
       emit({ type: "copy", kind, ok: true });
-      flash(COPY_TOAST[kind]);
+      flash(copiedToast(m, kind));
     } catch {
       emit({ type: "copy", kind, ok: false });
-      flash(COPY_FAILED);
+      flash(m.copyFailed);
     }
   };
-  // Roving focus within whichever menu received the key (its element is currentTarget).
-  const onMenuKey = (e: React.KeyboardEvent) => {
-    const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]')];
-    const i = items.indexOf(document.activeElement as HTMLElement);
-    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
-    else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
-    else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
-  };
+  // Roving focus within whichever menu received the key (its items live under the
+  // event's currentTarget, since these toolbar menus aren't portaled).
+  const onMenuKey = (e: ReactKeyboardEvent) =>
+    onMenuKeyNav(e, () => [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]')]);
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
+  const onKeyDown = (e: ReactKeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
     else if (["+", "="].includes(e.key)) { e.preventDefault(); stepFs(1); }
     else if (["-", "_"].includes(e.key)) { e.preventDefault(); stepFs(-1); }
@@ -202,10 +218,10 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const cur = describeChannels(value, { targetAr: ar, fontSizePt: fs, note });
   const sizeGroup = h(
     "div",
-    { role: "group", "aria-label": "size", style: ctlGroup },
-    h("button", { type: "button", onClick: () => stepFs(-1), disabled: ladderIdx === 0, "aria-label": "smaller", style: ctlBtn }, "−"),
+    { role: "group", "aria-label": m.ctlSize ?? "size", style: ctlGroup },
+    h("button", { type: "button", onClick: () => stepFs(-1), disabled: ladderIdx === 0, "aria-label": m.ctlSmaller ?? "smaller", style: ctlBtn }, "−"),
     h("span", { style: ctlValue }, `${curPt}pt`),
-    h("button", { type: "button", onClick: () => stepFs(1), disabled: ladderIdx === FONT_SIZE_LADDER.length - 1, "aria-label": "larger", style: ctlBtn }, "+"),
+    h("button", { type: "button", onClick: () => stepFs(1), disabled: ladderIdx === FONT_SIZE_LADDER.length - 1, "aria-label": m.ctlLarger ?? "larger", style: ctlBtn }, "+"),
   );
   // Reshape control: a single dropdown button showing the CURRENT shape beside a
   // dropdown caret, opening a menu of the achievable shapes. One button's width
@@ -221,11 +237,11 @@ export function Entviz(props: EntvizProps): React.ReactElement {
             {
               ref: shapeBtnRef, type: "button",
               onClick: () => setOpenMenu((o) => (o === "shape" ? null : "shape")),
-              onKeyDown: (e: React.KeyboardEvent) => {
+              onKeyDown: (e: ReactKeyboardEvent) => {
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpenMenu("shape"); }
               },
               "aria-haspopup": "menu", "aria-expanded": openMenu === "shape",
-              "aria-controls": openMenu === "shape" ? shapeMenuId : undefined, "aria-label": "shape",
+              "aria-controls": openMenu === "shape" ? shapeMenuId : undefined, "aria-label": m.ctlShape ?? "shape",
               style: {
                 ...thumbBtn, alignItems: "center", gap: 5, boxSizing: "border-box",
                 // Never shorter than the −/+ / kebab buttons (0.85em text + 4px pad + 2px border).
@@ -239,7 +255,7 @@ export function Entviz(props: EntvizProps): React.ReactElement {
           openMenu === "shape"
             ? h(
                 "div",
-                { id: shapeMenuId, role: "menu", "aria-label": "shape", onKeyDown: onMenuKey, style: shapeMenuStyle },
+                { id: shapeMenuId, role: "menu", "aria-label": m.ctlShape ?? "shape", onKeyDown: onMenuKey, style: shapeMenuStyle },
                 shapes.map((s) => {
                   const active = s.cols === cur.cols && s.rows === cur.rows;
                   return h(
@@ -247,7 +263,7 @@ export function Entviz(props: EntvizProps): React.ReactElement {
                     {
                       key: `${s.cols}x${s.rows}`, role: "menuitem", type: "button",
                       onClick: () => { emit({ type: "display.reshape", targetAr: s.targetAr, cols: s.cols, rows: s.rows }); setAr(s.targetAr); setOpenMenu(null); shapeBtnRef.current?.focus(); },
-                      "aria-label": `${s.cols} by ${s.rows}`, "aria-pressed": active,
+                      "aria-label": `${s.cols} × ${s.rows}`, "aria-pressed": active,
                       style: { ...thumbBtn, ...(active ? thumbActive : null) },
                     },
                     gridThumb(s.cols, s.rows),
@@ -267,11 +283,11 @@ export function Entviz(props: EntvizProps): React.ReactElement {
       {
         ref: kebabRef, type: "button",
         onClick: () => setOpenMenu((o) => (o === "copy" ? null : "copy")),
-        onKeyDown: (e: React.KeyboardEvent) => {
+        onKeyDown: (e: ReactKeyboardEvent) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpenMenu("copy"); }
         },
         "aria-haspopup": "menu", "aria-expanded": openMenu === "copy",
-        "aria-controls": openMenu === "copy" ? copyMenuId : undefined, "aria-label": "actions",
+        "aria-controls": openMenu === "copy" ? copyMenuId : undefined, "aria-label": m.actions,
         // flex-center the ⋮ glyph so it's vertically centered like the −/+ buttons.
         style: { ...ctlBtn, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" },
       },
@@ -280,9 +296,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
     openMenu === "copy"
       ? h(
           "div",
-          { id: copyMenuId, role: "menu", "aria-label": "actions", onKeyDown: onMenuKey, style: copyMenuStyle },
-          COPY_ACTIONS.map(([kind, label]) =>
-            h("button", { key: kind, role: "menuitem", type: "button", onClick: () => doCopy(kind), style: copyMenuItemStyle }, label),
+          { id: copyMenuId, role: "menu", "aria-label": m.actions, onKeyDown: onMenuKey, style: copyMenuStyle },
+          COPY_KINDS.map((kind) =>
+            h("button", { key: kind, role: "menuitem", type: "button", onClick: () => doCopy(kind), style: copyMenuItemStyle }, copyLabel(m, kind)),
           ),
         )
       : null,
@@ -298,17 +314,20 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   );
 }
 
-// Copy/export menu content (English — matches the toolbar's other English chrome).
-const COPY_ACTIONS: [CopyKind, string][] = [
-  ["value", "Copy value"],
-  ["comparison", "Copy comparison text"],
-  ["image", "Copy image"],
-  ["svg", "Copy SVG"],
-];
-const COPY_TOAST: Record<CopyKind, string> = {
-  value: "Copied value", comparison: "Copied comparison text", image: "Copied image", svg: "Copied SVG",
-};
-const COPY_FAILED = "Copy failed";
+// Copy/export menu order. Labels + toasts are localized off the resolved `Messages`
+// (copyLabel / copiedToast), so the toolbar matches the pill it's embedded in.
+const COPY_KINDS: CopyKind[] = ["value", "comparison", "image", "svg"];
+/** The copy-menu item label for a kind (reuses the pill's localized copy* keys). */
+function copyLabel(m: Messages, kind: CopyKind): string {
+  return kind === "value" ? m.copyValue : kind === "comparison" ? m.copyComparison : kind === "image" ? m.copyImage : m.copySvg;
+}
+/** The post-copy confirmation toast for a kind (localized, count-free). */
+function copiedToast(m: Messages, kind: CopyKind): string {
+  return kind === "value" ? (m.ctlCopiedValue ?? "Copied value")
+    : kind === "comparison" ? (m.ctlCopiedComparison ?? "Copied comparison text")
+    : kind === "image" ? (m.ctlCopiedImage ?? "Copied image")
+    : (m.ctlCopiedSvg ?? "Copied SVG");
+}
 
 /** The clean font-size ladder the size control steps through (points). Bounded
  *  to the spec's valid font-size range [6, 30]. */
@@ -329,23 +348,23 @@ function nearestLadderIndex(pt: number): number {
 // padding proportional to the cell, so the thumbnail's overall shape matches the
 // entviz's real shape — a 2×3 reads square, a 3×2 reads wide, as they actually
 // render (a square cell made a near-square 2×3 look portrait).
-function gridThumb(cols: number, rows: number): React.ReactElement {
+function gridThumb(cols: number, rows: number): ReactElement {
   // Gaps ≈ 1px→1.5px lines between cells for clearer separation; kept in the
   // cell's 3:2 ratio (gapX:gapY = 1.5:1) so the thumbnail's overall shape still
   // reads true. 1 SVG unit renders as 1px here (width = viewBox width).
   const cw = 3, ch = 2, gapX = 1.5, gapY = 1, pad = 1; // cell w:h = 3:2
   const w = pad * 2 + cols * cw + (cols - 1) * gapX;
   const hgt = pad * 2 + rows * ch + (rows - 1) * gapY;
-  const cells: React.ReactElement[] = [];
+  const cells: ReactElement[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      cells.push(React.createElement("rect", {
+      cells.push(h("rect", {
         key: `${r}-${c}`, x: pad + c * (cw + gapX), y: pad + r * (ch + gapY),
         width: cw, height: ch, fill: "currentColor",
       }));
     }
   }
-  return React.createElement("svg", { width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`, "aria-hidden": true, style: { display: "block" } }, cells);
+  return h("svg", { width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`, "aria-hidden": true, style: { display: "block" } }, cells);
 }
 
 // Center the figure over its toolbar: the size + reshape + actions strip is
@@ -353,11 +372,11 @@ function gridThumb(cols: number, rows: number): React.ReactElement {
 // the left with dead space to its right. Centering keeps the glyph balanced above
 // its own controls (only the controls-on "visualize" view reaches here; the bare
 // figure returns earlier).
-const wrapperStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "center" };
+const wrapperStyle: CSSProperties = { display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "center" };
 // Single-row toolbar below the figure: size group + reshape group, never wrapped.
-const ctlStrip: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
-const ctlGroup: React.CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
-const ctlBtn: React.CSSProperties = {
+const ctlStrip: CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap" };
+const ctlGroup: CSSProperties = { display: "inline-flex", gap: 4, alignItems: "center" };
+const ctlBtn: CSSProperties = {
   // color:inherit is load-bearing — a bare <button> otherwise uses the UA's default
   // (dark) button text color, which is unreadable on a dark host theme.
   font: "inherit", color: "inherit", fontSize: TEXT.body, lineHeight: 1, minWidth: 22, padding: "3px 7px", borderRadius: 6, cursor: "pointer",
@@ -366,21 +385,21 @@ const ctlBtn: React.CSSProperties = {
   border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
   background: "var(--entviz-ctl-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
-const ctlValue: React.CSSProperties = { font: "inherit", fontSize: TEXT.small, opacity: 0.8, minWidth: 34, textAlign: "center" };
-const thumbBtn: React.CSSProperties = {
+const ctlValue: CSSProperties = { font: "inherit", fontSize: TEXT.small, opacity: 0.8, minWidth: 34, textAlign: "center" };
+const thumbBtn: CSSProperties = {
   display: "inline-flex", padding: 3, borderRadius: 6, cursor: "pointer",
   border: "1px solid var(--entviz-ctl, color-mix(in srgb, currentColor 28%, transparent))",
   background: "var(--entviz-ctl-bg, color-mix(in srgb, currentColor 8%, transparent))",
   color: "color-mix(in srgb, currentColor 55%, transparent)",
 };
-const thumbActive: React.CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
+const thumbActive: CSSProperties = { borderColor: "var(--entviz-ctl-active, #3b34b0)", color: "var(--entviz-ctl-active, #3b34b0)" };
 // The dropdown caret: to the trailing side of the thumbnail, vertically centered
 // (the button's alignItems), and large enough to read clearly as a menu affordance.
-const shapeCaret: React.CSSProperties = {
+const shapeCaret: CSSProperties = {
   fontSize: TEXT.body, lineHeight: 1, opacity: 0.8, marginInlineStart: "auto",
 };
 // The shape picker's dropdown: the achievable shapes as a small wrapped palette.
-const shapeMenuStyle: React.CSSProperties = {
+const shapeMenuStyle: CSSProperties = {
   // Open UPWARD (bottom-anchored): the toolbar sits below the figure, and inside a
   // popover a downward menu would push past the fold and force a scrollbar.
   position: "absolute", bottom: "calc(100% + 4px)", insetInlineStart: 0, zIndex: 20,
@@ -388,7 +407,7 @@ const shapeMenuStyle: React.CSSProperties = {
   background: "var(--entviz-menu-bg, #fff)", border: "var(--entviz-menu-border, 1px solid #ddd)",
   borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 6,
 };
-const copyMenuStyle: React.CSSProperties = {
+const copyMenuStyle: CSSProperties = {
   // Open UPWARD (see shapeMenuStyle) so it doesn't overflow the popover / force a scroll.
   position: "absolute", bottom: "calc(100% + 4px)", insetInlineEnd: 0, zIndex: 20,
   display: "flex", flexDirection: "column", minWidth: 180,
@@ -396,16 +415,16 @@ const copyMenuStyle: React.CSSProperties = {
   border: "var(--entviz-menu-border, 1px solid #ddd)", borderRadius: 8,
   boxShadow: "0 6px 24px rgba(0,0,0,.14)", padding: 4, font: "13px system-ui, sans-serif",
 };
-const copyMenuItemStyle: React.CSSProperties = {
+const copyMenuItemStyle: CSSProperties = {
   textAlign: "start", background: "none", border: "none", borderRadius: 6,
   padding: "7px 10px", cursor: "pointer", font: "inherit", color: "inherit", whiteSpace: "nowrap",
 };
-const copyToastStyle: React.CSSProperties = {
+const copyToastStyle: CSSProperties = {
   position: "absolute", top: "100%", insetInlineEnd: 0, marginTop: 6, zIndex: 25,
   background: "var(--entviz-toast-bg, #1a1a2e)", color: "var(--entviz-toast-fg, #fff)",
   borderRadius: 6, padding: "5px 9px", fontSize: 11, whiteSpace: "nowrap", font: "11px system-ui, sans-serif",
 };
-const srOnly: React.CSSProperties = {
+const srOnly: CSSProperties = {
   position: "absolute", clip: "rect(0 0 0 0)", width: 1, height: 1, overflow: "hidden",
 };
 

@@ -75,6 +75,16 @@ describe("Entviz controls", () => {
     expect(container.firstChild).toBe(img(container)); // the span IS the root
   });
 
+  test("the controls toolbar chrome localizes via the locale prop (L10N-F2)", () => {
+    const { container } = render(<Entviz value={MULTI} controls locale="es" />);
+    // Spanish aria-labels replace the English defaults on the size + shape controls.
+    expect(container.querySelector('[aria-label="tamaño"]')).toBeTruthy(); // "size"
+    expect(container.querySelector('[aria-label="reducir"]')).toBeTruthy(); // "smaller"
+    expect(container.querySelector('[aria-label="ampliar"]')).toBeTruthy(); // "larger"
+    // The English labels are gone (proving the toolbar isn't hardcoded).
+    expect(container.querySelector('[aria-label="size"]')).toBeNull();
+  });
+
   test("size: + / − step the font ladder (uncontrolled); 0 resets via keyboard", () => {
     const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
     expect(container.textContent).toContain("12pt");
@@ -168,10 +178,10 @@ describe("Entviz controls", () => {
 
   test("reshape: opening the shape menu closes the copy menu (mutually exclusive)", () => {
     const { container } = render(<Entviz value={MULTI} controls fontSizePt={12} />);
-    fireEvent.click(container.querySelector('button[aria-label="actions"]') as HTMLButtonElement);
-    expect(container.querySelector('[role="menu"][aria-label="actions"]')).toBeTruthy();
+    fireEvent.click(container.querySelector('button[aria-label="Actions"]') as HTMLButtonElement);
+    expect(container.querySelector('[role="menu"][aria-label="Actions"]')).toBeTruthy();
     fireEvent.click(shapeBtn(container));
-    expect(container.querySelector('[role="menu"][aria-label="actions"]')).toBeNull(); // copy closed
+    expect(container.querySelector('[role="menu"][aria-label="Actions"]')).toBeNull(); // copy closed
     expect(shapeOptions(container).length).toBeGreaterThan(1); // shape open
   });
 
@@ -187,7 +197,7 @@ describe("Entviz controls", () => {
 // --- copy/export menu (the toolbar kebab) ----------------------------------
 
 const clip = () => navigator.clipboard as { writeText: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn> };
-const kebab = (c: HTMLElement) => c.querySelector('button[aria-label="actions"]') as HTMLButtonElement;
+const kebab = (c: HTMLElement) => c.querySelector('button[aria-label="Actions"]') as HTMLButtonElement;
 const openMenu = (c: HTMLElement) => {
   fireEvent.click(kebab(c));
   return c.querySelector('[role="menu"]') as HTMLElement;
