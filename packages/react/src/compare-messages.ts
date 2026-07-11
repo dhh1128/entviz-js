@@ -23,7 +23,8 @@ export interface CompareMessages {
   urlPlaceholder: string;
   fetchButton: string;
   fetchHint: string; // "Will fetch from {origin}"
-  fetchError: string; // "…({error})"
+  fetchError: string; // "…({error})" — a URL-fetch failure (interpolates the browser error)
+  readError: string; // a file-read failure — distinct operation from fetchError, no interpolation
   walkSpotCheck: string;
   walkSpotCheckHint: string;
   walkComplete: string;
@@ -62,6 +63,7 @@ export const defaultCompareMessages: CompareMessages = {
   fetchButton: "Fetch",
   fetchHint: "Will fetch from {origin}",
   fetchError: "Couldn’t fetch that URL ({error})",
+  readError: "Couldn’t read that file — it may be unreadable or blocked. Try another file.",
   pending: "Paste, pick, drop, or link another value to compare",
   identical: "Identical — the same value",
   different: "Different — not the same value",

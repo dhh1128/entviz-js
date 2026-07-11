@@ -38,7 +38,7 @@ import { Entviz } from "./Entviz.ts";
 import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
 import { fmt, isRtlLocale, resolveMessages, type Messages } from "./pill-messages.ts";
-import { emitEvent, type DisclosureState, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { useEmit, type DisclosureState, type EntvizEvent } from "./events.ts";
 
 export type { CopyKind };
 
@@ -237,10 +237,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
   } = props;
 
-  // The event firehose: a monotonic seq per instance, and a bound `emit` that
-  // stamps source="pill" and swallows a throwing host handler (events.ts).
-  const seqRef = useRef(0);
-  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "pill", seqRef, init);
+  // The event firehose: a stable `emit` bound to the latest onEvent, stamping
+  // source="pill", monotonic seq, and swallowing a throwing host handler (events.ts).
+  const emit = useEmit(onEvent, "pill");
   useInjectStyles();
 
   const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
@@ -380,6 +379,20 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     });
     return () => cancelAnimationFrame(id);
   }, [menuOpen, menuFloat.ref]);
+
+  // Move focus INTO the popover when it opens, so keyboard/screen-reader users
+  // reach its content (incl. the §9 a11yDescription) without back-navigating the
+  // DOM — the ARIA dialog contract (pill-design.md §4). Return-focus-on-close is
+  // handled by the Escape/pill path above. (A11Y-F1)
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = requestAnimationFrame(() => {
+      popFloat.ref.current
+        ?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        ?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isOpen, popFloat.ref]);
 
   const collapse = () => { setOpen(false); setComparing(false); };
   const openExpand = () => { setMenuOpen(false); setComparing(false); setOpen(true); onExpand?.(); };
@@ -640,6 +653,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
           {
             ref: popFloat.ref,
             role: "dialog",
+            // Keeps an SR virtual cursor from wandering into the background page while
+            // the popover is open, without a focus trap — compatible with the non-modal
+            // design (two popovers may coexist). (A11Y-F2)
+            "aria-modal": "true",
             dir: dirAttr,
             "aria-label": ariaLabel,
             "aria-describedby": error ? undefined : descId,

@@ -21,7 +21,6 @@ import {
   createElement as h,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -40,7 +39,7 @@ import {
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
 import { ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
-import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { useEmit, type EntvizEvent } from "./events.ts";
 import { safeRng } from "./rng-guard.ts";
 import { TEXT } from "./text-scale.ts";
 
@@ -138,8 +137,7 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   // stamps source="voice" and swallows a throwing host handler (events.ts). Only
   // voice.start / voice.complete — never a per-cell step (the live check-order
   // must never leave the endpoint — events.ts module doc).
-  const seqRef = useRef(0);
-  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "voice", seqRef, init);
+  const emit = useEmit(onEvent, "voice");
   const model = useMemo(() => safeDescribe(value, opts), [value, opts]);
 
   const [state, setState] = useState<CeremonyState | null>(null);

@@ -388,7 +388,14 @@ describe("EntvizCompare", () => {
     const { container } = rtlRender(<EntvizCompare value={HEX} />);
     const file = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(file, { target: { files: [new File(["x"], "r.svg", { type: "image/svg+xml" })] } });
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/read failed/i));
+    // ERR-F2: names the operation that failed (reading a file), NOT the URL-fetch
+    // template, and NOT the bare English fragment "read failed".
+    await waitFor(() => {
+      const msg = screen.getByRole("alert").textContent ?? "";
+      expect(msg).toMatch(/read that file/i);
+      expect(msg).not.toMatch(/URL/i);
+      expect(msg).not.toBe("read failed");
+    });
   });
 
   test("a controlled SVG reference compares without acquisition UI (provenance: provided)", () => {
@@ -644,7 +651,7 @@ describe("EntvizCompare onEvent firehose", () => {
     const file = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(file, { target: { files: [new File(["x"], "r.svg", { type: "image/svg+xml" })] } });
     await waitFor(() => expect(of(onEvent, "reference.readError").length).toBeGreaterThan(0), RWAIT);
-    expect(last(onEvent, "reference.readError").reason).toMatch(/read failed/i);
+    expect(last(onEvent, "reference.readError").reason).toMatch(/could not read the file/i);
   });
 
   test("reference.readError fires when a reference image fails to decode", async () => {
@@ -1071,3 +1078,25 @@ describe("EntvizCompare rng thread-down + prod-gate", () => {
     }
   });
 });
+
+describe("RTL chrome direction (L10N-F1)", () => {
+  test("auto-detects an RTL browser locale when no locale prop is given", () => {
+    // Before the fix, isRtlLocale(locale ?? "") === isRtlLocale("") === false for the
+    // (common) auto-detect case, so Arabic/Hebrew users got LTR chrome. navigator has
+    // no own `languages` in jsdom (it's on the prototype), so a configurable own prop
+    // shadows it and `delete` restores the default afterward.
+    Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["ar"] });
+    try {
+      const { container } = rtlRender(<EntvizCompare value={HEX} />);
+      expect(container.firstElementChild?.getAttribute("dir")).toBe("rtl");
+    } finally {
+      delete (navigator as unknown as { languages?: unknown }).languages;
+    }
+  });
+
+  test("an explicit LTR locale is not mirrored", () => {
+    const { container } = rtlRender(<EntvizCompare value={HEX} locale="en" />);
+    expect(container.firstElementChild?.getAttribute("dir")).toBeNull();
+  });
+});
+

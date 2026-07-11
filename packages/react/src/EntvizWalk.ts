@@ -35,7 +35,7 @@ import {
   type WalkStep,
 } from "@entviz/core";
 import { Entviz } from "./Entviz.ts";
-import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { useEmit, type EntvizEvent } from "./events.ts";
 import { safeRng } from "./rng-guard.ts";
 import { TEXT } from "./text-scale.ts";
 
@@ -224,8 +224,7 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
   // stamps source="walk" and swallows a throwing host handler (events.ts). A
   // monotonic step index, reset at each walk.start (single-user walk → walk.step
   // is allowed, carrying a feature KIND + index, never glyph text — events.ts doc).
-  const seqRef = useRef(0);
-  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "walk", seqRef, init);
+  const emit = useEmit(onEvent, "walk");
   const walkStepIndexRef = useRef(0);
 
   // Describe each value ONCE per (value, opts) — the focus rings, the size class,

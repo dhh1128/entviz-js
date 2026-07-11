@@ -27,9 +27,9 @@ import { compareComparisonText, compareSvg, compareValues, describeChannels, det
 import { Entviz } from "./Entviz.ts";
 import { EntvizWalk, layoutStyle, ringOverlay, figureBox, type EntvizLayout } from "./EntvizWalk.ts";
 import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
-import { fmt, isRtlLocale } from "./pill-messages.ts";
+import { fmt, isRtlLocale, resolveMessages } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
-import { emitEvent, type EntvizEvent, type EntvizEventInit, type Medium, type VerdictState } from "./events.ts";
+import { useEmit, type EntvizEvent, type Medium, type VerdictState } from "./events.ts";
 import { TEXT } from "./text-scale.ts";
 
 export interface EntvizCompareProps {
@@ -285,10 +285,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const allowFile = allow ? allow.file === true : true;
   const allowUrl = allow ? allow.url === true : true;
   const allowDrop = allow ? allow.drop === true : true;
-  // The event firehose: a monotonic seq per instance, and a bound `emit` that
-  // stamps source="compare" and swallows a throwing host handler (events.ts).
-  const seqRef = useRef(0);
-  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "compare", seqRef, init);
+  // The event firehose: a stable `emit` bound to the latest onEvent, stamping
+  // source="compare", monotonic seq, and swallowing a throwing host handler (events.ts).
+  const emit = useEmit(onEvent, "compare");
   // Monotonic step index for walk.step, reset when a walk launches.
   const walkStepIndexRef = useRef(0);
   // Merge host `messages`, then RE-PIN the verdict-, scoping-, and provenance-bearing strings
@@ -298,12 +297,19 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // equality belief), not localization.
   const m: CompareMessages = { ...defaultCompareMessages, ...overrides };
   for (const k of VERDICT_LOCKED_KEYS) m[k] = defaultCompareMessages[k];
-  const rtl = isRtlLocale(locale ?? "");
+  // RTL follows the RESOLVED locale — auto-detected from the browser when `locale`
+  // is undefined, matching <EntvizPill>. Passing `locale ?? ""` here evaluated
+  // isRtlLocale("") === false for the common auto-detect case, silently giving
+  // Arabic/Hebrew users LTR chrome regardless of navigator.languages (L10N-F1).
+  const rtl = isRtlLocale(resolveMessages(locale).locale);
   const panelsStyle = layoutStyle(layout);
   const opts = useMemo(() => ({ targetAr, fontSizePt, note }), [targetAr, fontSizePt, note]);
 
   const [ref, setRef] = useState<{ content: string; provenance: Provenance; origin: string } | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  // Reference-acquisition error, discriminated by operation so the surfaced message
+  // names what actually failed: a URL fetch (carries the browser error) vs. a file
+  // read (a distinct, self-contained message — never the URL-fetch template). (ERR-F2)
+  const [refError, setRefError] = useState<{ kind: "fetch"; detail: string } | { kind: "read" } | null>(null);
   // null = not walking (show the two entry buttons); otherwise the chosen mode.
   const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
   const walking = walkMode !== null;
@@ -471,18 +477,18 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
 
   const onPick = (file: File | undefined, provenance: Provenance) => {
     if (!file) return;
-    setFetchError(null);
+    setRefError(null);
     readFileAsReference(file).then(
       (content) => setRef({ content, provenance, origin: "" }),
       () => {
-        emit({ type: "reference.readError", reason: "read failed" });
-        setFetchError("read failed");
+        emit({ type: "reference.readError", reason: "could not read the file" });
+        setRefError({ kind: "read" });
       },
     );
   };
 
   const onFetch = async () => {
-    setFetchError(null);
+    setRefError(null);
     // fetch.start is the one advisory-cancelable event: a host handler may call
     // preventDefault() to block egress (fail-closed — blocking can only deny). If
     // blocked, neither the built-in fetch NOR a host `fetchReference` runs.
@@ -536,7 +542,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       emit({ type: "fetch.error", origin: refOrigin, message, sensitivity: "network" });
-      setFetchError(message);
+      setRefError({ kind: "fetch", detail: message });
     }
   };
 
@@ -639,7 +645,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             : null,
         ),
         isUrl ? h("span", { style: hint }, fmt(m.fetchHint, { origin: refOrigin })) : null,
-        fetchError ? h("span", { role: "alert", style: { ...hint, color: TONE.bad } }, fmt(m.fetchError, { error: fetchError })) : null,
+        refError
+          ? h(
+              "span",
+              { role: "alert", style: { ...hint, color: TONE.bad } },
+              refError.kind === "read" ? m.readError : fmt(m.fetchError, { error: refError.detail }),
+            )
+          : null,
       );
 
   // The reference/machine comparison tab: the two figures, the acquisition field,

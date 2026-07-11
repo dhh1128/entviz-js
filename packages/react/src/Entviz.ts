@@ -6,7 +6,7 @@
 import React from "react";
 import { render, describeChannels, gridShapes, type RenderOptions } from "@entviz/core";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
-import { emitEvent, type EntvizEvent, type EntvizEventInit } from "./events.ts";
+import { useEmit, type EntvizEvent } from "./events.ts";
 import { TEXT } from "./text-scale.ts";
 
 export interface EntvizProps {
@@ -58,10 +58,9 @@ export function Entviz(props: EntvizProps): React.ReactElement {
   const { value, targetAr, fontSizePt, note, className, style, title, onError,
     controls = false, reshapable = true, onResize, onReshape, onEvent } = props;
 
-  // The event firehose: a monotonic seq per instance, and a bound `emit` that
-  // stamps source="entviz" and swallows a throwing host handler (events.ts).
-  const seqRef = React.useRef(0);
-  const emit = (init: EntvizEventInit) => emitEvent(onEvent, "entviz", seqRef, init);
+  // The event firehose: a stable `emit` bound to the latest onEvent, stamping
+  // source="entviz", monotonic seq, and swallowing a throwing host handler (events.ts).
+  const emit = useEmit(onEvent, "entviz");
 
   // Opt-in resize/reshape state: CONTROLLED when the parent passes a handler (it
   // owns the value — e.g. the comparator drives both figures), else managed

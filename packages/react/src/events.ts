@@ -16,6 +16,7 @@
  *     order must never leave the endpoint (comparison-design §15.7/§15.9). `walk.step`
  *     (single-user machine walk only) carries a feature KIND + index, never glyphs.
  */
+import { useCallback, useLayoutEffect, useRef } from "react";
 import type { CopyKind } from "./copy-actions.ts";
 
 export type EntvizSource = "entviz" | "pill" | "compare" | "walk" | "voice";
@@ -92,4 +93,29 @@ export function emitEvent(
   } catch {
     /* a host handler bug must not break rendering or skip a safety */
   }
+}
+
+/**
+ * Hook wrapper around {@link emitEvent} that returns a STABLE `emit` bound to the
+ * host's LATEST `onEvent`. The returned function's identity is constant for the
+ * component's life (deps `[source]`, and `source` is fixed per instance), so it
+ * can sit in `useEffect` dependency arrays without either re-running effects every
+ * render or capturing a stale `onEvent`. A late async callback — e.g. an
+ * image-decode that resolves after the host swapped `onEvent` — reaches the
+ * current handler, not the one captured when the effect was set up. `seq` stays
+ * monotonic per instance via an internal ref. Every component uses this instead of
+ * a per-render `const emit = (init) => emitEvent(onEvent, …)` closure.
+ */
+export function useEmit(
+  onEvent: ((e: EntvizEvent) => void) | undefined,
+  source: EntvizSource,
+): (init: EntvizEventInit) => void {
+  const seqRef = useRef(0);
+  const onEventRef = useRef(onEvent);
+  // Keep the ref pointing at the latest handler, synchronously after commit so an
+  // async callback firing before the next paint still sees the current onEvent.
+  useLayoutEffect(() => {
+    onEventRef.current = onEvent;
+  });
+  return useCallback((init: EntvizEventInit) => emitEvent(onEventRef.current, source, seqRef, init), [source]);
 }

@@ -735,3 +735,20 @@ describe("EntvizPill controlled disclosure (open / onOpenChange)", () => {
     expect(within(screen.getByRole("dialog")).queryByText("=")).toBeNull();
   });
 });
+
+describe("EntvizPill popover accessibility", () => {
+  test("the popover is an aria-modal dialog (A11Y-F2)", () => {
+    render(<EntvizPill value={HEX} />);
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+    expect(screen.getByRole("dialog").getAttribute("aria-modal")).toBe("true");
+  });
+
+  test("opening the popover moves focus into it (A11Y-F1)", async () => {
+    render(<EntvizPill value={HEX} />);
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+    const dialog = screen.getByRole("dialog");
+    // Before the fix, focus stayed on the pill button (a sibling of the portaled
+    // dialog), so keyboard/SR users had to back-navigate to reach the content.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+  });
+});
