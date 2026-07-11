@@ -7,6 +7,7 @@ import {
   tokenizeEntropy,
   tokenize,
   MAX_INPUT_CHARS,
+  inputTooLargeMessage,
   HEX,
 } from "../../src/entviz.ts";
 
@@ -62,4 +63,11 @@ test("tokenizeEntropy: >512-bit triggers via byte length even at ≤22 tokens", 
 
 test("MAX_INPUT_CHARS is the 64 KiB anti-DoS cap", () => {
   assert.equal(MAX_INPUT_CHARS, 65536);
+});
+
+test("inputTooLargeMessage: a complete sentence stating the length and the cap", () => {
+  assert.equal(
+    inputTooLargeMessage(70000),
+    `The input is too large: it has 70000 characters, but the maximum is ${MAX_INPUT_CHARS}.`,
+  );
 });

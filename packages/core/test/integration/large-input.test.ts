@@ -37,7 +37,10 @@ test("render: 512-bit input (boundary) stays the lossless short path", () => {
 });
 
 test("render: input past the anti-DoS cap is rejected", () => {
-  assert.throws(() => render("a".repeat(MAX_INPUT_CHARS + 1)), /too large/);
+  assert.throws(
+    () => render("a".repeat(MAX_INPUT_CHARS + 1)),
+    new RegExp(`The input is too large: it has ${MAX_INPUT_CHARS + 1} characters, but the maximum is ${MAX_INPUT_CHARS}\\.`),
+  );
 });
 
 test("render: a large UTF-8 fallback input also renders (truncated)", () => {

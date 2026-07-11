@@ -46,14 +46,39 @@ export interface Part {
   bind: Bind;
 }
 
+/**
+ * The structured characterization of an entropy string (spec v13): the same
+ * recognition the parser performs, re-expressed along independent axes so a
+ * consumer reads typed fields instead of string-parsing the drawn label.
+ * Reporting-only — it changes no rendered pixel, fingerprint input, or label.
+ * Produced by {@link characterize}.
+ */
 export interface Characterization {
+  /** Declared alphabet name that drives tokenization (e.g. `"hex"`,
+   *  `"base58"`, `"base64url"`). Always present. */
   encoding: string;
+  /** Recognizer / namespace that fired (e.g. `"did"`, `"btc"`, `"uuid"`,
+   *  `"cesr"`), or `null` for a bare encoding or the UTF-8 fallback. */
   scheme: string | null;
+  /** Semantic role from the closed enum {@link Role} (`key` | `signature` |
+   *  `digest` | `address` | `identifier`), or `null` when unknown. Asserted
+   *  only where the generic recognizer determines it. */
   role: Role | null;
+  /** Independently-varying facets of the recognition (network / variant /
+   *  algorithm / version / method / nid / …); `{}` when none apply. */
   qualifiers: Record<string, string | number>;
+  /** How {@link sizeBits} is measured: `"decoded"` (bits of the decoded value)
+   *  or `"utf8"` (bits of the core's UTF-8 bytes). Scheme-driven. */
   sizeBasis: SizeBasis;
+  /** Value size in bits, always a multiple of 8, computed from the core only.
+   *  Reporting-only; this is NOT the >512-bit truncation basis. */
   sizeBits: number;
+  /** The value split into reading-order segments, each `{ text, bind }` with
+   *  `bind` in {@link Bind} (`none` | `fold` | `core`) describing whether the
+   *  segment binds the fingerprint. */
   parts: Part[];
+  /** Convenience derivation: `scheme` when a recognizer fired, otherwise
+   *  `encoding`. */
   entropyType: string;
 }
 

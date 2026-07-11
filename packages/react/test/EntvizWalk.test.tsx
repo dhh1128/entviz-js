@@ -272,6 +272,63 @@ describe("EntvizWalk onEvent firehose", () => {
   });
 });
 
+// --- accessibility (A11Y-F4) -----------------------------------------------
+
+describe("EntvizWalk accessibility", () => {
+  test("the coverage progressbar has a non-empty accessible name", () => {
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
+    const bar = screen.getByRole("progressbar");
+    // an aria-label gives screen-reader users the context that this measures
+    // walk coverage (WCAG 1.3.1), rather than a bare percentage
+    expect(bar.getAttribute("aria-label")).toBeTruthy();
+    expect((bar.getAttribute("aria-label") ?? "").trim().length).toBeGreaterThan(0);
+  });
+
+  test("the meter fill animates when reduced motion is NOT preferred", () => {
+    const mql = { matches: false, media: "", addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const spy = vi.fn(() => mql);
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: spy });
+    try {
+      const { container } = rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
+      const bar = screen.getByRole("progressbar");
+      const fill = bar.firstElementChild as HTMLElement;
+      expect(fill.style.transition).toMatch(/width/);
+      void container;
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+
+  test("the meter fill does NOT animate when prefers-reduced-motion: reduce", () => {
+    const mql = { matches: true, media: "", addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const spy = vi.fn(() => mql);
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: spy });
+    try {
+      rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
+      const bar = screen.getByRole("progressbar");
+      const fill = bar.firstElementChild as HTMLElement;
+      // no width transition for users with vestibular sensitivity
+      expect(fill.style.transition === "none" || fill.style.transition === "").toBe(true);
+      expect(fill.style.transition).not.toMatch(/width/);
+    } finally {
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+
+  test("the meter fill animates when matchMedia is unavailable (SSR guard)", () => {
+    const saved = (window as unknown as { matchMedia?: unknown }).matchMedia;
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+    try {
+      rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
+      const bar = screen.getByRole("progressbar");
+      const fill = bar.firstElementChild as HTMLElement;
+      expect(fill.style.transition).toMatch(/width/);
+    } finally {
+      if (saved) Object.defineProperty(window, "matchMedia", { configurable: true, value: saved });
+    }
+  });
+});
+
 // --- rng prod-gate (§5.4) --------------------------------------------------
 
 describe("EntvizWalk rng prod-gate", () => {

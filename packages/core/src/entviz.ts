@@ -38,6 +38,7 @@ const DPI = 96;
 // four sides of the canvas, so the gray frame never sits on the canvas edge
 // (where fractional render scales clip it). Frame + white fill + all content
 // are inset by MARGIN; the outer ring is left unpainted.
+/** @internal */
 export const MARGIN = 1;
 
 // ---------------------------------------------------------------------------
@@ -71,20 +72,29 @@ const BASE36_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DECIMAL_ALPHABET = "0123456789";
 const BASE64URL_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+/** @internal */
 export const HEX: Alphabet = { name: "hex", chars: HEX_ALPHABET, bitsPerChar: 4 };
+/** @internal */
 export const BASE58: Alphabet = { name: "base58", chars: BASE58_ALPHABET, bitsPerChar: 6 };
+/** @internal */
 export const BASE64: Alphabet = { name: "base64", chars: BASE64_ALPHABET, bitsPerChar: 6 };
+/** @internal */
 export const BASE32: Alphabet = { name: "base32", chars: BASE32_ALPHABET, bitsPerChar: 5 };
+/** @internal */
 export const BECH32: Alphabet = { name: "bech32", chars: BECH32_ALPHABET, bitsPerChar: 5 };
 // ULID core alphabet (Crockford base32). Named CROCKFORD32_AB to avoid a clash
 // with the lowercase CROCKFORD32 string used by the fingerprint-middle readout.
+/** @internal */
 export const CROCKFORD32_AB: Alphabet = {
   name: "crockford32",
   chars: CROCKFORD32_ALPHABET,
   bitsPerChar: 5,
 };
+/** @internal */
 export const BASE36: Alphabet = { name: "base36", chars: BASE36_ALPHABET, bitsPerChar: 6 };
+/** @internal */
 export const DECIMAL: Alphabet = { name: "decimal", chars: DECIMAL_ALPHABET, bitsPerChar: 4 };
+/** @internal */
 export const BASE64URL: Alphabet = {
   name: "base64url",
   chars: BASE64URL_ALPHABET,
@@ -100,6 +110,7 @@ export interface Token {
   quant: number;
 }
 
+/** @internal */
 export function tokenize(text: string, alphabet: Alphabet): Token[] {
   const bits = alphabet.bitsPerChar;
   const chars = alphabet.chars;
@@ -148,6 +159,7 @@ export function tokenize(text: string, alphabet: Alphabet): Token[] {
 // and its byte-equal-but-differently-cased twin fingerprint the same after the
 // parser has normalized case. Do NOT "optimize" this to hash decoded bytes —
 // that silently re-keys every pre-existing entviz.
+/** @internal */
 export function computeFingerprint(core: string): Uint8Array {
   return sha512(utf8Bytes(core));
 }
@@ -161,6 +173,7 @@ export function computeFingerprint(core: string): Uint8Array {
 // preserving the pre-existing keying of hex/UUID/ETH. NOTE the fingerprint-MIDDLE
 // digest (color-bar markers) deliberately stays over the bare `core`, mirroring
 // the Python reference — only the PRIMARY fingerprint folds the prefix.
+/** @internal */
 export function fingerprintCore(
   core: string,
   prefix: string | null,
@@ -181,15 +194,24 @@ export function fingerprintCore(
 // The tag is pure ASCII (incl. the trailing NUL), so its UTF-8 bytes equal the
 // latin1 bytes the reference uses — the digest is unchanged by encoding it here.
 const MIDDLE_DOMAIN_TAG = utf8Bytes("entviz/fingerprint-middle/v6\0");
+/** @internal */
 export function fingerprintMiddleDigest(core: string): Uint8Array {
   return sha512.create().update(MIDDLE_DOMAIN_TAG).update(utf8Bytes(core)).digest();
 }
 
+/** @internal */
 export function tokenizeFingerprint(digest: Uint8Array): Token[] {
-  if (digest.length !== 64) throw new Error("fingerprint must be 64 bytes");
+  if (digest.length !== 64) {
+    throw new Error(
+      `The fingerprint digest must be exactly 64 bytes, but it was ${digest.length}.`,
+    );
+  }
   const b64 = bytesToBase64url(digest); // unpadded
   const toks = tokenize(b64, BASE64URL);
-  if (toks.length !== 22) throw new Error(`expected 22 ftoks, got ${toks.length}`);
+  // Provably unreachable on a 64-byte digest (it always yields 22 base64url
+  // tokens); kept as a defensive guard. Single line so the unreachable throw
+  // doesn't count as an uncovered line (see AGENTS.md coverage note).
+  if (toks.length !== 22) throw new Error(`The fingerprint digest should tokenize into exactly 22 fingerprint tokens, but it produced ${toks.length}.`);
   return toks;
 }
 
@@ -200,18 +222,31 @@ export function tokenizeFingerprint(digest: Uint8Array): Token[] {
 // Mirrors the reference (docs/spec.md "Large-input handling"); the construction
 // is frozen at v6.
 // ---------------------------------------------------------------------------
+/** @internal */
 export const MAX_TOKENS = 22;
+/** @internal */
 export const HEAD_TOKENS = 8;
+/** @internal */
 export const MIDDLE_TOKENS = 4;
 const TAIL_TOKENS = 8;
 // Anti-DoS cap: entviz visualizes identifiers; the largest plausible one is a
 // few KB, so 64 KiB is ~16x headroom. Past it, render() rejects outright.
+/** @internal */
 export const MAX_INPUT_CHARS = 65536;
+
+// Single source of truth for the over-the-cap rejection message, so the two
+// guard sites (classifyInput and render) can never drift apart. A complete
+// sentence stating the limit and the value received.
+/** @internal */
+export function inputTooLargeMessage(length: number): string {
+  return `The input is too large: it has ${length} characters, but the maximum is ${MAX_INPUT_CHARS}.`;
+}
 
 // Crockford base32 (excludes I/L/O/U). Used only for the fingerprint-middle
 // cells, so each carries a full 24 bits and the readout is homoglyph-clean and
 // single-case (no read-aloud "cap" cue).
 const CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/** @internal */
 export function crockford5(value: number): string {
   let v = value >>> 0;
   let out = "";
@@ -227,6 +262,7 @@ export function crockford5(value: number): string {
 // alphabet, so the readout is injective (32^5 = 2^25 >= 2^24) and avalanches on
 // any input change; the domain tag keeps it independent of the primary
 // fingerprint. Token indices here are 0..3; the caller renumbers into 0..19.
+/** @internal */
 export function fingerprintMiddleTokens(core: string): Token[] {
   const second = fingerprintMiddleDigest(core);
   const out: Token[] = [];
@@ -241,6 +277,7 @@ export function fingerprintMiddleTokens(core: string): Token[] {
 // head/middle/tail large-input path (20 tokens renumbered 0..19, truncated=true).
 // The >22-token guard also bounds a sub-512-bit edge case (e.g. a 23-token
 // bech32 fragment) onto the large path, matching the reference.
+/** @internal */
 export function tokenizeEntropy(
   core: string,
   alphabet: Alphabet,
@@ -264,12 +301,14 @@ function asciiCmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** @internal */
 export function medianToken(tokens: Token[]): Token | null {
   if (!tokens.length) return null;
   const s = [...tokens].sort((x, y) => asciiCmp(x.text, y.text) || x.index - y.index);
   return s[Math.floor((s.length - 1) / 2)];
 }
 
+/** @internal */
 export function quartileTokens(tokens: Token[]): (Token | null)[] {
   if (!tokens.length) return [null, null, null, null];
   const rev = (t: Token) => [...t.text].reverse().join("");
@@ -288,6 +327,7 @@ export function quartileTokens(tokens: Token[]): (Token | null)[] {
 // ---------------------------------------------------------------------------
 // Colors
 // ---------------------------------------------------------------------------
+/** @internal */
 export const POSSIBLE_EDGE_COLORS = [
   "#ffffff",
   "#e7be00",
@@ -300,6 +340,7 @@ function srgbToLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
+/** @internal */
 export function oklabLightness(r: number, g: number, b: number): number {
   const rl = srgbToLinear(r / 255);
   const gl = srgbToLinear(g / 255);
@@ -316,6 +357,7 @@ const OKLAB_THRESHOLD = 0.6;
 
 function hex2 (n: number): string { return n.toString(16).padStart(2, "0"); }
 
+/** @internal */
 export function nucleusColors(quant: number): [string, string] {
   const r = quant & 0xff;
   const g = (quant >> 8) & 0xff;
@@ -326,6 +368,7 @@ export function nucleusColors(quant: number): [string, string] {
   return [bg, fg];
 }
 
+/** @internal */
 export function hexToRgb(h: string): [number, number, number] {
   return [
     parseInt(h.slice(1, 3), 16),
@@ -334,6 +377,7 @@ export function hexToRgb(h: string): [number, number, number] {
   ];
 }
 
+/** @internal */
 export function weightedRgbDistance(c1: string, c2: string): number {
   const [r1, g1, b1] = hexToRgb(c1);
   const [r2, g2, b2] = hexToRgb(c2);
@@ -342,6 +386,7 @@ export function weightedRgbDistance(c1: string, c2: string): number {
   );
 }
 
+/** @internal */
 export function closestPaletteColor(target: string, palette: string[]): string {
   let best = palette[0];
   let bestD = Infinity;
@@ -355,10 +400,12 @@ export function closestPaletteColor(target: string, palette: string[]): string {
   return best;
 }
 
+/** @internal */
 export interface VisualStyle {
   bgColor: string;
   edgeColors: string[];
 }
+/** @internal */
 export function selectVisualStyle(medianFtok: Token): VisualStyle {
   // `& 0x03` maps the median quant to one of the FIRST FOUR palette colors, so
   // the background is always one of {white, gold, red, blue} and NEVER index 4
@@ -374,6 +421,7 @@ export function selectVisualStyle(medianFtok: Token): VisualStyle {
 // ---------------------------------------------------------------------------
 // Grid selection + blank-cell placement
 // ---------------------------------------------------------------------------
+/** @internal */
 export interface Grid {
   cols: number;
   rows: number;
@@ -383,6 +431,7 @@ export interface Grid {
 // The grid's natural aspect ratio (W/H) — cells are 3:2, so a cols×rows grid is
 // (cols·3)/(rows·2). chooseGrid selects the candidate closest to (and ≥) the
 // requested targetAr; this is also the targetAr that re-selects that candidate.
+/** @internal */
 export function gridAspectRatio(cols: number, rows: number): number {
   return (cols * 3) / (rows * 2);
 }
@@ -390,6 +439,7 @@ export function gridAspectRatio(cols: number, rows: number): number {
 // All grid shapes a given token count can take (one tightest cols per row count),
 // in no particular order. chooseGrid picks one of these by targetAr; the reshape
 // picker offers them. Shared so the two can never disagree on what is achievable.
+/** @internal */
 export function gridCandidates(tokenCount: number): Grid[] {
   const tightest = new Map<number, number>();
   for (let cols = 2; cols <= tokenCount; cols++) {
@@ -404,6 +454,7 @@ export function gridCandidates(tokenCount: number): Grid[] {
   return out;
 }
 
+/** @internal */
 export function chooseGrid(tokenCount: number, targetAr = 1.0): Grid {
   const candidates = gridCandidates(tokenCount);
   if (!candidates.length) return { cols: 2, rows: 2, tokenCount };
@@ -416,6 +467,7 @@ export function chooseGrid(tokenCount: number, targetAr = 1.0): Grid {
   return { cols: chosen.cols, rows: chosen.rows, tokenCount };
 }
 
+/** @internal */
 export function assignCellIndices(
   tokens: Token[],
   grid: Grid,
@@ -1193,6 +1245,7 @@ const DISPROOF_ORDER: [Alphabet, Set<string>][] = [
   [BASE64, new Set(BASE64_ALPHABET)],
   [BASE64URL, new Set(BASE64URL_ALPHABET)],
 ];
+/** @internal */
 export function detectAlphabetByDisproof(text: string): Alphabet | null {
   if (!text) return null;
   const cs = text;
@@ -1264,6 +1317,7 @@ export function parse(raw: string): Parsed | null {
 // XML-escaped on output (esc), so injection is handled regardless.
 const NOTE_MAX_LEN = 10;
 const NOTE_RE = /^[\x20-\x7E]{1,10}$/;
+/** @internal */
 export function sanitizeNote(note: string | null | undefined): string | null {
   if (note === null || note === undefined || note === "") return null;
   // Length first, then charset (matches the reference order / error catalog).
@@ -1285,6 +1339,7 @@ export function sanitizeNote(note: string | null | undefined): string | null {
 // ---------------------------------------------------------------------------
 // Round half to EVEN (banker's rounding) — matches Python's round(), which the
 // spec's rendered-font-size rule relies on ("ties broken toward even").
+/** @internal */
 export function roundHalfEven(x: number): number {
   const f = Math.floor(x);
   const diff = x - f;
@@ -1314,6 +1369,7 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** @internal */
 export class El {
   tag: string;
   attrs: [string, string][] = [];
@@ -1349,6 +1405,7 @@ const FONT_FAMILY =
   '"JetBrains Mono", "Menlo", "Consolas", "DejaVu Sans Mono", ' +
   '"Liberation Mono", "Roboto Mono", "Noto Sans Mono", monospace';
 
+/** @internal */
 export const BAND_LETTER: Record<string, string> = {
   "#ffffff": "W",
   "#e7be00": "G",
@@ -1368,6 +1425,7 @@ const OVERLAY_BY_BG: Record<string, [string, number, number]> = {
 // pure functions so they can be unit-tested in isolation (render() itself is
 // thin orchestration over these + the draw* helpers above).
 // ---------------------------------------------------------------------------
+/** @internal */
 export interface ClassifiedInput {
   core: string;
   /** The VISUALIZATION label: the full type with its count and any format note
@@ -1387,7 +1445,8 @@ export interface ClassifiedInput {
 
 /** The bare entropy type for a compact label: the visualization's `typeName` with the
  *  trailing "(count)…" dropped (take what's before the first "("). Derived from the
- *  drawn label so a pill never diverges from the glyph. */
+ *  drawn label so a pill never diverges from the glyph.
+ *  @internal */
 export function bareEntropyType(typeName: string): string {
   const paren = typeName.indexOf("(");
   return (paren === -1 ? typeName : typeName.slice(0, paren)).trim();
@@ -1404,7 +1463,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
     // length before allocating the base64url encoding, so a multi-megabyte
     // input can't materialize a ~1.33x base64 string first (a DoS amplifier).
     if (rawInput.length > MAX_INPUT_CHARS) {
-      throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
+      throw new Error(inputTooLargeMessage(rawInput.length));
     }
     const typeName = `txt(${rawInput.length})->b64url`;
     return {
@@ -1435,6 +1494,7 @@ export function classifyInput(rawInput: string): ClassifiedInput {
   };
 }
 
+/** @internal */
 export interface Geometry {
   fs: number; nucleusWidth: number; nucleusHeight: number;
   boxWidth: number; boxHeight: number; cellWidth: number; cellHeight: number;
@@ -1444,6 +1504,7 @@ export interface Geometry {
 
 // All pixel geometry, derived from the reference font size and the chosen grid
 // (see the spec's geometry section). `hasBottom` adds a bottom label strip.
+/** @internal */
 export function computeGeometry(fontSizePt: number, grid: Grid, hasBottom: boolean): Geometry {
   const fs = (fontSizePt * DPI) / 72;
   const nucleusWidth = fs * 3;
@@ -1471,6 +1532,7 @@ export function computeGeometry(fontSizePt: number, grid: Grid, hasBottom: boole
 
 // Rendered cell-text and label-text sizes in px. 4-bit alphabets (hex) render
 // their 6-char tokens at 0.75× so they fit the nucleus; 6-bit at reference.
+/** @internal */
 export function cellTextSizes(fontSizePt: number, alphabet: Alphabet): { cellTextPx: number; labelTextPx: number } {
   const cellTextPt = alphabet.bitsPerChar === 4 ? roundHalfEven(fontSizePt * 0.75) : fontSizePt;
   return {
@@ -1482,6 +1544,7 @@ export function cellTextSizes(fontSizePt: number, alphabet: Alphabet): { cellTex
 // v10: the fingerprint-edge cells — top-left (grid position 0) plus the 1st/2nd
 // quartile-ftok cells — whose surround edge color is fingerprint-driven.
 // Skipped where the target cell is blank or the quartile ftok is null.
+/** @internal */
 export function fingerprintEdgeCells(
   quartFtoks: (Token | null)[],
   cellIndices: Map<number, number>,
@@ -1499,6 +1562,7 @@ export function fingerprintEdgeCells(
 
 // minftok cell = smallest ftok quant (tie-break: highest cell index); maxftok
 // cell = largest quant (tie-break: highest cell index). Drives the blank-map.
+/** @internal */
 export function minMaxFtokCells(
   tokens: Token[],
   usedFtoks: Token[],
@@ -1514,6 +1578,7 @@ export function minMaxFtokCells(
 }
 
 // Cell indices in the grid that no token landed on (row-major order).
+/** @internal */
 export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): number[] {
   const out: number[] = [];
   for (let ci = 0; ci < grid.cols * grid.rows; ci++) if (!usedCellIndices.has(ci)) out.push(ci);
@@ -1524,6 +1589,7 @@ export function blankCellIndices(grid: Grid, usedCellIndices: Set<number>): numb
 // order) takes edge_palette[digest[32 + j] & 0b11]. The map blank is colored
 // only when it is the sole blank; otherwise it keeps the white/gold anchor and
 // is excluded here.
+/** @internal */
 export function blankFillColors(
   blankIndices: number[],
   mapCellIdx: number | null,
@@ -1544,6 +1610,7 @@ export function blankFillColors(
 // v10: in the sole-blank case the map fill is fingerprint-colored, so both
 // markers take the luminance-contrast color against it (shape still carries
 // max/min). Otherwise the fixed v9 red plus / blue dot.
+/** @internal */
 export function blankMapMarkerColors(soleBlank: boolean, mapFillColor: string | undefined): { minColor: string; maxColor: string } {
   if (soleBlank && mapFillColor) {
     const [, mc] = nucleusColors(
@@ -1560,6 +1627,7 @@ export function blankMapMarkerColors(soleBlank: boolean, mapFillColor: string | 
 // turn the lowest-indexed blank (the map blank) into a miniature grid carrying
 // the min (blue dot) and max (red plus) ftok-cell markers. Each marker's
 // data-blank-map-* attribute carries the literal "row,col" of its cell.
+/** @internal */
 export function drawBlankCells(
   cellGroups: Map<number, El>,
   blankIndices: number[],
@@ -1626,27 +1694,69 @@ export function drawBlankCells(
 // ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
+/**
+ * Options for {@link render}. Every field is optional; omitted fields fall back
+ * to the documented default.
+ */
 export interface RenderOptions {
+  /**
+   * Target aspect ratio (width / height) used to pick the token grid's shape.
+   * The renderer chooses the candidate grid whose natural ratio is closest to,
+   * and at or above, this value. Must be between `0.01` and `100` inclusive.
+   *
+   * @defaultValue `1.0` (a roughly square glyph)
+   */
   targetAr?: number;
+  /**
+   * Reference font size in points, which scales the entire glyph (all pixel
+   * geometry derives from it). Must be between `6` and `30` inclusive.
+   *
+   * @defaultValue `12`
+   */
   fontSizePt?: number;
+  /**
+   * Optional short caption rendered in the bottom label strip, e.g. to name
+   * the value. Must be printable ASCII and at most 10 characters; pass `null`
+   * (or omit) for no note. An out-of-range note is rejected.
+   *
+   * @defaultValue `null` (no caption)
+   */
   note?: string | null;
 }
 
+/**
+ * Render an entropy string to a self-contained SVG document (returned as a
+ * string).
+ *
+ * The input is trimmed, classified (hex / UUID / CESR / blockchain address /
+ * DID / URN / … , falling back to a UTF-8 → base64url text encoding), tokenized,
+ * and drawn as the spec's grid-of-cells glyph with its color bar, labels, and
+ * fingerprint-driven styling. Inputs larger than 512 bits take the head +
+ * fingerprint-middle + tail large-input path and set `data-truncated="true"`.
+ *
+ * @param entropy - The identifier or entropy string to visualize.
+ * @param opts - Rendering options; see {@link RenderOptions}.
+ * @returns The SVG document as a string.
+ * @throws Error if `opts.fontSizePt` is outside `[6, 30]`, if `opts.targetAr`
+ *   is outside `[0.01, 100]`, if `opts.note` is not printable ASCII of at most
+ *   10 characters, if the input exceeds the 65536-character anti-DoS cap, or
+ *   if a recognized value fails its checksum (e.g. EIP-55 / base58check / bech32).
+ */
 export function render(entropy: string, opts: RenderOptions = {}): string {
   const targetAr = opts.targetAr ?? 1.0;
   const fontSizePt = opts.fontSizePt ?? 12;
   const note = sanitizeNote(opts.note ?? null);
 
   if (!(fontSizePt >= 6 && fontSizePt <= 30)) {
-    throw new Error(`font_size_pt must be in [6, 30] (got ${fontSizePt})`);
+    throw new Error(`The fontSizePt option must be between 6 and 30, but it was ${fontSizePt}.`);
   }
   if (!(targetAr >= 0.01 && targetAr <= 100)) {
-    throw new Error(`target_ar must be in [0.01, 100] (got ${targetAr})`);
+    throw new Error(`The targetAr option must be between 0.01 and 100, but it was ${targetAr}.`);
   }
 
   const rawInput = entropy.trim();
   if (rawInput.length > MAX_INPUT_CHARS) {
-    throw new Error(`input too large (>${MAX_INPUT_CHARS} characters)`);
+    throw new Error(inputTooLargeMessage(rawInput.length));
   }
   const { core, alphabet, prefix, suffix, prefixSemantic } = classifyInput(rawInput);
   // v11 PREFIX-FOLD: the PRIMARY fingerprint hashes `prefix ‖ core` for a
@@ -1931,12 +2041,14 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   return svg.render();
 }
 
+/** @internal */
 export function decodedByteLength(core: string, alphabet: Alphabet): number {
   // Matches the spec's "decode the core under its declared alphabet" length.
   // For 4-bit (hex) that is ceil(len*4/8); for 6-bit (base64url) ceil(len*6/8).
   return Math.floor((core.length * alphabet.bitsPerChar) / 8);
 }
 
+/** @internal */
 export function boxOrigin(i: number, cellX: number, cellY: number, bw: number, bh: number, nucW: number, nucH: number): [number, number] {
   const nLeft = cellX + bw;
   const nTop = cellY + bh;
@@ -1948,6 +2060,7 @@ export function boxOrigin(i: number, cellX: number, cellY: number, bw: number, b
   return [nLeft - bw, nTop + (23 - i) * bh];
 }
 
+/** @internal */
 export function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nucH: number, qIdx: number, fg: string) {
   const leg = nucH / 2;
   const left = nx, top = ny, right = nx + nucW, bottom = ny + nucH;
@@ -1959,6 +2072,7 @@ export function drawQuartileMark(g: El, nx: number, ny: number, nucW: number, nu
   g.child("polygon").set("points", pts.map(([x, y]) => `${n(x)},${n(y)}`).join(" ")).set("fill", fg);
 }
 
+/** @internal */
 export function twoBitUsage(digest: Uint8Array, edgeColors: string[]): Map<string, number> {
   const counts = [0, 0, 0, 0];
   for (const byte of digest) for (const shift of [0, 2, 4, 6]) counts[(byte >> shift) & 0x03]++;
@@ -1971,6 +2085,7 @@ export function twoBitUsage(digest: Uint8Array, edgeColors: string[]): Map<strin
 // disjoint slices of the digest (tie-break by pattern value). Decouples the
 // color-bar band *order* from the count^4 band *heights* — through v8 the order
 // was descending count, carrying no information beyond the heights.
+/** @internal */
 export function twoBitFirstAppearance(digest: Uint8Array, edgeColors: string[]): string[] {
   const first = new Map<number, number>();
   let idx = 0;
@@ -1987,6 +2102,7 @@ export function twoBitFirstAppearance(digest: Uint8Array, edgeColors: string[]):
   return order.map((p) => edgeColors[p]);
 }
 
+/** @internal */
 export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], barWidth: number, boundingH: number, cellTextPx: number, secondDigest: Uint8Array) {
   const usage = twoBitUsage(digest, edgeColors);
   const paletteOrder = new Map<string, number>();
@@ -2071,6 +2187,7 @@ const LABEL_ADVANCE_EM = 0.6;
 // dark-red leading tspan with the projected label following in #666. The bottom
 // strip ("...<suffix>" + " (<note>)") is unchanged. TRUNC_MARKER is imported from
 // characterize.ts so the projected label and the split-for-styling never drift.
+/** @internal */
 export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, topText: string, suffix: string | null, textPx: number, note: string | null, truncated: boolean) {
   // font-family is inherited from the root <svg>; each label <text> carries
   // only a compact font-size presentation attribute.
@@ -2101,16 +2218,19 @@ export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTo
   }
 }
 
+/** @internal */
 export function borderLine(svg: El, x1: number, y1: number, x2: number, y2: number) {
   svg.child("line").set("x1", x1).set("y1", y1).set("x2", x2).set("y2", y2)
     .set("stroke", "#808080").set("stroke-width", "1").set("shape-rendering", "crispEdges");
 }
 
+/** @internal */
 export function enumerateInteriorCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
   const pts: [number, number][] = [];
   for (let r = 1; r < rows; r++) for (let c = 1; c < cols; c++) pts.push([ox + c * cw, oy + r * ch]);
   return pts;
 }
+/** @internal */
 export function enumerateExternalCorners(cols: number, rows: number, cw: number, ch: number, ox: number, oy: number): [number, number][] {
   const pts: [number, number][] = [];
   for (let c = 0; c <= cols; c++) pts.push([ox + c * cw, oy]);
@@ -2119,6 +2239,7 @@ export function enumerateExternalCorners(cols: number, rows: number, cw: number,
   return pts;
 }
 
+/** @internal */
 export function drawEllipse(gridG: El, digest: Uint8Array, gridLeft: number, gridTop: number, gridW: number, gridH: number, cw: number, ch: number, grid: Grid, bgColor: string, clipId: string) {
   const cols = grid.cols, rows = grid.rows;
   const interior = (cols - 1) * (rows - 1);

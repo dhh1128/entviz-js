@@ -66,7 +66,10 @@ test("tokenizeFingerprint yields exactly 22 ftoks", () => {
 });
 
 test("tokenizeFingerprint rejects a non-64-byte digest", () => {
-  assert.throws(() => tokenizeFingerprint(Buffer.alloc(10)), /64 bytes/);
+  assert.throws(
+    () => tokenizeFingerprint(Buffer.alloc(10)),
+    /The fingerprint digest must be exactly 64 bytes, but it was 10\./,
+  );
 });
 
 const tok = (text: string, index: number, quant: number): Token => ({ text, index, quant });

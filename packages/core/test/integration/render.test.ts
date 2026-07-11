@@ -126,10 +126,11 @@ test("render: invalid note is rejected", () => {
 });
 
 test("render: out-of-range font size and aspect ratio are rejected", () => {
-  assert.throws(() => render("a1b2c3d4", { fontSizePt: 4 }), /font_size_pt/);
-  assert.throws(() => render("a1b2c3d4", { fontSizePt: 40 }), /font_size_pt/);
-  assert.throws(() => render("a1b2c3d4", { targetAr: 0 }), /target_ar/);
-  assert.throws(() => render("a1b2c3d4", { targetAr: 200 }), /target_ar/);
+  // The messages name the camelCase RenderOptions property a caller passes.
+  assert.throws(() => render("a1b2c3d4", { fontSizePt: 4 }), /The fontSizePt option must be between 6 and 30, but it was 4\./);
+  assert.throws(() => render("a1b2c3d4", { fontSizePt: 40 }), /The fontSizePt option must be between 6 and 30, but it was 40\./);
+  assert.throws(() => render("a1b2c3d4", { targetAr: 0 }), /The targetAr option must be between 0\.01 and 100, but it was 0\./);
+  assert.throws(() => render("a1b2c3d4", { targetAr: 200 }), /The targetAr option must be between 0\.01 and 100, but it was 200\./);
 });
 
 // >512-bit large-input handling now renders (head+middle+tail, truncated) — see

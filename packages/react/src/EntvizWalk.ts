@@ -418,8 +418,8 @@ function coverageMeter(state: WalkState): ReactNode {
     { style: { position: "relative", paddingBottom: 14 } },
     h(
       "div",
-      { style: meterTrack, role: "progressbar", "aria-valuenow": Math.round(cov * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
-      h("div", { style: { ...meterFill, width: `${cov * 100}%` } }),
+      { style: meterTrack, role: "progressbar", "aria-label": "Walk coverage", "aria-valuenow": Math.round(cov * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
+      h("div", { style: { ...meterFill, width: `${cov * 100}%`, transition: prefersReducedMotion() ? "none" : meterFill.transition } }),
     ),
     plan.mode === "spot-check" ? tick(plan.quickBits, M.quickTick) : null,
     plan.mode === "spot-check" ? tick(plan.goodBits, M.goodTick) : null,
@@ -445,6 +445,14 @@ function probePanel(model: ChannelDescription | null, shown: string | null, reve
 // The first filled cell's text, from the already-built model (probe step only).
 function pickCellText(model: ChannelDescription | null): string {
   return model?.cells.find((x) => !x.blank)?.text ?? "0000";
+}
+
+// Honor the host's reduced-motion preference (vestibular sensitivity): true when
+// the user asked for reduced motion. Guarded for SSR / environments without
+// matchMedia — those default to allowing the animation.
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 // Build the render model, tolerating an unrenderable value (returns null).
