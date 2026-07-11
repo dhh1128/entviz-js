@@ -86,7 +86,7 @@ jobs:
 
       # The entviz reference repo carries the algorithm spec, SPEC_VERSION, the
       # golden conformance corpus, and the single authoritative Python runner
-      # this package is certified against. PINNED to tag v0.14.0: that tag carries
+      # this package is certified against. PINNED to tag v0.15.0: that tag carries
       # the enhanced runner (--skip-file, external-impl invariant pairs, and the
       # spec-version-match assertion). NOTE: bumping this package's SPEC_VERSION
       # later REQUIRES bumping this pin in lockstep — the runner asserts the
@@ -97,7 +97,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: dhh1128/entviz
-          ref: v0.14.0
+          ref: v0.15.0
           path: entviz-ref
           sparse-checkout: |
             compliance
@@ -143,13 +143,13 @@ jobs:
           persist-credentials: false
 
       # Same pinned reference as the Tier-A job (see that job's note): tag
-      # v0.14.0 carries the enhanced runner, and the pin must move with this
+      # v0.15.0 carries the enhanced runner, and the pin must move with this
       # package's SPEC_VERSION.
       - name: Check out the entviz reference (spec + corpus + runner)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: dhh1128/entviz
-          ref: v0.14.0
+          ref: v0.15.0
           path: entviz-ref
           sparse-checkout: |
             compliance
