@@ -22,7 +22,7 @@ describe("Entviz", () => {
     expect(span.getAttribute("aria-label")).toBe("entviz visualization");
     const svg = container.querySelector("svg");
     expect(svg).toBeTruthy();
-    expect(svg!.getAttribute("data-entviz-version")).toBe("v14");
+    expect(svg!.getAttribute("data-entviz-version")).toBe("v15");
   });
 
   test("a custom title overrides the aria-label; className/style pass through", () => {

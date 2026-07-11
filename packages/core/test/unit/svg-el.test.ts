@@ -77,9 +77,9 @@ test("drawQuartileMark: a triangle polygon in each of the four corners", () => {
   }
 });
 
-// v14: the top strip is the render_label projection string, rendered verbatim
-// (no ':' fusing). When truncated, a "fingerprint of " prefix is split into a
-// bold dark-red tspan with the projected label following.
+// v15: the top strip is the render_label projection string, rendered verbatim
+// (no ':' fusing). When truncated, a "+hash " prefix is split into a bold
+// dark-red tspan with the projected label following.
 test("drawLabels: top strip renders the projected label verbatim", () => {
   const top = (topText: string, truncated = false) => {
     const svg = new El("svg");
@@ -89,10 +89,11 @@ test("drawLabels: top strip renders the projected label verbatim", () => {
   assert.match(top("hex, 48-bit"), />hex, 48-bit</);
   assert.match(top("CESR, Ed25519 nt"), />CESR, Ed25519 nt</);
   assert.match(top("did:key"), />did:key</);
+  assert.match(top("ETH, 0x"), />ETH, 0x</); // v15 trailing prefix slot
   assert.match(top(""), /<text[^>]*><\/text>/); // empty label still emitted
-  // Truncated: bold dark-red "fingerprint of " marker + the projected label.
-  const tr = top("fingerprint of hex, 1024-bit", true);
-  assert.match(tr, /fill="#a00000"[^>]*font-weight="bold"[^>]*>fingerprint of </);
+  // Truncated: bold dark-red "+hash " marker + the projected label.
+  const tr = top("+hash hex, 1024-bit", true);
+  assert.match(tr, /fill="#a00000"[^>]*font-weight="bold"[^>]*>\+hash </);
   assert.match(tr, />hex, 1024-bit</);
 });
 

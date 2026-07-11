@@ -106,7 +106,7 @@ export function copyUnit(type: string | null): string {
 /** The pill's primary type token, read straight from the structured
  *  characterization — `scheme ?? encoding` (== `entropyType`), never
  *  string-parsed out of the drawn label. So the pill reads "cesr", "did",
- *  "uuid", "hex" without touching the label's count/format/"fingerprint of"
+ *  "uuid", "hex" without touching the label's count/format/"+hash"
  *  presentation. Returns null when the value could not be characterized. */
 export function pillType(ch: Characterization | null): string | null {
   return ch ? ch.entropyType : null;
@@ -256,7 +256,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // entropyType) instead of string-parsing the drawn label. `type` is the
       // canonical `scheme ?? encoding` (== entropyType) — so pill and glyph read
       // the same token ("cesr", "did", "uuid", "hex") with no count, format note,
-      // or "fingerprint of" caveat leaking in. `role` is the honest closed-enum
+      // or "+hash" caveat leaking in. `role` is the honest closed-enum
       // axis, present only where the generic recognizer asserted one.
       const ch = characterize(value.trim());
       const chan = describeChannels(value, opts);
@@ -419,7 +419,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   };
 
   // Type is the trusted, derived channel — the BARE entropy type only. The
-  // "fingerprint of" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
+  // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
   // concern, so it never appears here. `label` is first-party host text; never the
   // note (self-declared) on the pill.
   const shownParts = [showType ? type : null, label].filter(Boolean) as string[];

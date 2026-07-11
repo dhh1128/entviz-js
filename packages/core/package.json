@@ -1,7 +1,7 @@
 {
   "name": "@entviz/core",
-  "version": "0.14.2",
-  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v14) — certified against the entviz conformance corpus.",
+  "version": "0.15.0",
+  "description": "Visualize high-entropy values as comparable SVG diagrams (entviz, spec v15) — certified against the entviz conformance corpus.",
   "type": "module",
   "main": "src/entviz.ts",
   "types": "src/entviz.ts",

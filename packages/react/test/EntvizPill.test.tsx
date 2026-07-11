@@ -213,12 +213,13 @@ describe("EntvizPill rendering", () => {
     expect(screen.getByText("my key")).toBeTruthy();
   });
 
-  test(">512-bit input: the pill shows the bare type, NOT the 'fingerprint of' caveat", () => {
-    // the fingerprint caveat is a visualization note; it must never appear on the pill
+  test(">512-bit input: the pill shows the bare type, NOT the '+hash' caveat", () => {
+    // the large-input caveat (v15: "+hash") is a visualization note; it must
+    // never appear on the pill
     render(<EntvizPill value={BIG} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
-    expect(pill.getAttribute("aria-label")).not.toContain("fingerprint of");
-    expect(screen.queryByText(/fingerprint of/i)).toBeNull();
+    expect(pill.getAttribute("aria-label")).not.toContain("+hash");
+    expect(screen.queryByText(/\+hash/i)).toBeNull();
     expect(screen.getByText("hex")).toBeTruthy(); // typeName "hex(256)" → entropyType "hex"
   });
 

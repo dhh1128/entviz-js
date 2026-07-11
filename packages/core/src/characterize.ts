@@ -1,5 +1,5 @@
 /**
- * Entropy characterization model (spec v13) + label projection (spec v14) — a
+ * Entropy characterization model (spec v13) + label projection (spec v15) — a
  * faithful TypeScript port of the Python reference `entviz/characterize.py`.
  *
  * The parser (`parse` in ./entviz.ts) produces a `Parsed` display record whose
@@ -283,7 +283,7 @@ function partsFromParsed(parsed: Parsed): Part[] {
 }
 
 // ---------------------------------------------------------------------------
-// Label projection (spec v14).
+// Label projection (spec v15).
 //
 // The visible top/bottom label strips are a PURE PROJECTION of the eight
 // characterization fields through one grammar — no per-parser string fusing.
@@ -292,11 +292,54 @@ function partsFromParsed(parsed: Parsed): Part[] {
 // entviz/characterize.py. See docs/spec.md -> "Label strips" and
 // reviews/v14-label-redesign.md.
 //
-//   top    = [fingerprint of ]PRIMARY[, MOD]...[, SIZE]
+//   top    = [+hash ]PRIMARY[, MOD]...[, SIZE][, PREFIX]
 //   bottom = ...<suffix>[ (<note>)]
 //
 // Slot separator is ", " (comma-space); no trailing ':' or '...'.
 // ---------------------------------------------------------------------------
+
+// v15: large-input truncation marker. Prepended (bold dark-red, by the renderer)
+// to the top label when the text channel is a head/fingerprint-middle/tail
+// readout rather than a linear scan. Reads as "the value, augmented with a hash
+// of the parts that didn't fit" — the leading "+" is additive, not substitutive.
+// Replaces v14's "fingerprint of ". Kept in sync with drawLabels in entviz.ts
+// (which splits on it to style the marker tspan) by re-exporting this constant.
+export const TRUNC_MARKER = "+hash ";
+
+// ASCII elision marker for a truncated prefix slot (matches the bottom strip's
+// "...<suffix>" convention; no Unicode ellipsis, so the printable-ASCII / unicode
+// guard is satisfied and cross-implementation font behavior is uniform).
+const PREFIX_ELLIPSIS = "...";
+
+// Minimum number of LEADING prefix characters kept when the prefix is truncated.
+// The label-line budget can leave a big prefix (only SSH's ~24-52 char structural
+// header is ever this long) almost no room; without a floor it would collapse to
+// a bare "..." that shows nothing. Keeping a few head chars honors "show the
+// first few characters, then an ellipsis".
+const PREFIX_MIN_HEAD = 4;
+
+// The literal front prefix that was stripped from the visualized core, or null.
+// This is a leading bind="none" part — a presentation sigil peeled off the front
+// (0x, bc1, cosmos1, Stellar G, the SSH structural header, …). A folded identity
+// prefix (bind="fold": did/urn/gitoid/swhid) is NOT returned — it is already
+// shown verbatim as the PRIMARY slot. A bind="core" leading part (e.g. a CESR
+// derivation code, in the first cell) is likewise not a stripped prefix.
+function strippedPrefix(ch: Characterization): string | null {
+  const parts = ch.parts || [];
+  if (parts.length > 0 && parts[0].bind === "none") return parts[0].text;
+  return null;
+}
+
+// Truncate the literal prefix slot to `avail` characters with a trailing "..."
+// elision marker. The prefix is the sole ELASTIC label element (v15):
+// PRIMARY/MOD/SIZE are never truncated. When the prefix does not fit it is cut to
+// <head> + "..."; the head length is floored at PREFIX_MIN_HEAD so a long prefix
+// on a tight line still shows a few leading characters rather than a bare "...".
+function fitPrefix(prefix: string, avail: number): string {
+  if (prefix.length <= avail) return prefix;
+  const keep = Math.max(avail - PREFIX_ELLIPSIS.length, PREFIX_MIN_HEAD);
+  return prefix.slice(0, keep) + PREFIX_ELLIPSIS;
+}
 
 // Bare-encoding display shortenings for the PRIMARY slot when scheme is null and
 // the basis is decoded (the encoding name IS the primary). Mirrors the pre-v14
@@ -370,7 +413,13 @@ function labelMods(ch: Characterization): string[] {
     if (algo) mods.push(algo);
   } else if (scheme === "ssh") {
     const algo = q.algorithm;
-    if (algo) mods.push(String(algo));
+    if (algo) {
+      // v15: shorten the ECDSA curve to its common short name for the label —
+      // "ecdsa-nistp256" -> "ecdsa-p256" (there is no rival non-NIST "p256"; only
+      // the redundant standards-body prefix drops). The data-qualifiers
+      // `algorithm` field keeps the faithful SSH curve id ("ecdsa-nistp256").
+      mods.push(String(algo).replace("nistp", "p"));
+    }
   } else if (scheme === "cid") {
     // CIDv0 is dag-pb/sha2-256 by definition -> no MOD. CIDv1: codec always,
     // hash only on departure from sha2-256.
@@ -404,15 +453,21 @@ function labelSize(ch: Characterization): string | null {
 }
 
 /**
- * Project a characterization into the (top, bottom) label strips (v14).
+ * Project a characterization into the (top, bottom) label strips (v15).
  *
  * Pure function of the eight characterization fields (plus the presentation
  * facts the fields don't carry: whether the input was >512-bit `truncated`, the
- * bound `suffix` checksum, and the out-of-band user `note`).
+ * bound `suffix` checksum, the out-of-band user `note`, and the monospace
+ * `lineChars` budget the grid leaves for the top strip — used only to truncate
+ * the elastic prefix slot; `null` = do not truncate).
  *
- *  - top    = `[fingerprint of ]PRIMARY[, MOD]...[, SIZE]` — ", " joined, no
- *    trailing `:` or `...`. The `fingerprint of ` marker is reflected here so a
- *    text-only consumer still sees it (the renderer styles it as a tspan).
+ *  - top    = `[+hash ]PRIMARY[, MOD]...[, SIZE][, <prefix>]` — ", " joined, no
+ *    trailing `:`. The `+hash ` marker is reflected here so a text-only consumer
+ *    still sees it (the renderer styles it as a bold-red tspan). The trailing
+ *    `<prefix>` slot (v15) echoes a front prefix stripped from the visualized
+ *    core (a bind="none" leading part); it is the only slot that may be truncated
+ *    (to `lineChars`) and may then end in `...`. Fold-prefix schemes
+ *    (did/urn/gitoid/swhid) show their prefix as PRIMARY and get no extra slot.
  *  - bottom = `...<suffix>` then ` (<note>)` — the bound (now-verified) checksum
  *    and the user caption. Empty string when neither is present.
  *
@@ -423,12 +478,28 @@ export function renderLabel(
   truncated = false,
   suffix: string | null = null,
   note: string | null = null,
+  lineChars: number | null = null,
 ): { top: string; bottom: string } {
   const slots = [labelPrimary(ch), ...labelMods(ch)];
   const size = labelSize(ch);
   if (size !== null) slots.push(size);
+
+  let prefix = strippedPrefix(ch);
+  if (prefix) {
+    if (lineChars !== null) {
+      // Budget left for the prefix = the line budget minus the marker and the
+      // fixed PRIMARY/MOD/SIZE core (which never truncate) and the ", " that
+      // joins the prefix slot.
+      const markerLen = truncated ? TRUNC_MARKER.length : 0;
+      const coreLen = slots.join(", ").length;
+      const avail = lineChars - markerLen - coreLen - ", ".length;
+      prefix = fitPrefix(prefix, avail);
+    }
+    slots.push(prefix);
+  }
+
   let top = slots.join(", ");
-  if (truncated) top = "fingerprint of " + top;
+  if (truncated) top = TRUNC_MARKER + top;
 
   let bottom = "";
   if (suffix) bottom = `...${suffix}`;

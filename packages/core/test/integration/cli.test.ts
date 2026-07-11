@@ -22,7 +22,7 @@ test("cli: a render vector writes an SVG to stdout and exits 0", () => {
   );
   assert.equal(r.status, 0);
   assert.match(r.stdout, /^<svg/);
-  assert.match(r.stdout, /data-entviz-version="v14"/);
+  assert.match(r.stdout, /data-entviz-version="v15"/);
   // v13: the structured characterization is emitted on the root <svg> (a
   // deadbeef… 32-hex string is recognized as an undashed UUID).
   assert.match(r.stdout, /data-scheme="uuid"/);

@@ -23,10 +23,10 @@ import {
   bytesToHex,
   bytesToBase64url,
 } from "./bytes.ts";
-import { characterize, compactJson, renderLabel } from "./characterize.ts";
+import { characterize, compactJson, renderLabel, TRUNC_MARKER } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v14";
+export const SPEC_VERSION = "v15";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -1906,10 +1906,19 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   // Layer 5b: labels. v14: the top strip is a pure projection of the v13
   // characterization through the shared render_label grammar (PRIMARY[, MOD]…
   // [, SIZE]), NOT the old per-parser typeName/prefix fusing. `ch` is the same
-  // characterization emitted as data-* attributes above; the styled
-  // "fingerprint of " marker and the note tspan are applied structurally in
-  // drawLabels from the truncated/note flags. See reviews/v14-label-redesign.md.
-  const { top: labelTop } = renderLabel(ch, truncated);
+  // characterization emitted as data-* attributes above; the styled "+hash "
+  // marker and the note tspan are applied structurally in drawLabels from the
+  // truncated/note flags. See reviews/v14-label-redesign.md.
+  //
+  // v15: the top strip gains a trailing slot echoing the stripped front prefix
+  // (0x, bc1, cosmos1, the SSH header, …). The prefix is the only elastic element
+  // and is truncated to the character budget the grid leaves on the label line:
+  // lineChars = floor(grid_width / (label_px * LABEL_ADVANCE_EM)). LABEL_ADVANCE_EM
+  // is a fixed spec constant (NOT the renderer's real font metric) so every
+  // implementation truncates identically and the Tier-A label string is
+  // reproducible. See docs/spec.md -> "Label strips".
+  const labelLineChars = Math.floor(gridW / (labelTextPx * LABEL_ADVANCE_EM));
+  const { top: labelTop } = renderLabel(ch, truncated, null, null, labelLineChars);
   drawLabels(svg, gridLeft, gridTop + gridH, gridTop, gridLeft + gridW, nucleusHeight, labelTop, suffix, labelTextPx, note, truncated);
 
   // Borders
@@ -2049,12 +2058,19 @@ export function drawColorBar(svg: El, digest: Uint8Array, edgeColors: string[], 
   }
 }
 
-// v14: `topText` is the render_label projection of the characterization
-// (PRIMARY[, MOD]…[, SIZE]); when `truncated` it begins with the loud
-// "fingerprint of " marker, which is split back out and rendered as a bold
+// v15: fixed monospace advance (em) used to size the top strip's character
+// budget for prefix truncation. A spec constant — NOT the renderer's real font
+// metric — so all implementations compute the same integer budget and the
+// Tier-A label string is reproducible. 0.6 em is the conventional monospace
+// advance; the raster is unaffected (labels are excluded from the Tier-B raster).
+const LABEL_ADVANCE_EM = 0.6;
+
+// v15: `topText` is the render_label projection of the characterization
+// ([+hash ]PRIMARY[, MOD]…[, SIZE][, PREFIX]); when `truncated` it begins with
+// the loud "+hash " marker, which is split back out and rendered as a bold
 // dark-red leading tspan with the projected label following in #666. The bottom
-// strip ("...<suffix>" + " (<note>)") is unchanged.
-const TRUNC_MARKER = "fingerprint of ";
+// strip ("...<suffix>" + " (<note>)") is unchanged. TRUNC_MARKER is imported from
+// characterize.ts so the projected label and the split-for-styling never drift.
 export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTop: number, gridRight: number, nucleusHeight: number, topText: string, suffix: string | null, textPx: number, note: string | null, truncated: boolean) {
   // font-family is inherited from the root <svg>; each label <text> carries
   // only a compact font-size presentation attribute.

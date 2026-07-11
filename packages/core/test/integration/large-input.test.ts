@@ -10,11 +10,11 @@ test("render: a >512-bit input no longer throws; it takes the large-input path",
   assert.match(svg, /data-truncated="true"/);
 });
 
-test("render: large input shows the loud 'fingerprint of' marker + byte-length type", () => {
+test("render: large input shows the loud '+hash' marker + byte-length type", () => {
   const svg = render(BIG_HEX);
-  assert.match(svg, /fingerprint of /);
-  // v14: the top label is the projected characterization; a >512-bit hex input
-  // reads "fingerprint of hex, <bits>-bit" (256 hex chars = 1024 bits decoded).
+  assert.match(svg, /\+hash /);
+  // v15: the top label is the projected characterization; a >512-bit hex input
+  // reads "+hash hex, <bits>-bit" (256 hex chars = 1024 bits decoded).
   assert.match(svg, /hex, 1024-bit/);
   assert.match(svg, /fill="#a00000"/); // bold dark-red marker
 });
@@ -28,7 +28,7 @@ test("render: exactly 4 fingerprint-middle cells, flagged + Crockford readout", 
 test("render: a short input is NOT truncated (data-truncated omitted)", () => {
   const svg = render("0123456789abcdef0123456789abcdef");
   assert.doesNotMatch(svg, /data-truncated/);
-  assert.doesNotMatch(svg, /fingerprint of/);
+  assert.doesNotMatch(svg, /\+hash/);
 });
 
 test("render: 512-bit input (boundary) stays the lossless short path", () => {

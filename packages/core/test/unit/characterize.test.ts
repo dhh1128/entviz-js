@@ -249,12 +249,13 @@ test("leading/trailing whitespace is trimmed before parsing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Label projection (spec v14). renderLabel is a PURE projection of the eight
-// characterization fields through one grammar (PRIMARY[, MOD]…[, SIZE] on top;
-// ...<suffix> (<note>) on the bottom). Each row below mirrors the locked
-// before→after table in reviews/v14-label-redesign.md.
+// Label projection (spec v15). renderLabel is a PURE projection of the eight
+// characterization fields through one grammar
+// ([+hash ]PRIMARY[, MOD]…[, SIZE][, PREFIX] on top; ...<suffix> (<note>) on the
+// bottom). The v15 trailing PREFIX slot echoes a stripped bind="none" front
+// prefix so the reader can reconcile the pasted value against the cells.
 // ---------------------------------------------------------------------------
-import { renderLabel } from "../../src/characterize.ts";
+import { renderLabel, TRUNC_MARKER } from "../../src/characterize.ts";
 
 const topOf = (input: string, truncated = false, suffix: string | null = null, note: string | null = null) =>
   renderLabel(characterize(input), truncated, suffix, note).top;
@@ -273,19 +274,25 @@ test("renderLabel: before→after table (PRIMARY / MOD / SIZE grammar)", () => {
   assert.equal(topOf("EBfdlu8R27Fbx_ehrqwImnK_8Cm79sqbAQ4caaZG_LFv"), "CESR, Blake3-256");
   // Fixed-size schemes omit SIZE entirely.
   assert.equal(topOf("550e8400-e29b-41d4-a716-446655440000"), "UUID");
-  assert.equal(topOf("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"), "ETH");
+  // v15: ETH echoes the stripped "0x" front prefix as the trailing slot (pure
+  // projection here — topOf passes no line budget, so it never truncates).
+  assert.equal(topOf("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"), "ETH, 0x");
 });
 
 test("renderLabel: SSH shows algorithm MOD + bit size; CIDv1 shows codec MOD", () => {
   const ssh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtJVH9hM+2DyhmgRZBfeIDoVqCTbXY+0nKlS5pTkkXY user@example.com";
-  assert.equal(topOf(ssh), "SSH, ed25519, 264-bit");
+  // v15: pure projection (no line budget) shows the full stripped SSH header as
+  // the trailing PREFIX slot; the pipeline truncates it against the grid budget.
+  assert.equal(topOf(ssh), "SSH, ed25519, 264-bit, AAAAC3NzaC1lZDI1NTE5AAAA");
   const cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
-  assert.equal(topOf(cid), "CIDv1, dag-pb");
+  // v15: CIDv1 echoes the multibase "b" front prefix.
+  assert.equal(topOf(cid), "CIDv1, dag-pb, b");
 });
 
 test("renderLabel: multihash size + non-default hash MOD", () => {
-  // A hex multihash (sha2-256 elided) reads "multihash, <bits>-bit".
-  assert.equal(topOf("1220" + "ab".repeat(32)), "multihash, 256-bit");
+  // A hex multihash (sha2-256 elided) reads "multihash, <bits>-bit"; v15 also
+  // echoes the stripped "1220" multihash header as the trailing prefix slot.
+  assert.equal(topOf("1220" + "ab".repeat(32)), "multihash, 256-bit, 1220");
   // A multihash whose hash departs from sha2-256 surfaces the hash as a MOD.
   // Constructed directly since the parser elides the hash into qualifiers only
   // on departure paths; renderLabel is a pure function of the fields.
@@ -324,15 +331,38 @@ test("renderLabel: gitoid / swhid reconstruct their self-describing prefix", () 
 });
 
 test("renderLabel: blockchain testnet network surfaces as a MOD; mainnet silent", () => {
-  // A valid bchtest CashAddr -> testnet MOD.
-  assert.equal(topOf("bchtest:qpm2qsznhks23z7629mms6s4cwef74vcwvqcw003ap"), "BCH, testnet");
-  // Mainnet is silent (no MOD).
-  assert.equal(topOf("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"), "BCH");
+  // A valid bchtest CashAddr -> testnet MOD; v15 echoes the "bchtest:" prefix.
+  assert.equal(topOf("bchtest:qpm2qsznhks23z7629mms6s4cwef74vcwvqcw003ap"), "BCH, testnet, bchtest:");
+  // Mainnet is silent (no network MOD); the "bitcoincash:" prefix still echoes.
+  assert.equal(topOf("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"), "BCH, bitcoincash:");
 });
 
-test("renderLabel: >512-bit truncation adds the loud 'fingerprint of ' marker", () => {
+test("renderLabel: >512-bit truncation adds the loud '+hash ' marker", () => {
   const big = "0123456789abcdef".repeat(16); // 256 hex = 1024 bits
-  assert.equal(topOf(big, true), "fingerprint of hex, 1024-bit");
+  assert.equal(topOf(big, true), "+hash hex, 1024-bit");
+  assert.equal(TRUNC_MARKER, "+hash ");
+});
+
+test("renderLabel: v15 trailing PREFIX slot echoes the stripped bind=none front prefix", () => {
+  // A bech32 cosmos1 address: type name + literal prefix, never collapsed.
+  assert.equal(topOf("cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e"), "bech32, cosmos1");
+  assert.equal(topOf("osmo1qqqsyqcyq5rqwzqfpg9scrgwpugpzysntdz28t"), "bech32, osmo1");
+  // BTC legacy: "1" version-byte prefix; segwit: "bc1".
+  assert.equal(topOf("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"), "BTC, 1");
+  assert.equal(topOf("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"), "BTC, bc1");
+  // Fold-prefix schemes get NO extra slot (prefix is already PRIMARY).
+  assert.equal(topOf("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"), "did:key");
+  assert.equal(topOf("urn:isbn:0451450523"), "urn:isbn");
+});
+
+test("renderLabel: only the PREFIX slot truncates against the line budget", () => {
+  const ch = characterize("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a");
+  // Full projection: no budget -> verbatim prefix.
+  assert.equal(renderLabel(ch).top, "BCH, bitcoincash:");
+  // A tight budget truncates the prefix (head floored at 4 + "..."); core stays.
+  // core = "BCH" (3) + ", " (2) => 5; a budget of 12 leaves 12-0-3-2 = 7 for the
+  // prefix -> keep max(7-3,4)=4 head chars + "..." = "bitc...".
+  assert.equal(renderLabel(ch, false, null, null, 12).top, "BCH, bitc...");
 });
 
 test("renderLabel: bottom strip = ...<suffix> (<note>)", () => {
