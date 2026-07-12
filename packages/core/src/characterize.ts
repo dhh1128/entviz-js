@@ -1,6 +1,6 @@
 /**
- * Entropy characterization model (spec v13) + label projection (spec v15) — a
- * faithful TypeScript port of the Python reference `entviz/characterize.py`.
+ * Entropy characterization model + label projection — a faithful TypeScript
+ * port of the Python reference `entviz/characterize.py`.
  *
  * The parser (`parse` in ./entviz.ts) produces a `Parsed` display record whose
  * `type` string fuses several orthogonal facts (scheme, semantic role, network/
@@ -36,7 +36,7 @@
 import { parse, BASE64URL, type Alphabet, type Parsed } from "./entviz.ts";
 import { utf8ByteLength, bytesToBase64url, utf8Bytes } from "./bytes.ts";
 
-// Closed role enum (spec v13). Nothing outside this set may appear.
+// Closed role enum. Nothing outside this set may appear.
 export type Role = "key" | "signature" | "digest" | "address" | "identifier";
 export type SizeBasis = "decoded" | "utf8";
 export type Bind = "none" | "fold" | "core";
@@ -47,7 +47,7 @@ export interface Part {
 }
 
 /**
- * The structured characterization of an entropy string (spec v13): the same
+ * The structured characterization of an entropy string: the same
  * recognition the parser performs, re-expressed along independent axes so a
  * consumer reads typed fields instead of string-parsing the drawn label.
  * Reporting-only — it changes no rendered pixel, fingerprint input, or label.
@@ -308,7 +308,7 @@ function partsFromParsed(parsed: Parsed): Part[] {
 }
 
 // ---------------------------------------------------------------------------
-// Label projection (spec v15).
+// Label projection.
 //
 // The visible top/bottom label strips are a PURE PROJECTION of the eight
 // characterization fields through one grammar — no per-parser string fusing.
@@ -356,7 +356,7 @@ function strippedPrefix(ch: Characterization): string | null {
 }
 
 // Truncate the literal prefix slot to `avail` characters with a trailing "..."
-// elision marker. The prefix is the sole ELASTIC label element (v15):
+// elision marker. The prefix is the sole ELASTIC label element:
 // PRIMARY/MOD/SIZE are never truncated. When the prefix does not fit it is cut to
 // <head> + "..."; the head length is floored at PREFIX_MIN_HEAD so a long prefix
 // on a tight line still shows a few leading characters rather than a bare "...".
@@ -402,7 +402,7 @@ const SCHEME_PRIMARY: Record<string, string> = {
 
 // Blockchain schemes whose network qualifier, when it departs from mainnet,
 // surfaces as a MOD (testnet loud; mainnet silent). The legacy/segwit `variant`
-// is DROPPED entirely (v14).
+// is DROPPED entirely.
 const BLOCKCHAIN_SCHEMES = new Set([
   "btc", "ltc", "bch", "ada", "eth", "xrp", "stellar", "eos", "bech32",
 ]);
@@ -478,7 +478,7 @@ function labelSize(ch: Characterization): string | null {
 }
 
 /**
- * Project a characterization into the (top, bottom) label strips (v15).
+ * Project a characterization into the (top, bottom) label strips.
  *
  * Pure function of the eight characterization fields (plus the presentation
  * facts the fields don't carry: whether the input was >512-bit `truncated`, the
@@ -489,7 +489,7 @@ function labelSize(ch: Characterization): string | null {
  *  - top    = `[+hash ]PRIMARY[, MOD]...[, SIZE][, <prefix>]` — ", " joined, no
  *    trailing `:`. The `+hash ` marker is reflected here so a text-only consumer
  *    still sees it (the renderer styles it as a bold-red tspan). The trailing
- *    `<prefix>` slot (v15) echoes a front prefix stripped from the visualized
+ *    `<prefix>` slot echoes a front prefix stripped from the visualized
  *    core (a bind="none" leading part); it is the only slot that may be truncated
  *    (to `lineChars`) and may then end in `...`. Fold-prefix schemes
  *    (did/urn/gitoid/swhid) show their prefix as PRIMARY and get no extra slot.
@@ -533,7 +533,7 @@ export function renderLabel(
 }
 
 /**
- * Characterize an entropy string into the structured model (spec v13).
+ * Characterize an entropy string into the structured model.
  *
  * Returns a plain object with keys: encoding, scheme, role, qualifiers,
  * sizeBasis, sizeBits, parts, entropyType. Never throws for an in-range input:

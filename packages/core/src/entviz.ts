@@ -1,7 +1,7 @@
 /**
  * entviz — TypeScript reference port (core).
  *
- * A faithful port of the Python reference (docs/spec.md, v15), including the
+ * A faithful port of the Python reference (docs/spec.md), including the
  * >512-bit large-input path. Certified against the shared conformance corpus
  * (see the entviz repo's compliance/ suite). The full identifier-parser
  * dispatch is ported: hex-multihash, CESR, SSH keys, Bitcoin/Ripple/Litecoin/
@@ -228,6 +228,11 @@ export const MAX_TOKENS = 22;
 export const HEAD_TOKENS = 8;
 /** @internal */
 export const MIDDLE_TOKENS = 4;
+// The fingerprint-middle cells always render 5 Crockford base32 chars (a 24-bit
+// value; 32⁵ ≥ 2²⁴). This count feeds the generalized cell-text size rule to
+// derive their 0.80× factor rather than hard-coding it.
+/** @internal */
+export const MIDDLE_TOKEN_CHARS = 5;
 const TAIL_TOKENS = 8;
 // Anti-DoS cap: entviz visualizes identifiers; the largest plausible one is a
 // few KB, so 64 KiB is ~16x headroom. Past it, render() rejects outright.
@@ -511,7 +516,7 @@ export interface Parsed {
   prefixSemantic?: boolean;
 }
 
-// DID (W3C DID Core), v11. `did:<method>:<method-specific-id>` optionally
+// DID (W3C DID Core). `did:<method>:<method-specific-id>` optionally
 // followed by a DID-URL tail (path `/…`, query `?…`, fragment `#…`). The msid
 // MAY contain `:` as a segment separator, so the body ends only at the first
 // `/`, `?`, or `#` — the tail is a FREE annotation and is DROPPED. method is
@@ -1530,8 +1535,26 @@ export function computeGeometry(fontSizePt: number, grid: Grid, hasBottom: boole
   };
 }
 
-// Rendered cell-text and label-text sizes in px. 4-bit alphabets (hex) render
-// their 6-char tokens at 0.75× so they fit the nucleus; 6-bit at reference.
+// The spec's generalized cell-text size rule, keyed on a single cell's own
+// token character count: rendered_pt = round(reference × max(0.75, min(1.0,
+// 4 / token_chars))). It is the single source of truth for the per-cell size
+// factor: 4-char → reference (1.0×), 5-char → 0.80×, 6-char and beyond → the
+// 0.75× floor. Used directly for the 5-char Crockford fingerprint-middle cells;
+// the input-alphabet head/tail path (cellTextSizes) is kept as-is because the
+// reference sizes those per input alphabet, not per token (see note there).
+/** @internal */
+export function cellTextSizePx(fontSizePt: number, tokenChars: number): number {
+  const factor = Math.max(0.75, Math.min(1.0, 4 / tokenChars));
+  return (roundHalfEven(fontSizePt * factor) * DPI) / 72;
+}
+
+// Rendered cell-text and label-text sizes in px for the entviz's input alphabet.
+// The reference sizes head/tail cells *per input alphabet* — every hex (4-bit)
+// cell at 0.75×, including a short trailing partial token — which is NOT the same
+// as applying the generalized per-token rule (a partial hex token has fewer than
+// 6 chars but still renders at 0.75×). So this stays keyed on bitsPerChar, not on
+// token_chars, to preserve that behavior. Only the fixed-width 5-char Crockford
+// middle cells route through the generalized cellTextSizePx helper.
 /** @internal */
 export function cellTextSizes(fontSizePt: number, alphabet: Alphabet): { cellTextPx: number; labelTextPx: number } {
   const cellTextPt = alphabet.bitsPerChar === 4 ? roundHalfEven(fontSizePt * 0.75) : fontSizePt;
@@ -1763,6 +1786,10 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   // semantic prefix (DID method / URN NID), else the bare core. The
   // fingerprint-MIDDLE digest (color-bar markers) stays over the bare `core`.
   const fpCore = fingerprintCore(core, prefix, prefixSemantic);
+  // Compute the SHA-512 fingerprint once and reuse it for both the used ftoks
+  // (below) and the digest (further down, for the clip id and blank/ellipse
+  // fills). Both derivations key off the same primary fingerprint of `fpCore`.
+  const digest = computeFingerprint(fpCore);
 
   // >512-bit inputs take the large-input path: the text channel shows head
   // (8 tokens) + fingerprint-middle (4 tokens) + tail (8 tokens) and sets
@@ -1771,7 +1798,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   if (!tokens.length) throw new Error("No tokens produced from input entropy.");
   const tokenCount = tokens.length;
 
-  const usedFtoks = tokenizeFingerprint(computeFingerprint(fpCore)).slice(0, tokenCount);
+  const usedFtoks = tokenizeFingerprint(digest).slice(0, tokenCount);
   // Large inputs always size the grid for the full token cap (22 → 4x6 = 24
   // cells at AR 1.0), so the 20 tokens always leave a few spare cells for the
   // fingerprint-driven blank shift — matching the reference (choose_grid(22)).
@@ -1795,7 +1822,9 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
     }
   }
   const fpBorderColor = style.bgColor === "#ffffff" ? "#e7be00" : "#ffffff";
-  const fpMiddleTextPx = (roundHalfEven(fontSizePt * 0.8) * DPI) / 72;
+  // The 5-char Crockford middle cells size through the generalized rule keyed on
+  // their own char count (5 → 0.80× of reference), not a hard-coded factor.
+  const fpMiddleTextPx = cellTextSizePx(fontSizePt, MIDDLE_TOKEN_CHARS);
 
   // Geometry
   const hasBottom = Boolean(suffix) || Boolean(note);
@@ -1806,7 +1835,6 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   } = geom;
   const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
 
-  const digest = computeFingerprint(fpCore);
   const digestHex = bytesToHex(digest);
   const clipId = `grid-clip-${digestHex.slice(0, 16)}-${grid.cols}x${grid.rows}`;
 
