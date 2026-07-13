@@ -246,6 +246,30 @@ describe("EntvizCompare", () => {
     expect(screen.getAllByRole("img").length).toBe(2); // our render of the (equal) value
   });
 
+  test("pasting our own >512-bit SVG reports a GREEN hash-precision match (≈), not a brown couldn't-confirm", () => {
+    // Regression: comparing a large value's own SVG to itself used to read
+    // "Couldn't confirm a match — >512-bit input; the text channel is not lossless",
+    // which felt wrong for identical bytes. The machine already compared every
+    // displayed cell AND the hash gestalt, so the only residual is a hash collision
+    // → report "the same value, to the precision of the hash" on a GREEN pill.
+    // Capture the certified-identical green to compare the fill against.
+    const a = rtlRender(<EntvizCompare value={HEX} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: HEX } });
+    const identicalBg = screen.getByRole("status").style.background; // good/green fill
+    a.unmount();
+
+    rtlRender(<EntvizCompare value={BIG} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: render(BIG) } });
+    const chip = screen.getByRole("status");
+    expect(chip.textContent).toContain("≈");
+    expect(chip.textContent).toMatch(/precision of the hash/i);
+    expect(chip.textContent).not.toMatch(/couldn’t confirm|couldn't confirm/i);
+    // GREEN pill (good tone) — the same fill as a certified-identical verdict, not warn/brown
+    expect(chip.style.background).toBe(identicalBg);
+    // …and no "walk the cells" call-to-action (walking would re-check the same cells)
+    expect(chip.textContent).not.toMatch(/walk the cells/i);
+  });
+
   test("a tampered / non-entviz SVG is `unknown`, never a false `≠`", () => {
     rtlRender(<EntvizCompare value={HEX} />);
     fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: SVG.replace("</svg>", "<script/></svg>") } });
@@ -440,6 +464,27 @@ describe("EntvizCompare", () => {
     expect(container.querySelector('[id^="entviz-walk-spot-"]')).toBeNull(); // ring cleared on finish
   });
 
+  test("during a walk the question + answer buttons move ABOVE the machine verdict (next to the figures)", () => {
+    const MULTI = "0123456789abcdef".repeat(4);
+    const { container } = rtlRender(<EntvizCompare value={MULTI} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /paste/i }), { target: { value: MULTI } });
+    // before the walk: the verdict sits above the launch buttons
+    const verdictBefore = screen.getByText(/^Identical/);
+    const launch = screen.getByRole("button", { name: /spot-check/i });
+    expect(verdictBefore.compareDocumentPosition(launch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // enter the walk
+    fireEvent.click(launch);
+    const answer = screen.getByRole("button", { name: /looks the same/i });
+    const verdict = screen.getByText(/^Identical/);
+    // the answer button now PRECEDES the machine verdict in the DOM (hoisted up)
+    expect(answer.compareDocumentPosition(verdict) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // …and the walk (question + buttons) is wrapped in the accented card, which the
+    // machine verdict is NOT inside of
+    const card = answer.closest("[data-entviz-walk-card]");
+    expect(card).toBeTruthy();
+    expect(card!.contains(verdict)).toBe(false);
+  });
+
   test("a pasted raster image can be verified with the guided walk (rings both figures)", async () => {
     const MULTI = "0123456789abcdef".repeat(4);
     const { container } = rtlRender(<EntvizCompare value={MULTI} />);
@@ -492,8 +537,13 @@ describe("EntvizCompare integrity (T2 render-tamper resistance)", () => {
     expect(status()).toContain("Identical"); // locked verdict label
     expect(screen.queryByText(/perfect match/i)).toBeNull();
     // the scoping copy is rendered on the MACHINE chip (not just walk/voice) and is the locked default
-    expect(screen.getByText(/does not vouch for that other value/i)).toBeTruthy();
+    const note = screen.getByText(/does not vouch for that other value/i);
+    expect(note).toBeTruthy();
     expect(screen.queryByText(/fully trusted/i)).toBeNull();
+    // it spans the comparator's width (like the figures / progress bar) rather than
+    // wrapping at an arbitrary narrow column — no fixed max-width, no self-shrink.
+    expect(note.style.maxWidth).toBe("");
+    expect(note.style.alignSelf).toBe("");
   });
 
   test("the walk focus ring/scrim use fixed colors (T2 can't set --entviz-walk-ring transparent to erase the spotlight)", () => {

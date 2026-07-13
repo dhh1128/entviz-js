@@ -205,7 +205,7 @@ interface Chip {
   tone: "good" | "bad" | "warn" | "neutral";
 }
 
-function chipFor(result: CompareResult, m: CompareMessages): Chip {
+function chipFor(result: CompareResult, m: CompareMessages, medium: Medium | null): Chip {
   switch (result.kind) {
     case "pending":
       return { symbol: "?", label: m.pending, tone: "neutral" };
@@ -218,9 +218,19 @@ function chipFor(result: CompareResult, m: CompareMessages): Chip {
       const v = result.verdict as Exclude<Verdict, { state: "pending" }>;
       if (v.state === "identical") return { symbol: "=", label: m.identical, tone: "good" };
       if (v.state === "different") return { symbol: "≠", label: m.different, tone: "bad" };
-      // A raster look-alike: pixels matched but text can't be read from an image.
-      if (v.state === "unknown" && v.similar) return { symbol: "≈", label: m.unknownRasterSimilar, tone: "warn" };
-      // unknown (e.g. a >512-bit or non-self-consistent SVG reference)
+      // A `similar` verdict — a strong positive signal short of machine-certified
+      // identity. Two producers, two treatments:
+      //  • raster: pixels matched but an image's text can't be read → genuinely
+      //    uncertain, so WARN (brown) + "walk the cells" is the real next step.
+      //  • >512-bit SVG: every displayed cell AND the hash-derived pattern match, so
+      //    the ONLY way to differ is a hash collision (astronomically unlikely). That
+      //    warrants a GREEN pill — the residual isn't worth a warning — with `≈`
+      //    (not `=`) marking "to the precision of the hash", not a full byte compare.
+      if (v.state === "unknown" && v.similar)
+        return medium === "raster"
+          ? { symbol: "≈", label: m.unknownRasterSimilar, tone: "warn" }
+          : { symbol: "≈", label: m.unknownSvgSimilar, tone: "good" };
+      // unknown (e.g. a >512-bit SVG whose gestalt didn't match, or a non-self-consistent reference)
       return { symbol: "?", label: fmt(m.unknownReason, { reason: v.reason }), tone: "warn" };
     }
   }
@@ -260,7 +270,7 @@ const VERDICT_SKIN: Record<Chip["tone"], { bg: string; fg: string }> = {
 // NOT host-overridable via `messages` — only surrounding chrome is localizable. Re-pinned in
 // EntvizCompare() after the override merge.
 const VERDICT_LOCKED_KEYS: (keyof CompareMessages)[] = [
-  "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar",
+  "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar", "unknownSvgSimilar",
   "unknownReason", "pending", "machineCheck", "recognitionNote",
   "provenancePasted", "provenanceFile", "provenanceUrl", "provenanceDropped", "provenanceProvided",
 ];
@@ -469,7 +479,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // just not loaded yet: show a neutral "fetch it" chip instead of the warning.
   const chip: Chip = isUrl
     ? { symbol: "↻", label: m.urlReady, tone: "neutral" }
-    : chipFor(result, m);
+    : chipFor(result, m, medium);
 
   // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG is
   // never embedded). `refValue` (from classifyResult) is the value to draw: the
@@ -663,8 +673,57 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           : null,
       );
 
+  // --- pieces assembled below the figures, reordered by walk state ------------
+  // The machine verdict chip — omitted while merely pending (that pill just
+  // restated the input's own placeholder; #3). Shown for a URL-ready hint and
+  // every real verdict.
+  const verdictChip =
+    isUrl || result.kind !== "pending"
+      ? h(
+          "span",
+          { role: "status", "aria-live": "polite", style: { ...chipStyle, background: VERDICT_SKIN[chip.tone].bg, color: VERDICT_SKIN[chip.tone].fg, borderColor: "transparent" } },
+          !isUrl ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
+          h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: TEXT.body } }, chip.symbol),
+          h("span", null, chip.label),
+        )
+      : null;
+  // §2.4 scoping caveat on the MACHINE chip too (not just the walk/voice paths): a match
+  // means "equal to THIS reference", never that the reference is the one to trust. Shown
+  // for every non-"different" verdict (identical/unknown) — the fastest, most-trusted
+  // outcomes. Locked string (not host-overridable).
+  const scopingNoteEl =
+    result.kind === "verdict" && result.verdict.state !== "different"
+      ? h("span", { style: scopingNote }, m.recognitionNote)
+      : null;
+  // Guided walk (M2): offered only when there's a renderable reference (a value / a
+  // matched comparison text) or a raster.
+  const walkOffered = !!(((medium === "text" && refDisplayValue) || medium === "raster") && refContent.trim());
+  const walkEl = h(EntvizWalk, {
+    value,
+    reference: medium === "raster" ? "" : (refDisplayValue ?? ""),
+    targetAr: dispAr, fontSizePt: dispFs, note, layout,
+    mode: walkMode!, // launch straight into the chosen mode
+    externalFigures: true, // reuse our static figures; just report the step
+    rng, // threaded down; EntvizWalk re-gates via safeRng (§5.4)
+    onStep: onWalkStep,
+    // The core walk status "pending" (a Done at a sub-Good peek) maps to the
+    // event union's "pending-done"; the other three pass straight through.
+    onComplete: (status) => {
+      emit({ type: "walk.complete", status: status === "pending" ? "pending-done" : status });
+      setWalkStep(null);
+    },
+  });
+  const launchButtons = h(
+    "div",
+    { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+    small || medium === "raster"
+      ? null
+      : h("button", { type: "button", onClick: () => onSetWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
+    h("button", { type: "button", onClick: () => onSetWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
+  );
+
   // The reference/machine comparison tab: the two figures, the acquisition field,
-  // the machine verdict chip, and the guided-walk launch.
+  // and — reordered by walk state — the machine verdict + the guided walk.
   const referenceTab = h(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 10 } },
@@ -733,56 +792,18 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       ),
     ),
     // The acquisition field spans the WHOLE comparator, below both figures (#5).
+    // (Suppressed during a walk — no mid-walk reference edits.)
     acquisition,
-    // The machine verdict chip — omitted while merely pending (that pill just
-    // restated the input's own placeholder; #3). Shown for a URL-ready hint and
-    // every real verdict.
-    isUrl || result.kind !== "pending"
-      ? h(
-          "span",
-          { role: "status", "aria-live": "polite", style: { ...chipStyle, background: VERDICT_SKIN[chip.tone].bg, color: VERDICT_SKIN[chip.tone].fg, borderColor: "transparent" } },
-          !isUrl ? h("span", { style: machineCheckLabel }, m.machineCheck) : null,
-          h("span", { "aria-hidden": true, style: { fontWeight: 700, fontSize: TEXT.body } }, chip.symbol),
-          h("span", null, chip.label),
-        )
-      : null,
-    // §2.4 scoping caveat on the MACHINE chip too (not just the walk/voice paths): a match
-    // means "equal to THIS reference", never that the reference is the one to trust. Shown
-    // for every non-"different" verdict (identical/unknown) — the fastest, most-trusted
-    // outcomes. Locked string (not host-overridable).
-    result.kind === "verdict" && result.verdict.state !== "different"
-      ? h("span", { style: scopingNote }, m.recognitionNote)
-      : null,
-    // Guided-walk launch (M2): a value reference walks value-vs-value; a raster
-    // reference walks OUR figure against the pasted image by eye. Only offered when
-    // there's a renderable reference (a value / a matched comparison text) or a raster.
-    ((medium === "text" && refDisplayValue) || medium === "raster") && refContent.trim()
-      ? walking
-        ? h(EntvizWalk, {
-            value,
-            reference: medium === "raster" ? "" : (refDisplayValue ?? ""),
-            targetAr: dispAr, fontSizePt: dispFs, note, layout,
-            mode: walkMode!, // launch straight into the chosen mode
-            externalFigures: true, // reuse our static figures; just report the step
-            rng, // threaded down; EntvizWalk re-gates via safeRng (§5.4)
-            onStep: onWalkStep,
-            // The core walk status "pending" (a Done at a sub-Good peek) maps to the
-            // event union's "pending-done"; the other three pass straight through.
-            onComplete: (status) => {
-              emit({ type: "walk.complete", status: status === "pending" ? "pending-done" : status });
-              setWalkStep(null);
-            },
-            style: { marginTop: 4 },
-          })
-        : h(
-            "div",
-            { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-            small || medium === "raster"
-              ? null
-              : h("button", { type: "button", onClick: () => onSetWalkMode("spot-check"), title: m.walkSpotCheckHint, style: walkLaunchStyle }, m.walkSpotCheck),
-            h("button", { type: "button", onClick: () => onSetWalkMode("complete"), title: m.walkCompleteHint, style: walkLaunchStyle }, m.walkComplete),
-          )
-      : null,
+    // DURING a walk: the active step (title, meter, question, answer buttons) is
+    // hoisted here — directly under the figures — inside an accented card, so the
+    // question and its buttons sit next to the highlighted figures rather than below
+    // the machine's verdict. The verdict + scoping note then follow as context.
+    walking && walkOffered ? h("div", { "data-entviz-walk-card": "", style: walkCardStyle }, walkEl) : null,
+    verdictChip,
+    scopingNoteEl,
+    // NOT walking: the walk LAUNCH buttons live here, below the verdict — an
+    // affordance to start a human double-check after seeing the machine's answer.
+    !walking && walkOffered ? launchButtons : null,
   );
 
   // The voice tab: the live ceremony. paste-bind when a text reference already
@@ -985,6 +1006,21 @@ const warnBanner: CSSProperties = {
 const provenance: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 // The §2.4 scoping caveat under an affirmative verdict ("equal to THIS reference…").
-const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72, maxWidth: "46ch", alignSelf: "flex-start" };
+// No maxWidth: it stretches to the comparator's width (the figures / the walk's
+// progress bar), so it doesn't wrap at an arbitrary column narrower than everything
+// around it. (Default `stretch` cross-alignment fills the column.)
+const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72 };
+// The active-walk card: a distinct, accented region so the question + answer buttons
+// read as "the thing to do now", sitting right under the highlighted figures. Theme-
+// agnostic — surface + hairline derive from currentColor (adapts to any host), and the
+// inline-start accent rule uses --entviz-compare-action (host-overridable, RTL-aware).
+const walkCardStyle: CSSProperties = {
+  display: "flex", flexDirection: "column", gap: 10,
+  padding: "12px 14px 14px", borderRadius: 10,
+  border: "1px solid color-mix(in srgb, currentColor 16%, transparent)",
+  borderInlineStartWidth: 3,
+  borderInlineStartColor: "var(--entviz-compare-action, currentColor)",
+  background: "color-mix(in srgb, currentColor 4%, transparent)",
+};
 
 export default EntvizCompare;

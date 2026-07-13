@@ -173,9 +173,6 @@ const M = {
   relookYes: "Yes, different",
   relookNo: "No, my mistake",
   probeNotice: "Planted check: we deliberately changed one character here. Spot the difference.",
-  // live verdict shown while the walk is in progress
-  belowGood: "A sanity look so far — keep going to reach a verification.",
-  pastGood: "No difference so far — keep going for more coverage, or stop.",
   // final verdicts
   noDiffSpot:
     "No difference found — a good indicator of equivalence, but a spot-check is less than complete and should not be relied on when stakes are high.",
@@ -190,15 +187,18 @@ const M = {
   walkAgain: "Walk again",
 };
 
-const PROMPTS: Record<string, string> = {
+// Every prompt is a full yes/no question, phrased in the same style, so the
+// answer buttons ("Looks the same / different") read consistently against each.
+// (Not yet localized — this catalog is the surface a future locale pack fills.)
+export const PROMPTS: Record<string, string> = {
   text: "Do the highlighted characters match?",
   background: "Is the background color the same?",
-  "colorbar-pattern": "Same colored bands, same order, same ratios?",
+  "colorbar-pattern": "Does the color bar consist of the same colored bands, in the same order and the same ratios?",
   "colorbar-markers": "Are the two dots in the same spots on the bar?",
   ellipse: "Does the oval match — same tilt, shape, and size?",
   "blank-pattern": "Are the empty cells in the same places?",
   "blank-map": "Do the plus and dot point to the same cells?",
-  "quartile-marks": "Are the corner triangles on the same cells?",
+  "quartile-marks": "Are the corner triangles in the same places, with the same colors, on the same cells?",
 };
 
 const promptFor = (step: WalkStep): string =>
@@ -354,7 +354,6 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
 
   // --- walking ---
   const step = state.plan.steps[state.index];
-  const past = state.status === "no-difference"; // crossed the Good milestone
   const onDiffer = () => {
     if (step.kind === "probe") { advance("differ"); return; } // catching the probe is the right answer
     setRelook(true);
@@ -365,10 +364,10 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
     "div",
     { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } },
     h("strong", null, M.title),
-    // coverage meter, with Quick/Good milestone ticks for a spot-check
+    // coverage meter, with Quick/Good milestone ticks for a spot-check. The meter
+    // (with its milestone ticks) is the whole progress signal now — the old live
+    // "sanity look so far…" line just restated it and pushed the question down.
     coverageMeter(state),
-    // live verdict so the user sees where they stand on the scale
-    h("span", { "aria-live": "polite", style: { fontSize: TEXT.small, color: past ? "#1a7f37" : "#57606a" } }, past ? M.pastGood : M.belowGood),
     // the step — figures are suppressed when the host draws them (externalFigures)
     step.kind === "probe"
       ? probePanel(oursModel, probeText, onProbeReveal)

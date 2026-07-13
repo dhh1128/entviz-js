@@ -117,8 +117,9 @@ export interface LayoutGeometry {
   cellRects: Rect[];
   /** The grid background rect (the "background color" feature). */
   gridRect: Rect;
-  /** The ellipse overlay's axis-aligned bounding box (rotation ignored, as the
-   *  ring is axis-aligned). Always present — the ellipse is always drawn. */
+  /** The visible ellipse overlay's axis-aligned bounding box: the bbox of the
+   *  ROTATED ellipse, clipped to the grid (the ellipse is drawn under the grid
+   *  clip-path). Always present — the ellipse is always drawn. */
   ellipse: Rect;
   /** The whole color bar (the bands stack to fill it). */
   colorBar: Rect;
@@ -327,8 +328,11 @@ function computeLayoutGeometry(
     discRect(markers.colorBar.right, "right"),
   ];
 
-  // Ellipse bounding box (mirrors drawEllipse; rotation ignored — the ring is
-  // axis-aligned — and the early-return guards never fire for a real grid).
+  // Ellipse focus-ring bounding box (mirrors drawEllipse; the early-return guards
+  // never fire for a real grid). The rendered ellipse is ROTATED by rotationDeg and
+  // CLIPPED to the grid, so the ring's box is the axis-aligned bbox of the *rotated*
+  // ellipse, intersected with the grid — using the unrotated bbox (or ignoring the
+  // clip) drew the ring in the wrong place and let it start off the figure.
   const interior = (grid.cols - 1) * (grid.rows - 1);
   const pts =
     interior >= 6
@@ -345,7 +349,18 @@ function computeLayoutGeometry(
   const rMin = 0.22 * dFar, rMax = 0.58 * dFar;
   const rx = rMin + ((digest[61] % 16) / 15) * (rMax - rMin);
   const ry = rMin + ((digest[62] % 16) / 15) * (rMax - rMin);
-  const ellipse: Rect = { x: ax - rx, y: ay - ry, w: 2 * rx, h: 2 * ry };
+  // Axis-aligned half-extents of the ellipse after rotation by rotationDeg:
+  // halfW = √(rx²cos²θ + ry²sin²θ), halfH = √(rx²sin²θ + ry²cos²θ).
+  const rotationDeg = ((digest[63] % 16) / 15) * 180;
+  const rot = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const halfW = Math.hypot(rx * cos, ry * sin);
+  const halfH = Math.hypot(rx * sin, ry * cos);
+  // Clip to the grid rect (the ellipse is drawn under the grid clip-path), so the
+  // ring hugs the *visible* oval instead of extending into the color bar / margins.
+  const ex0 = Math.max(gridLeft, ax - halfW), ey0 = Math.max(gridTop, ay - halfH);
+  const ex1 = Math.min(gridRight, ax + halfW), ey1 = Math.min(gridBottom, ay + halfH);
+  const ellipse: Rect = { x: ex0, y: ey0, w: ex1 - ex0, h: ey1 - ey0 };
 
   return {
     viewBox: `0 0 ${round3(boundingW)} ${round3(boundingH)}`,

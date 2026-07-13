@@ -112,3 +112,37 @@ test("describeChannels: targetAr changes the grid shape", () => {
 test("describeChannels: deterministic", () => {
   assert.deepEqual(describeChannels(UUID), describeChannels(UUID));
 });
+
+// --- ellipse focus-ring geometry ------------------------------------------
+// The walk's "does the oval match?" ring reads geometry.ellipse. The rendered
+// ellipse is ROTATED and CLIPPED to the grid, so its bounding box must be the
+// axis-aligned box of the *rotated* ellipse, intersected with the grid — not the
+// unrotated bbox (which over/under-shoots and can start off the figure).
+
+// A 2048-bit RSA key: a large (4x6, truncated) value whose ellipse is rotated 36°
+// and extends well past the grid on the left — the exact case that showed the ring
+// drawn wrong (its unrotated bbox started at x≈-51.7, off the figure).
+const RSA = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv6PUUaSriz8CO7cvdTC9VHXbB/cONdugWSsMVsP5UBm73e2HPWVNxN1UsiXxC8ELPBODBPZWeI8Z05geCMed0Qm4CI6DgJEV53jp5fAUZPG7PSMXRCMK3CIfUrkw6SyRW8MrXI7JA24qPLpkSR+dNkb1rd+6Y4t+LFBa6qSqceQV8aXnZ48DzkW6YJ8wU6P357TqRn3Oi5SCSsN8+IYQ43Benu/HcS0ZMQIsjnr0K66dnI+PbVRr+t/TsPN+ioYIPWjs2pJciDLuhTyvXC2IyRIMUkogPiF0hIGaAF1oLJ34nmJj4Vkh+Pkh9/+DPAfkjW+jAaBBRDDoyzik/Pj0jwIDAQAB";
+
+test("describeChannels: the ellipse rect never escapes the grid (rotated + clipped)", () => {
+  for (const v of [UUID, HEX_FULL, HEX_1024, LEI, RSA]) {
+    const { gridRect: g, ellipse: e } = describeChannels(v).geometry;
+    const EPS = 1e-6;
+    assert.ok(e.x >= g.x - EPS, `${v}: ellipse.x ${e.x} < gridRect.x ${g.x}`);
+    assert.ok(e.y >= g.y - EPS, `${v}: ellipse.y ${e.y} < gridRect.y ${g.y}`);
+    assert.ok(e.x + e.w <= g.x + g.w + EPS, `${v}: ellipse right ${e.x + e.w} > grid right ${g.x + g.w}`);
+    assert.ok(e.y + e.h <= g.y + g.h + EPS, `${v}: ellipse bottom ${e.y + e.h} > grid bottom ${g.y + g.h}`);
+    assert.ok(e.w > 0 && e.h > 0, `${v}: ellipse rect is degenerate`);
+  }
+});
+
+test("describeChannels: the ellipse rect matches the rotated, grid-clipped bbox (RSA-2048)", () => {
+  // Ground truth from the rendered SVG: cx=88, cy=107, rx=139.682, ry=58.763,
+  // rotate(36). Rotated half-extents halfW=hypot(rx·cos,ry·sin), halfH=
+  // hypot(rx·sin,ry·cos); then clamp to the grid rect [28,268]×[27,267].
+  const e = describeChannels(RSA).geometry.ellipse;
+  assert.ok(Math.abs(e.x - 28) <= 0.1, `x ${e.x}`);
+  assert.ok(Math.abs(e.y - 27) <= 0.1, `y ${e.y}`);
+  assert.ok(Math.abs(e.w - 178.16) <= 0.2, `w ${e.w}`);
+  assert.ok(Math.abs(e.h - 174.87) <= 0.2, `h ${e.h}`);
+});

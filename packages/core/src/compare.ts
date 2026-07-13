@@ -245,19 +245,32 @@ export function compareSvg(referenceSvg: string, value: string, opts: RenderOpti
   const myText = myFilled.map((c) => c.text as string).join(" ");
   if (refText !== myText) return { state: "different" };
 
-  // The text channels agree. It is only lossless ≤512 bits, so a >512-bit input
-  // (either side) cannot be machine-certified identical from text — route to walk.
-  if (ref.truncated || me.truncated) {
-    return { state: "unknown", reason: ">512-bit input: the text channel is not lossless" };
-  }
-
-  // Same value ⇒ same fingerprint-driven gestalt. Recompute it (don't trust the
-  // SVG's data-*) and require the geometry-independent channels to match.
+  // The text channels agree. The fingerprint-driven gestalt (per-token surround
+  // bits + color-bar letters) is a hash of the WHOLE value, so it discriminates
+  // values a >512-bit input's non-lossless text cannot. Recompute ours (don't trust
+  // the SVG's data-*) and require the geometry-independent channels to match.
   const surroundOk =
     ref.filled.length === myFilled.length &&
     ref.filled.every((f, i) => f.surroundBits === myFilled[i].surroundBits);
   const barsOk = ref.colorBarLetters.join("") === me.colorBarLetters.join("");
-  return surroundOk && barsOk
+  const gestaltOk = surroundOk && barsOk;
+
+  // A >512-bit input (either side) can't be machine-CERTIFIED identical: the text
+  // channel isn't lossless, and section 3 reserves `identical` for a full compare.
+  // But when the text AND the hash-derived gestalt both match, forging that would
+  // take a hash collision -- an honest match "to the precision of the hash": report
+  // a `similar` (walk-to-confirm) verdict, not a flat couldn't-confirm. A gestalt
+  // MISMATCH stays a plain `unknown` -- an untrusted reference must never be spun
+  // into a false `different` (section 6.3).
+  if (ref.truncated || me.truncated) {
+    return gestaltOk
+      ? { state: "unknown", similar: true, reason: "the text and pattern match to the precision of the hash -- a value this large can't be fully machine-verified from an SVG" }
+      : { state: "unknown", reason: ">512-bit input: the text channel is not lossless" };
+  }
+
+  // <=512-bit: the text channel is lossless, so text + a self-consistent gestalt is
+  // a full identity proof.
+  return gestaltOk
     ? { state: "identical" }
     : { state: "unknown", reason: "the reference's pattern is inconsistent with its text" };
 }

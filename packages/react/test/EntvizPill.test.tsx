@@ -762,4 +762,29 @@ describe("EntvizPill popover accessibility", () => {
     expect(parseInt(closeBtn.style.width, 10)).toBeGreaterThanOrEqual(24);
     expect(parseInt(closeBtn.style.height, 10)).toBeGreaterThanOrEqual(24);
   });
+
+  // The popover is centered in the viewport (not anchored below the pill, which ran
+  // off the bottom/edge of the screen), and scrolls when it is taller than the
+  // screen — so the whole visualization stays reachable on small/short viewports.
+  test("the popover is centered on screen and scrolls on overflow", () => {
+    render(<EntvizPill value={HEX} />);
+    fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+    const dialog = screen.getByRole("dialog");
+    // The dialog sits inside a full-viewport centering overlay, not positioned by
+    // per-pill floater math (top/left offsets from the anchor).
+    const overlay = dialog.parentElement as HTMLElement;
+    expect(overlay.style.position).toBe("fixed");
+    expect(overlay.style.alignItems).toBe("center");
+    expect(overlay.style.justifyContent).toBe("center");
+    // The overlay must not steal clicks from the page (the pill's popover is
+    // non-modal and does not close on outside-click) — only the dialog is interactive.
+    expect(overlay.style.pointerEvents).toBe("none");
+    expect(dialog.style.pointerEvents).toBe("auto");
+    // The dialog is no longer absolutely/fixed-positioned by an anchor offset…
+    expect(dialog.style.top).toBe("");
+    expect(dialog.style.left).toBe("");
+    // …and it caps its height + scrolls so a tall popover never runs off-screen.
+    expect(dialog.style.overflowY).toBe("auto");
+    expect(dialog.style.maxHeight).toBeTruthy();
+  });
 });

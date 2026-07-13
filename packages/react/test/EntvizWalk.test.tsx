@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
-import { EntvizWalk, mutate } from "../src/index.ts";
+import { EntvizWalk, mutate, PROMPTS } from "../src/index.ts";
 
 const UUID = "550e8400-e29b-41d4-a716-446655440000"; // 6 cells → small
 const HEX256 = "0123456789abcdef".repeat(4); // ~11 cells → large, no probe
@@ -109,9 +109,35 @@ describe("EntvizWalk verdicts", () => {
     // Climb past Good, then stop → keeps the affirmative
     rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
     matchN(8); // enough to clear the Good front of an ~11-cell value
-    expect(screen.getByText(/no difference so far/i)).toBeTruthy(); // live verdict crossed Good
     fireEvent.click(btn(/done — that's enough/i)!);
     expect(screen.getByText(/no difference found/i)).toBeTruthy();
+  });
+
+  test("no redundant live 'sanity look' verdict line — the meter is the sole progress signal", () => {
+    rtlRender(<EntvizWalk value={HEX256} reference={HEX256} mode="spot-check" />);
+    expect(screen.getByRole("progressbar")).toBeTruthy(); // the meter carries progress
+    // the old restating text (both its below-Good and past-Good variants) is gone
+    expect(screen.queryByText(/sanity look/i)).toBeNull();
+    expect(screen.queryByText(/keep going to reach a verification/i)).toBeNull();
+    matchN(8); // cross Good
+    expect(screen.queryByText(/no difference so far/i)).toBeNull();
+  });
+
+  test("gestalt prompts are full, style-consistent questions (colorbar + quartile precision)", () => {
+    // Each prompt is a complete yes/no question (starts with a verb, ends in "?"),
+    // so it reads consistently above the "Looks the same / different" buttons.
+    for (const p of Object.values(PROMPTS)) {
+      expect(/^(Do|Does|Is|Are)\b/.test(p)).toBe(true);
+      expect(p.endsWith("?")).toBe(true);
+    }
+    // the color-bar prompt is a full sentence, not the old fragment
+    expect(PROMPTS["colorbar-pattern"]).toBe(
+      "Does the color bar consist of the same colored bands, in the same order and the same ratios?",
+    );
+    // the quartile prompt now names place, color, AND cell (was just "…on the same cells?")
+    expect(PROMPTS["quartile-marks"]).toMatch(/places/i);
+    expect(PROMPTS["quartile-marks"]).toMatch(/colors/i);
+    expect(PROMPTS["quartile-marks"]).toMatch(/cells/i);
   });
 
   test("a reported difference asks for a re-look, then confirms DIFFERENT", () => {

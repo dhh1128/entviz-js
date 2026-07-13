@@ -37,6 +37,7 @@ export interface CompareMessages {
   unknownRaster: string;
   unknownReason: string; // "{reason}" — a machine reason for an `unknown` verdict
   unknownRasterSimilar: string; // the raster look-alike verdict (pixels matched, text unchecked)
+  unknownSvgSimilar: string; // >512-bit SVG match: text + hash gestalt agree (identical to hash precision)
   secretWarning: string;
   recognitionNote: string;
   machineCheck: string; // label prefixing the verdict — it's the machine's determination
@@ -71,6 +72,7 @@ export const defaultCompareMessages: CompareMessages = {
   unknownRaster: "Comparing the image…",
   unknownReason: "Couldn’t confirm a match — {reason}",
   unknownRasterSimilar: "No visible difference in the colors we can sample — but an image can’t be read for text, so this isn’t a proven match. Walk the cells to check.",
+  unknownSvgSimilar: "The same value, to the precision of the hash — every displayed cell and the pattern match; only a hash collision could make them differ.",
   walkSpotCheck: "Spot-check",
   walkSpotCheckHint: "Sample features in a surprising order; stop when you're satisfied",
   walkComplete: "Check (complete)",

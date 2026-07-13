@@ -179,6 +179,28 @@ test("compareSvg: a >512-bit reference can never be `identical`", () => {
   assert.equal(compareSvg(render(BIG), BIG).state, "unknown");
 });
 
+test("compareSvg: a >512-bit self-SVG (text + hash gestalt match) is a `similar` hash-precision match", () => {
+  // Comparing a >512-bit value's own SVG to itself: not machine-`identical` (the
+  // text channel isn't lossless past 512 bits), but text AND the hash-derived
+  // gestalt (surround bits + color-bar letters) both match — forging that needs a
+  // hash collision. So it's a `similar` (walk-to-confirm) verdict, not a flat
+  // couldn't-confirm — the reason names the hash-precision limit.
+  const v = compareSvg(render(BIG), BIG);
+  assert.equal(v.state, "unknown");
+  assert.equal(v.state === "unknown" && v.similar, true);
+  assert.match((v as { reason: string }).reason, /hash/i);
+});
+
+test("compareSvg: a >512-bit reference whose text matches but gestalt differs is a plain `unknown` (not `similar`)", () => {
+  // Tamper a surround-bits pattern on a >512-bit reference: text still matches, but
+  // the hash gestalt no longer does → we must NOT claim a hash-precision match, and
+  // must NOT manufacture `different` from an untrusted reference (§6.3).
+  const forged = render(BIG).replace(/data-surround-bits="0x[0-9a-f]+"/, 'data-surround-bits="0x1"');
+  const v = compareSvg(forged, BIG);
+  assert.equal(v.state, "unknown");
+  assert.equal(v.state === "unknown" && !!v.similar, false);
+});
+
 test("compareSvg: text matches but a forged gestalt is `unknown`, not identical", () => {
   // same text channel, but tamper a surround-bits pattern → self-consistency fails
   const forgedSurround = render(UUID).replace(/data-surround-bits="0x[0-9a-f]+"/, 'data-surround-bits="0x1"');

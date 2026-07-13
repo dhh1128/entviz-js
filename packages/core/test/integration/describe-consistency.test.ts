@@ -175,9 +175,16 @@ for (const [name, value, opts] of CASES) {
     approxRect(bySide.left, g.colorBarMarkers[0], "marker left");
     approxRect(bySide.right, g.colorBarMarkers[1], "marker right");
 
-    // ellipse bounding box (rotation ignored, as the ring is axis-aligned)
-    const em = svg.match(/<ellipse\b[^>]*?\bcx="([-\d.]+)"[^>]*?\bcy="([-\d.]+)"[^>]*?\brx="([-\d.]+)"[^>]*?\bry="([-\d.]+)"/) as RegExpMatchArray;
+    // ellipse bounding box: the box of the ROTATED ellipse, clipped to the grid
+    // (the ellipse is drawn under the grid clip-path). Read cx/cy/rx/ry AND the
+    // rotate() angle from the rendered <ellipse>, and clamp to g.gridRect — the
+    // same geometry the focus ring must hug.
+    const em = svg.match(/<ellipse\b[^>]*?\bcx="([-\d.]+)"[^>]*?\bcy="([-\d.]+)"[^>]*?\brx="([-\d.]+)"[^>]*?\bry="([-\d.]+)"[^>]*?\btransform="rotate\(([-\d.]+)/) as RegExpMatchArray;
     const ecx = +em[1], ecy = +em[2], erx = +em[3], ery = +em[4];
-    approxRect({ x: ecx - erx, y: ecy - ery, w: 2 * erx, h: 2 * ery }, g.ellipse, "ellipse");
+    const rot = (+em[5] * Math.PI) / 180, c = Math.cos(rot), s = Math.sin(rot);
+    const hw = Math.hypot(erx * c, ery * s), hh = Math.hypot(erx * s, ery * c);
+    const gx0 = Math.max(g.gridRect.x, ecx - hw), gy0 = Math.max(g.gridRect.y, ecy - hh);
+    const gx1 = Math.min(g.gridRect.x + g.gridRect.w, ecx + hw), gy1 = Math.min(g.gridRect.y + g.gridRect.h, ecy + hh);
+    approxRect({ x: gx0, y: gy0, w: gx1 - gx0, h: gy1 - gy0 }, g.ellipse, "ellipse");
   });
 }

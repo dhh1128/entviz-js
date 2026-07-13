@@ -1,6 +1,22 @@
 import { useMemo, useState } from "react";
 import { EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
-import { render as renderEntviz } from "@entviz/core";
+import { render as renderEntviz, SPEC_VERSION } from "@entviz/core";
+// Version badges read straight from source of truth so they never drift: the spec
+// revision from the core renderer, the package versions from their manifests.
+import corePkg from "../../../packages/core/package.json";
+import reactPkg from "../../../packages/react/package.json";
+
+// Footer documentation links (terse, link-forward). The entviz spec, paper, and
+// threat model live in the sister reference repo; the JS API + this playground are
+// published from entviz-js.
+const DOC_LINKS: [string, string][] = [
+  ["Spec", "https://dhh1128.github.io/entviz/spec/"],
+  ["Paper", "https://dhh1128.github.io/entviz/entviz-paper/"],
+  ["Integration guide", "https://dhh1128.github.io/entviz/integration-guide/"],
+  ["JS API", "https://dhh1128.github.io/entviz-js/api/"],
+  ["Source", "https://github.com/dhh1128/entviz-js"],
+  ["Threat model", "https://dhh1128.github.io/entviz/threat-model/"],
+];
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
 const PRESETS: { label: string; value: string }[] = [
@@ -117,14 +133,84 @@ export function App() {
         </h1>
         <p style={{ margin: 0, color: "#555", fontSize: 14 }}>
           An entviz enters the page as a compact <code style={{ fontFamily: mono }}>&lt;EntvizPill/&gt;</code>. Click it
-          to <b>Visualize</b> the full render, then <b>Compare</b> it against a reference — all in one place. Tweak the
-          inputs on the left; switch the host theme on the right to watch the components adapt.
+          to <b>Visualize</b> the full render, then <b>Compare</b> it against a reference — all in one place. The app is
+          on the left; tweak its inputs and switch the host theme on the right to watch the components adapt.
         </p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 340px) minmax(300px, 1fr)", gap: 28, alignItems: "start" }}>
-        {/* Controls — entropy + how the entviz/pill renders */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(260px, 340px)", gap: 28, alignItems: "start" }}>
+        {/* Showcase — the pill, inside a switchable ambient host theme. Placed FIRST so
+            the thing the user actually plays with is where they read first (left/top),
+            and the controls that drive it sit alongside on the right. */}
         <section>
+          {/* The card represents a HOST APPLICATION — so it holds only app content
+              (prose with the pill in situ), never instructions the real app wouldn't
+              show. As the lead element it needs no separating top margin. */}
+          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", margin: "0 0 16px", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
+            <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
+              ▦ your application
+            </div>
+            <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
+              When a peer shares their public key {pill()}, pin it the first time you see it — then, before you
+              trust what they send next, confirm it’s the very same key.
+            </p>
+            {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
+                lives in this paragraph, and element opacity would dim its whole
+                subtree — including the position:fixed menu, which then reads as
+                semi-transparent over the page. */}
+            <p style={{ fontSize: 13, color: "color-mix(in srgb, currentColor 65%, transparent)", marginTop: 22 }}>
+              The same key, shown without its badge: {pill({ showIcon: false })}.
+            </p>
+          </div>
+
+          {error ? (
+            <div style={{ marginTop: 12, color: "#b00020", fontFamily: mono, fontSize: 12, lineHeight: 1.5, border: "1px solid #f3c2c2", background: "#fff5f5", borderRadius: 8, padding: "8px 10px" }}>
+              <b>render rejected:</b> {error} — the pill falls back to an “unrenderable” state.
+            </div>
+          ) : null}
+
+          {/* Docs footer — lives in the LEFT column, under the (short) app card, to
+              use the vertical space the (tall) controls sidebar leaves opposite it.
+              Terse + link-forward: one line of orientation, then the doc links, then
+              the exact spec/package versions this playground is built against. */}
+          <hr style={{ border: 0, borderTop: "1px solid #e3e6ef", margin: "26px 0 16px" }} />
+          <p style={{ fontSize: 13, color: "#555", lineHeight: 1.6, margin: "0 0 10px" }}>
+            entviz renders a high-entropy value as a comparable SVG diagram.{" "}
+            <code style={{ fontFamily: mono }}>@entviz/react</code> wraps the certified{" "}
+            <code style={{ fontFamily: mono }}>@entviz/core</code> renderer with UI (pill, compare, walk).
+          </p>
+          <nav style={{ fontSize: 13, marginBottom: 10 }}>
+            {DOC_LINKS.map(([label, href], i) => (
+              <span key={href}>
+                {i > 0 ? <span style={{ color: "#c3c8d4", margin: "0 8px" }}>·</span> : null}
+                <a href={href} target="_blank" rel="noopener noreferrer" style={docLink}>{label}</a>
+              </span>
+            ))}
+          </nav>
+          <div style={{ fontSize: 12, color: "#8a93a2" }}>
+            entviz spec {SPEC_VERSION} · <code style={{ fontFamily: mono }}>@entviz/core</code> {corePkg.version} ·{" "}
+            <code style={{ fontFamily: mono }}>@entviz/react</code> {reactPkg.version}
+          </div>
+        </section>
+
+        {/* Controls — the host theme + entropy + how the entviz/pill renders. The theme
+            leads (it re-skins the card to the left); the render inputs follow. Rendered
+            as a bordered, subtly-tinted SIDEBAR so it reads as "the knobs", visually
+            distinct from the themed host-app card on the left. */}
+        <section style={sidebarStyle}>
+          <div style={sidebarCaption}>Playground controls</div>
+          <label style={labelStyle}>
+            Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
+          </label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+            {PALETTES.map((p, i) => (
+              <button key={p.name} onClick={() => setThemeIdx(i)}
+                style={i === themeIdx ? themeBtnActive : themeBtn}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+
           <label style={labelStyle}>Entropy</label>
           <textarea
             value={draft}
@@ -180,56 +266,6 @@ export function App() {
             Show type label
           </label>
         </section>
-
-        {/* Showcase — the pill, inside a switchable ambient host theme */}
-        <section>
-          <label style={labelStyle}>
-            Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
-          </label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-            {PALETTES.map((p, i) => (
-              <button key={p.name} onClick={() => setThemeIdx(i)}
-                style={i === themeIdx ? themeBtnActive : themeBtn}>
-                {p.name}
-              </button>
-            ))}
-          </div>
-
-          {/* The card represents a HOST APPLICATION — so it holds only app content
-              (prose with the pill in situ), never instructions the real app wouldn't
-              show. Generous vertical margin sets it apart as "their surface" (a large
-              value so it dominates the adjacent siblings' margins rather than
-              collapsing into them). */}
-          <div style={{ ...evzVars(theme), colorScheme: theme.scheme, background: theme.bg, color: theme.fg, fontFamily: theme.font, borderRadius: 14, padding: "30px 28px", margin: "40px 0", border: "1px solid rgba(0,0,0,.08)" } as React.CSSProperties}>
-            <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
-              ▦ your application
-            </div>
-            <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
-              When a peer shares their public key {pill()}, pin it the first time you see it — then, before you
-              trust what they send next, confirm it’s the very same key.
-            </p>
-            {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
-                lives in this paragraph, and element opacity would dim its whole
-                subtree — including the position:fixed menu, which then reads as
-                semi-transparent over the page. */}
-            <p style={{ fontSize: 13, color: "color-mix(in srgb, currentColor 65%, transparent)", marginTop: 22 }}>
-              The same key, shown without its badge: {pill({ showIcon: false })}.
-            </p>
-          </div>
-
-          {error ? (
-            <div style={{ marginTop: 12, color: "#b00020", fontFamily: mono, fontSize: 12, lineHeight: 1.5, border: "1px solid #f3c2c2", background: "#fff5f5", borderRadius: 8, padding: "8px 10px" }}>
-              <b>render rejected:</b> {error} — the pill falls back to an “unrenderable” state.
-            </div>
-          ) : null}
-
-          <p style={{ fontSize: 12.5, color: "#666", lineHeight: 1.6, marginTop: 18 }}>
-            Click the pill to walk the <b>Cite · Visualize · Compare</b> lifecycle: it cites the value inline;
-            expanding <b>visualizes</b> the spec-locked glyph with its size / shape / copy controls; and
-            <b> “Compare against another value…”</b> opens the full comparison surface (paste / drop /
-            click-the-rect to upload / URL, machine verdict, guided walk, and voice ceremony) in place.
-          </p>
-        </section>
       </div>
     </div>
   );
@@ -253,3 +289,14 @@ const ghostBtn: React.CSSProperties = controlBase;
 const themeBtn: React.CSSProperties = controlBase;
 // same control, pill-shaped + lighter, for the quick-fill preset tags
 const chip: React.CSSProperties = { ...controlBase, fontWeight: 500, borderRadius: 999 };
+// footer doc links — the one accent, no underline until hover (browser default)
+const docLink: React.CSSProperties = { color: ACCENT, textDecoration: "none", fontWeight: 600 };
+// the controls sidebar: a bordered, subtly-tinted panel that signals "config surface",
+// set apart from the host-app card on the left.
+const sidebarStyle: React.CSSProperties = {
+  background: "#f7f8fb", border: "1px solid #e3e6ef", borderRadius: 12, padding: 18,
+};
+const sidebarCaption: React.CSSProperties = {
+  fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase",
+  color: "#8a93a2", fontWeight: 600, marginBottom: 16,
+};

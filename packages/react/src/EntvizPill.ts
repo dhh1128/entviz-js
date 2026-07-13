@@ -315,7 +315,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const descId = useId();
 
   const menuFloat = useFloating(wrapRef, menuOpen, rtl);
-  const popFloat = useFloating(wrapRef, isOpen, rtl);
+  // The kebab menu is anchored to the pill (useFloating), but the popover is CENTERED
+  // in the viewport via a full-screen flex overlay — not floated below the anchor,
+  // which ran off the bottom/edge on small screens. So the popover only needs a ref
+  // (for focus management + measurement), no placement math.
+  const popRef = useRef<HTMLSpanElement>(null);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -388,12 +392,12 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   useEffect(() => {
     if (!isOpen) return;
     const id = requestAnimationFrame(() => {
-      popFloat.ref.current
+      popRef.current
         ?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
         ?.focus();
     });
     return () => cancelAnimationFrame(id);
-  }, [isOpen, popFloat.ref]);
+  }, [isOpen]);
 
   const collapse = () => { setOpen(false); setComparing(false); };
   const openExpand = () => { setMenuOpen(false); setComparing(false); setOpen(true); onExpand?.(); };
@@ -645,28 +649,37 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
 
   const popover = isOpen
     ? toPortal(
+        // Full-viewport flex overlay that CENTERS the popover on screen. It's
+        // pointer-events:none so it never intercepts page clicks (the popover is
+        // non-modal and doesn't close on outside-click); only the dialog itself is
+        // interactive. Centering here (rather than translate on the dialog) leaves the
+        // dialog's transform free for the grow animation.
         h(
           "span",
-          {
-            ref: popFloat.ref,
-            role: "dialog",
-            // Keeps an SR virtual cursor from wandering into the background page while
-            // the popover is open, without a focus trap — compatible with the non-modal
-            // design (two popovers may coexist). (A11Y-F2)
-            "aria-modal": "true",
-            dir: dirAttr,
-            "aria-label": ariaLabel,
-            "aria-describedby": error ? undefined : descId,
-            className: "entviz-pill__pop",
-            style: { ...popoverStyle, ...popFloat.style },
-          },
-          // Explicit close, top-trailing corner — not everyone knows outside-click/Escape.
-          h("button", { key: "close", type: "button", onClick: collapse, "aria-label": m.close ?? "Close", title: m.close ?? "Close", style: popCloseStyle }, "✕"),
-          popoverBody,
-          // §9 accessible per-channel description (visually hidden; referenced by the dialog).
-          channels
-            ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m, type))
-            : null,
+          { style: popOverlayStyle },
+          h(
+            "span",
+            {
+              ref: popRef,
+              role: "dialog",
+              // Keeps an SR virtual cursor from wandering into the background page while
+              // the popover is open, without a focus trap — compatible with the non-modal
+              // design (two popovers may coexist). (A11Y-F2)
+              "aria-modal": "true",
+              dir: dirAttr,
+              "aria-label": ariaLabel,
+              "aria-describedby": error ? undefined : descId,
+              className: "entviz-pill__pop",
+              style: popoverStyle,
+            },
+            // Explicit close, top-trailing corner — not everyone knows outside-click/Escape.
+            h("button", { key: "close", type: "button", onClick: collapse, "aria-label": m.close ?? "Close", title: m.close ?? "Close", style: popCloseStyle }, "✕"),
+            popoverBody,
+            // §9 accessible per-channel description (visually hidden; referenced by the dialog).
+            channels
+              ? h("span", { id: descId, style: srOnly }, a11yDescription(channels, m, type))
+              : null,
+          ),
         ),
         wrapRef.current,
       )
@@ -700,7 +713,7 @@ const PILL_CSS = `
 .entviz-pill--hover .entviz-pill__kebab,
 .entviz-pill__kebab:focus-visible { opacity: 0.7; }
 @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
-.entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 0); }
+.entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 50%); }
 @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
 `;
 function useInjectStyles(): void {
@@ -740,14 +753,26 @@ const menuItemStyle: CSSProperties = {
   textAlign: "start", background: "none", border: "none", borderRadius: 6,
   padding: "7px 10px", cursor: "pointer", font: "inherit", color: "inherit",
 };
+// Full-viewport centering layer for the popover. position:fixed + inset:0 with a
+// flex center pins the popover to the middle of the screen regardless of where the
+// inline pill sits; the padding keeps a gutter at every edge. pointer-events:none so
+// the layer is click-through (the popover is non-modal — it doesn't close on
+// outside-click), while the dialog re-enables pointer events for itself.
+const popOverlayStyle: CSSProperties = {
+  position: "fixed", inset: 0, zIndex: 30,
+  display: "flex", alignItems: "center", justifyContent: "center",
+  padding: 12, pointerEvents: "none",
+};
 const popoverStyle: CSSProperties = {
-  zIndex: 30, display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
+  pointerEvents: "auto",
+  display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
   background: "var(--entviz-pill-popover-bg, #fff)", border: "var(--entviz-pill-popover-border, 1px solid #e6e6f0)",
   borderRadius: 12, padding: 14, boxShadow: "0 8px 30px rgba(0,0,0,.16)", font: "13px system-ui, sans-serif",
-  // Responsive: never exceed the viewport; scroll tall content (e.g. the compare
-  // surface on a phone). Width caps so the compare state isn't enormous on desktop
-  // yet fits a narrow screen (where <EntvizCompare layout="auto"> then stacks).
-  maxWidth: "min(720px, calc(100vw - 24px))", maxHeight: "calc(100dvh - 24px)", overflowY: "auto",
+  // Responsive: never exceed the (padded) viewport; scroll tall content (e.g. the
+  // compare surface on a phone or a short window). Width caps so the compare state
+  // isn't enormous on desktop yet fits a narrow screen (where <EntvizCompare
+  // layout="auto"> then stacks). maxHeight is 100% of the overlay's padded box.
+  maxWidth: "min(720px, 100%)", maxHeight: "100%", overflowY: "auto",
 };
 // --- disclosure-lifecycle chrome styles ------------------------------------
 const railStyle: CSSProperties = {

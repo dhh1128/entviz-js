@@ -12,3 +12,5 @@ docs/api/
 
 # Assembled GitHub Pages publish tree (built in the pages.yml workflow)
 /_site/
+
+.worktrees
