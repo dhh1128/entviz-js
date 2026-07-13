@@ -17,9 +17,14 @@ React component. An npm workspace:
   [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (SHA-512 +
   Keccak-256).
 - **`packages/react`** (`@entviz/react`) — a thin React component over the core.
-- **`apps/playground`** (`@entviz/playground`, not published) — a local Vite dev
-  app to render and experiment with the `<Entviz/>` component: `npm run dev -w
+- **`apps/playground`** (`@entviz/playground`, not published to npm) — the Vite
+  app behind the **[live playground at dhh1128.github.io/entviz-js](https://dhh1128.github.io/entviz-js/)**
+  (render a value and compare two); run it locally with `npm run dev -w
   @entviz/playground`. See [its README](apps/playground/README.md).
+
+## Part of the entviz family
+
+entviz is defined by a language-independent [specification](https://github.com/dhh1128/entviz/blob/main/docs/spec.md), with conformant implementations in Python (reference), Rust, TypeScript/JS + React, Java, and Go — all passing the same shared conformance corpus. See the **[directory of implementations](https://github.com/dhh1128/entviz#implementations)**, browse the [spec & docs site](https://dhh1128.github.io/entviz/), or **[try it live](https://dhh1128.github.io/entviz-js/)** (this repo's playground).
 
 ## Status
 
