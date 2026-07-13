@@ -996,8 +996,19 @@ const machineCheckLabel: CSSProperties = {
   fontSize: TEXT.small, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7,
 };
 const chipStyle: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start",
-  padding: "4px 10px", borderRadius: 999, border: "1px solid", font: "inherit", fontSize: TEXT.body,
+  display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+  // Fill the comparator's figure-driven width and WRAP a long verdict, rather than
+  // letting the verdict text define the width. A raster verdict ("No visible
+  // difference…") is a full sentence; as a hug-content pill (align-self:flex-start,
+  // no cap) its one-line max-content became the widest element in the flex column,
+  // stretching the whole comparator to the popover's 720px max and leaving whitespace
+  // beside the figures. `width:0; min-width:100%` is the "fill parent, don't expand
+  // it" idiom: width:0 makes the chip contribute nothing to the column's intrinsic
+  // width (so the figures win), then min-width:100% grows it back to the settled
+  // column width so the text wraps inside it. Radius trimmed from a stadium (999) to a
+  // rounded rectangle since it's now a full-width, possibly multi-line banner.
+  width: 0, minWidth: "100%", boxSizing: "border-box",
+  padding: "5px 11px", borderRadius: 10, border: "1px solid", font: "inherit", fontSize: TEXT.body,
 };
 const warnBanner: CSSProperties = {
   background: "var(--entviz-compare-warn-bg, #fff8c5)", color: "var(--entviz-compare-warn-fg, #633c01)",
@@ -1009,7 +1020,13 @@ const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 // No maxWidth: it stretches to the comparator's width (the figures / the walk's
 // progress bar), so it doesn't wrap at an arbitrary column narrower than everything
 // around it. (Default `stretch` cross-alignment fills the column.)
-const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72 };
+// Fill the comparator's figure-driven width and wrap, without DEFINING that width:
+// this sentence's one-line max-content (~618px) otherwise out-widens the figures and
+// re-introduces the same over-expansion the verdict banner had. Same fill-don't-expand
+// idiom (width:0 → no intrinsic contribution; min-width:100% → grow to the settled
+// column width). Keeps the "stretch to the comparator width, don't wrap at an arbitrary
+// narrower column" intent, now bounded by the figures instead of the popover's max.
+const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72, width: 0, minWidth: "100%", boxSizing: "border-box" };
 // The active-walk card: a distinct, accented region so the question + answer buttons
 // read as "the thing to do now", sitting right under the highlighted figures. Theme-
 // agnostic — surface + hairline derive from currentColor (adapts to any host), and the
