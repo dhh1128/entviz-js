@@ -30,6 +30,7 @@ import { EntvizVoiceCompare } from "./EntvizVoiceCompare.ts";
 import { fmt, isRtlLocale, resolveMessages } from "./pill-messages.ts";
 import { defaultCompareMessages, type CompareMessages } from "./compare-messages.ts";
 import { useEmit, type EntvizEvent, type Medium, type VerdictState } from "./events.ts";
+import { rasterTextConfirms } from "./raster-text.ts";
 import { TEXT } from "./text-scale.ts";
 
 export interface EntvizCompareProps {
@@ -178,19 +179,6 @@ function imageToRaster(img: HTMLImageElement, w: number, h: number): Raster {
   return { rgba: ctx.getImageData(0, 0, w, h).data, w, h };
 }
 
-/**
- * Raster path: decode the reference image to RGBA and hand it to the core
- * geometry-anchored engine (comparison-design.md §6.3), which locates the entviz
- * in the image and samples predicted feature colors. Never `identical`. We do NOT
- * rasterize our own SVG — the engine reads the image against the render model.
- */
-export async function compareRaster(refSrc: string, value: string, opts: RenderOptions = {}): Promise<Verdict> {
-  const refImg = await loadImage(refSrc);
-  const w = refImg.naturalWidth || 1;
-  const h = refImg.naturalHeight || 1;
-  return rasterCompare(imageToRaster(refImg, w, h), value, opts);
-}
-
 const originOf = (url: string): string => {
   try {
     return new URL(url).origin;
@@ -205,7 +193,7 @@ interface Chip {
   tone: "good" | "bad" | "warn" | "neutral";
 }
 
-function chipFor(result: CompareResult, m: CompareMessages, medium: Medium | null): Chip {
+function chipFor(result: CompareResult, m: CompareMessages, medium: Medium | null, textAgreed = false): Chip {
   switch (result.kind) {
     case "pending":
       return { symbol: "?", label: m.pending, tone: "neutral" };
@@ -228,7 +216,9 @@ function chipFor(result: CompareResult, m: CompareMessages, medium: Medium | nul
       //    (not `=`) marking "to the precision of the hash", not a full byte compare.
       if (v.state === "unknown" && v.similar)
         return medium === "raster"
-          ? { symbol: "≈", label: m.unknownRasterSimilar, tone: "warn" }
+          // A crude, no-OCR text-pattern check that ALSO agreed (rasterTextConfirms)
+          // upgrades the wording only — still `≈`/warn, still not a proven match.
+          ? { symbol: "≈", label: textAgreed ? m.unknownRasterSimilarText : m.unknownRasterSimilar, tone: "warn" }
           : { symbol: "≈", label: m.unknownSvgSimilar, tone: "good" };
       // unknown (e.g. a >512-bit SVG whose gestalt didn't match, or a non-self-consistent reference)
       return { symbol: "?", label: fmt(m.unknownReason, { reason: v.reason }), tone: "warn" };
@@ -270,7 +260,7 @@ const VERDICT_SKIN: Record<Chip["tone"], { bg: string; fg: string }> = {
 // NOT host-overridable via `messages` — only surrounding chrome is localizable. Re-pinned in
 // EntvizCompare() after the override merge.
 const VERDICT_LOCKED_KEYS: (keyof CompareMessages)[] = [
-  "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar", "unknownSvgSimilar",
+  "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar", "unknownRasterSimilarText", "unknownSvgSimilar",
   "unknownReason", "pending", "machineCheck", "recognitionNote",
   "provenancePasted", "provenanceFile", "provenanceUrl", "provenanceDropped", "provenanceProvided",
 ];
@@ -387,19 +377,39 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // Raster comparison is async (decode the image, render ours, disprove); the
   // sync classifier marks it `deferred` and this effect fills in the verdict.
   const [rasterV, setRasterV] = useState<Verdict | null>(null);
+  // Positive-only crude text corroboration (raster-text.ts): true when the glyph-ink
+  // pattern also agreed with ours. Only consulted for a raster look-alike; it upgrades
+  // the wording, never the verdict. Reset every run; set true only on agreement.
+  const [rasterTextAgreed, setRasterTextAgreed] = useState(false);
   useEffect(() => {
-    if (medium !== "raster") { setRasterV(null); return; }
+    if (medium !== "raster") { setRasterV(null); setRasterTextAgreed(false); return; }
     let alive = true;
     setRasterV(null);
-    compareRaster(refContent, value, opts).then(
-      (v) => { if (alive) setRasterV(v); },
-      () => {
+    setRasterTextAgreed(false);
+    // Decode the reference ONCE, run the color engine, then — only if it came back a
+    // look-alike (colors agreed) — run the no-OCR text-pattern corroboration on the
+    // same raster. Any text-check failure leaves the color verdict untouched.
+    (async () => {
+      try {
+        const img = await loadImage(refContent);
+        const raster = imageToRaster(img, img.naturalWidth || 1, img.naturalHeight || 1);
+        const v = rasterCompare(raster, value, opts);
+        let textAgreed = false;
+        if (v.state === "unknown" && v.similar) {
+          try { textAgreed = await rasterTextConfirms(raster, value, opts); } catch { textAgreed = false; }
+        }
+        if (!alive) return;
+        setRasterV(v);
+        setRasterTextAgreed(textAgreed);
+      } catch {
         if (!alive) return;
         emit({ type: "reference.readError", reason: "could not read the reference image" });
         setRasterV({ state: "unknown", reason: "could not read the reference image" });
-      },
-    );
+        setRasterTextAgreed(false);
+      }
+    })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [medium, refContent, value, opts]);
 
   const result: CompareResult =
@@ -479,7 +489,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // just not loaded yet: show a neutral "fetch it" chip instead of the warning.
   const chip: Chip = isUrl
     ? { symbol: "↻", label: m.urlReady, tone: "neutral" }
-    : chipFor(result, m, medium);
+    : chipFor(result, m, medium, rasterTextAgreed);
 
   // The reference is ALWAYS re-rendered through our own <Entviz> (the pasted SVG is
   // never embedded). `refValue` (from classifyResult) is the value to draw: the
