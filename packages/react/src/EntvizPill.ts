@@ -765,6 +765,13 @@ const popOverlayStyle: CSSProperties = {
 };
 const popoverStyle: CSSProperties = {
   pointerEvents: "auto",
+  // Own containing block for the absolutely-positioned ✕ (popCloseStyle). Without
+  // it, the close button resolves against the next positioned ancestor — the fixed,
+  // full-viewport overlay — EXCEPT while the grow animation's transform is live
+  // (a transform is itself a containing block). That made the ✕ pin to the popover
+  // corner only for the .26s animation, then jump out to the screen corner. Pinning
+  // it here keeps the button in the corner whether or not a transform is active.
+  position: "relative",
   display: "flex", flexDirection: "column", gap: 10, alignItems: "start",
   background: "var(--entviz-pill-popover-bg, #fff)", border: "var(--entviz-pill-popover-border, 1px solid #e6e6f0)",
   borderRadius: 12, padding: 14, boxShadow: "0 8px 30px rgba(0,0,0,.16)", font: "13px system-ui, sans-serif",
