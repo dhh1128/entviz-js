@@ -347,7 +347,9 @@ export function EntvizWalk(props: EntvizWalkProps): ReactNode {
       "div",
       { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", ...style } },
       h("strong", { style: { color: tone } }, msg),
-      h("span", { style: hint }, M.recognitionNote),
+      // The "a match means equal to this reference" caveat scopes an AFFIRMATIVE result;
+      // on different/inconclusive/pending there's no match to scope, so omit it.
+      state.status === "no-difference" ? h("span", { style: hint }, M.recognitionNote) : null,
       h("button", { type: "button", style: btn, onClick: restart }, M.walkAgain),
     );
   }
