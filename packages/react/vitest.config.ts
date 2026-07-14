@@ -21,6 +21,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**"],
+      // index.ts is a pure re-export barrel — no executable statements to cover.
+      exclude: ["src/index.ts"],
       reporter: ["text"],
       thresholds: { lines: 100, functions: 100, branches: 90 },
     },

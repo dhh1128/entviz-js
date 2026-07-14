@@ -293,3 +293,25 @@ describe("EntvizVoiceCompare rng prod-gate (§5.4)", () => {
     }
   });
 });
+
+describe("EntvizVoiceCompare: reduced-motion", () => {
+  test("consults prefers-reduced-motion for the coverage meter when matchMedia exists", () => {
+    // jsdom ships no matchMedia (the SSR guard then returns false); stub it so the
+    // meter's transition path reads (prefers-reduced-motion: reduce).matches.
+    const saved = (window as unknown as { matchMedia?: unknown }).matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((q: string) => ({ matches: true, media: q }) as MediaQueryList),
+    });
+    try {
+      render(<EntvizVoiceCompare value={UUID} rng={rngFrom(1)} />);
+      affirm();
+      // the coverage meter is rendered post-affirmation; its fill consults
+      // prefersReducedMotion(), exercising the matchMedia read.
+      expect(screen.getByRole("progressbar")).toBeTruthy();
+    } finally {
+      if (saved) Object.defineProperty(window, "matchMedia", { configurable: true, value: saved });
+      else delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+});
