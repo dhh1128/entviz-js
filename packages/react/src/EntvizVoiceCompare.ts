@@ -29,6 +29,8 @@ import {
   buildReadbackPlan,
   describeChannels,
   ceremonyRespond as respond,
+  ceremonyCoverage as coverage,
+  ceremonyFinish as finish,
   startCeremony,
   type CeremonyMode,
   type CeremonyState,
@@ -93,6 +95,10 @@ const M = {
   homoglyphNote: "One extra cell was added because this alphabet has look-alike characters.",
   match: "Matches",
   differ: "Doesn't match",
+  // The read-back is not fixed-length: the sound sample is the milestone, and the
+  // authenticator may keep going for more coverage or stop when satisfied (§14.4).
+  goodTick: "Enough",
+  done: "Done — that's enough",
   relook: "Are you sure? Have them read it once more.",
   relookYes: "Yes, different",
   relookNo: "No, my mistake",
@@ -103,6 +109,10 @@ const M = {
   noDifferenceBind:
     "Confirmed — the pasted value machine-matched yours, and they read it back as their own. They're looking at the same value as you, as long as your voice channel wasn't tampered with.",
   different: "Different — what they read does not match your value.",
+  // Done pressed before the sound-sample milestone: nothing was disproven, but the
+  // check didn't reach the coverage that warrants an affirmative — a sanity look, not
+  // a verification. Neutral, not a "different" (§14.6 PENDING).
+  stoppedEarly: "Stopped early — a sanity look so far, not enough to affirm. Read the highlighted cells to reach a result.",
   recognitionNote: "A match means they hold the same value; it does not tell you who they are.",
   again: "Start over",
 };
@@ -176,12 +186,16 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
     });
     setRelook(false);
   };
+  // The "Done — that's enough" affordance: freeze the live verdict (NO-DIFFERENCE if
+  // the sound-sample milestone was reached, else PENDING). The read-back is not
+  // fixed-length — this is how the authenticator stops when satisfied (§14.4/§15.7).
+  const onDone = () => apply(finish);
 
   // --- affirmation gate (§15.1) ---
   if (!state) {
     return h(
       "div",
-      { className, style: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10, font: "inherit", maxWidth: 460, ...style } },
+      { className, style: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10, font: "inherit", maxWidth: VOICE_MAX, ...style } },
       h("span", { style: prompt }, M.affirmPrompt),
       h("button", { type: "button", style: btn, onClick: begin }, M.affirmYes),
     );
@@ -190,16 +204,22 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   // --- ended: the verdict (no-difference or different — the ceremony runs the whole
   // plan; there is no early "Done", so PENDING is never a final state) ---
   if (state.ended) {
+    // Three terminal states now (§14.6): NO-DIFFERENCE (affirmative, green), a
+    // certain DIFFERENT (red), and PENDING — Done pressed before the milestone
+    // (neutral "stopped early", never dressed as a mismatch).
     const msg =
       state.status === "no-difference"
         ? state.plan.mode === "paste-bind" ? M.noDifferenceBind : M.noDifferenceVoice
+        : state.status === "pending" ? M.stoppedEarly
         : M.different;
-    const tone = state.status === "no-difference" ? "#1a7f37" : "#c4314b";
+    const tone = state.status === "no-difference" ? "#1a7f37" : state.status === "pending" ? "#57606a" : "#c4314b";
     return h(
       "div",
-      { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", ...style } },
+      { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", maxWidth: VOICE_MAX, ...style } },
       h("strong", { style: { color: tone } }, msg),
-      h("span", { style: hint }, M.recognitionNote),
+      // The "a match means same value, not who they are" caveat scopes an AFFIRMATIVE
+      // result; on a DIFFERENT verdict there's no match to scope, so it's noise — omit it.
+      state.status === "no-difference" ? h("span", { style: hint }, M.recognitionNote) : null,
       h("button", { type: "button", style: btn, onClick: restart }, M.again),
     );
   }
@@ -209,19 +229,19 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   // its 1-based grid address so the authenticator can point the reader at it (§15.5). ---
   const cell = model!.cells[step!.cellIndex];
   const address = `row ${cell.row + 1}, column ${cell.col + 1}`;
-  const readOf = `${state.index + 1} / ${state.plan.cells.length}`;
   const context = CONTEXT[state.plan.kind];
 
-  // The read-back controls: the "why these cells" context (when any), the step
-  // counter, the per-cell instruction, and the reaction buttons. This whole block
-  // sits in the whitespace to the RIGHT of the figure (or stands alone when the host
-  // draws the figure), so the figure and the instruction share one line.
+  // The read-back controls: the "why these cells" context (when any), the per-cell
+  // instruction, and the reaction buttons — Matches / Doesn't-match / Done. The
+  // read-back is open-ended (the coverage meter's milestone is the sound sample; the
+  // user reads on for more coverage or presses Done to stop), so Done lives here
+  // beside the per-cell answers. Sits to the RIGHT of the figure (or alone when the
+  // host draws the figure).
   const readout = h(
     "div",
-    { style: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 16em" } },
+    { style: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 14em" } },
     context ? h("span", { style: hint }, context) : null,
     state.plan.homoglyphExtra > 0 ? h("span", { style: { ...hint, color: "#9a6700" } }, M.homoglyphNote) : null,
-    h("span", { style: { fontSize: TEXT.small, opacity: 0.7 } }, readOf),
     // name the exact cell so the authenticator can direct the remote reader to it
     h("span", { "aria-live": "polite" }, `Have the other party read ${address} aloud. Does it match what you see?`),
     relook
@@ -237,28 +257,81 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
           { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
           h("button", { type: "button", style: btn, onClick: () => apply((s) => respond(s, "match")) }, M.match),
           h("button", { type: "button", style: btnBad, onClick: () => setRelook(true) }, M.differ),
+          h("button", { type: "button", style: btnGhost, onClick: onDone }, M.done),
         ),
   );
 
-  // Host draws the figure → just the controls. Otherwise, figure + controls on one
-  // row (wrapping to stacked on a narrow surface).
+  // The coverage meter with the sound-sample milestone tick — the same read-as-far-
+  // as-you-like progress signal as the guided walk (§14.4/§15.7).
+  const meter = ceremonyMeter(state);
+
+  // Host draws the figure → meter + controls. Otherwise, meter on top, then figure +
+  // controls on one row (wrapping to stacked on a narrow surface). The whole thing is
+  // capped to the side-by-side comparator width (VOICE_MAX) so the voice tab doesn't
+  // take on a width of its own — a long instruction/verdict wraps instead of widening.
   return externalFigures
-    ? h("div", { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", ...style } }, readout)
+    ? h("div", { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", maxWidth: VOICE_MAX, ...style } }, meter, readout)
     : h(
         "div",
-        { className, style: { display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", font: "inherit", ...style }, "data-entviz-layout": layout },
+        { className, style: { display: "flex", flexDirection: "column", gap: 12, font: "inherit", maxWidth: VOICE_MAX, ...style }, "data-entviz-layout": layout },
+        meter,
         h(
           "div",
-          { style: figureBox },
-          h(Entviz, { value, ...opts, style: { display: "block" } }),
-          step ? ringOverlay(model, step, "yours") : null,
+          { style: { display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" } },
+          h(
+            "div",
+            { style: figureBox },
+            h(Entviz, { value, ...opts, style: { display: "block" } }),
+            step ? ringOverlay(model, step, "yours") : null,
+          ),
+          readout,
         ),
-        readout,
       );
 }
 
+// The voice tab is capped to roughly the side-by-side comparator width so it doesn't
+// take on a width of its own: a long instruction/verdict wraps within this instead of
+// stretching the shared popover out to its max. (Matches the two-figure reference tab
+// at the default size; the figures share the same value + toolbar per §15.8.)
+const VOICE_MAX = 560;
+
+// The read-back coverage meter with the sound-sample milestone tick — the voice
+// analog of the walk's coverageMeter (§14.4/§15.7). The bar fills across the full
+// read (sample + optional extras); the "Enough" tick marks where the sound sample
+// completes (crossing it turns the live verdict NO-DIFFERENCE).
+function ceremonyMeter(state: CeremonyState): ReactNode {
+  const cov = coverage(state);
+  const total = state.plan.cells.length;
+  const goodFrac = total ? state.plan.goodCells / total : 1;
+  const reached = state.index >= state.plan.goodCells;
+  return h(
+    "div",
+    { style: { position: "relative", paddingBottom: 14 } },
+    h(
+      "div",
+      { style: meterTrack, role: "progressbar", "aria-label": "Read-back coverage", "aria-valuenow": Math.round(cov * 100), "aria-valuemin": 0, "aria-valuemax": 100 },
+      h("div", { style: { ...meterFill, width: `${cov * 100}%`, transition: prefersReducedMotion() ? "none" : meterFill.transition } }),
+    ),
+    // The milestone tick, unless the sample IS the whole read (goodFrac === 1).
+    goodFrac < 1
+      ? h(
+          "div",
+          { style: { position: "absolute", left: `${goodFrac * 100}%`, top: 0, transform: "translateX(-50%)" } },
+          h("div", { style: tickMark }),
+          h("div", { style: { ...tickLabel, color: reached ? "var(--entviz-walk-meter, #1a7f37)" : tickLabel.color } }, M.goodTick),
+        )
+      : null,
+  );
+}
+
+// Honor the host's reduced-motion preference; SSR-safe (no matchMedia → animate).
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 // Body-size prose (the affirmation prompt): matches the host's running text.
-const prompt: CSSProperties = { fontSize: TEXT.body, maxWidth: 460, lineHeight: 1.5 };
+const prompt: CSSProperties = { fontSize: TEXT.body, maxWidth: VOICE_MAX, lineHeight: 1.5 };
 // Secondary chrome (hints, the homoglyph note, re-look copy).
 const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.75, maxWidth: 460 };
 const btn: CSSProperties = {
@@ -267,5 +340,14 @@ const btn: CSSProperties = {
   background: "var(--entviz-walk-btn-bg, color-mix(in srgb, currentColor 8%, transparent))",
 };
 const btnBad: CSSProperties = { ...btn, borderColor: "#c4314b", color: "#c4314b" };
+// The low-emphasis "Done" affordance — transparent so it reads as secondary to the
+// per-cell Matches / Doesn't-match answers (mirrors the walk's Done button).
+const btnGhost: CSSProperties = { ...btn, border: "1px solid transparent", background: "none", opacity: 0.75 };
+// Coverage-bar styles, shared with the walk via the same --entviz-walk-* vars for a
+// consistent look across the two comparison paths.
+const meterTrack: CSSProperties = { height: 6, borderRadius: 999, background: "var(--entviz-walk-track, #eaeef2)", overflow: "hidden" };
+const meterFill: CSSProperties = { height: "100%", background: "var(--entviz-walk-meter, #1a7f37)", transition: "width .15s" };
+const tickMark: CSSProperties = { width: 2, height: 10, marginTop: -2, background: "var(--entviz-walk-tick, #9aa3af)" };
+const tickLabel: CSSProperties = { fontSize: TEXT.fine, color: "#9aa3af", marginTop: 1, whiteSpace: "nowrap" };
 
 export default EntvizVoiceCompare;

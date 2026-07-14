@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { describeChannels } from "@entviz/core";
 import { EntvizVoiceCompare } from "../src/index.ts";
 
 const UUID = "550e8400-e29b-41d4-a716-446655440000"; // small → all-cells (hex, clean)
@@ -31,6 +32,18 @@ function driveMatchAll(max = 100) {
     fireEvent.click(m);
   }
 }
+// Click "Matches" exactly n times (or until the read-back ends).
+function driveMatchN(n: number) {
+  for (let i = 0; i < n; i++) {
+    const m = maybe(MATCH);
+    if (!m) return;
+    fireEvent.click(m);
+  }
+}
+// The number of hash-anchored fingerprint-middle cells — the sound-sample milestone
+// (goodCells) for a big value.
+const fingerprintCount = (value: string): number =>
+  describeChannels(value, {}).cells.filter((c) => c.fingerprint).length;
 
 describe("EntvizVoiceCompare: the affirmation gate", () => {
   test("shows the channel-authentication affirmation before crediting anything", () => {
@@ -75,8 +88,10 @@ describe("EntvizVoiceCompare: verdicts", () => {
     render(<EntvizVoiceCompare value={HEX512} rng={rngFrom(4)} />);
     affirm();
     expect(screen.getByText(/have the other party read row \d+, column \d+/i)).toBeTruthy();
-    // there is no early "Done" affordance in the voice ceremony
-    expect(screen.queryByRole("button", { name: /done/i })).toBeNull();
+    // the read-back is open-ended: a coverage meter plus a Done affordance to stop
+    // when satisfied (progress meter, like the guided walk).
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(maybe(/done/i)).toBeTruthy();
   });
 
   test("big value: reads the fingerprint-middle cells", () => {
@@ -85,6 +100,26 @@ describe("EntvizVoiceCompare: verdicts", () => {
     expect(screen.getByText(/highlighted middle cells/i)).toBeTruthy();
     driveMatchAll();
     expect(screen.getByText(/no difference found across what they read/i)).toBeTruthy();
+  });
+
+  test("Done at the sound-sample milestone freezes NO-DIFFERENCE (needn't read the rest)", () => {
+    render(<EntvizVoiceCompare value={BIG} rng={rngFrom(5)} />);
+    affirm();
+    // read exactly the sound sample (the fingerprint cells), then stop
+    driveMatchN(fingerprintCount(BIG));
+    click(/done/i);
+    expect(screen.getByText(/no difference found across what they read/i)).toBeTruthy();
+    expect(screen.queryByText(/stopped early/i)).toBeNull();
+  });
+
+  test("Done before the milestone freezes PENDING (a neutral 'stopped early', not a mismatch)", () => {
+    render(<EntvizVoiceCompare value={BIG} rng={rngFrom(5)} />);
+    affirm();
+    driveMatchN(1); // one cell read, below the milestone
+    click(/done/i);
+    expect(screen.getByText(/stopped early/i)).toBeTruthy();
+    // it is NOT dressed as a DIFFERENT verdict
+    expect(screen.queryByText(/does not match your value/i)).toBeNull();
   });
 
   test("paste-bind: binds a couple of cells and shows the machine-matched copy", () => {
