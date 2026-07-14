@@ -191,55 +191,82 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
   // fixed-length — this is how the authenticator stops when satisfied (§14.4/§15.7).
   const onDone = () => apply(finish);
 
-  // --- affirmation gate (§15.1) ---
-  if (!state) {
-    return h(
+  // The shared stage FRAME: the "Yours" figure sits on the left BEFORE, DURING, and
+  // AFTER the read-back (§15.8 — the tab shares the one figure), so the popover keeps a
+  // near-constant height across stages — only the right column changes (the height
+  // otherwise jumped short→tall→short as the figure appeared then vanished). The
+  // coverage meter shows only while reading; the figure is ringed only on the current
+  // cell. Capped to VOICE_MAX so the voice tab keeps the reference tab's width, with
+  // the figure and right column top-aligned and wrapping to stacked on a narrow panel.
+  const frame = (right: ReactNode, ringStep: WalkStep | null): ReactNode =>
+    h(
       "div",
-      { className, style: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10, font: "inherit", maxWidth: VOICE_MAX, ...style } },
-      h("span", { style: prompt }, M.affirmPrompt),
-      h("button", { type: "button", style: btn, onClick: begin }, M.affirmYes),
+      // data-entviz-layout marks the figure-pair layout — only when WE draw the figure.
+      { className, style: { display: "flex", flexDirection: "column", gap: 12, font: "inherit", maxWidth: VOICE_MAX, ...style }, "data-entviz-layout": externalFigures ? undefined : layout },
+      state && !state.ended ? ceremonyMeter(state) : null,
+      externalFigures
+        ? right // the host draws its own figure (reusing the comparator's static one)
+        : h(
+            "div",
+            { style: { display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" } },
+            h(
+              "div",
+              { style: figureBox },
+              h(Entviz, { value, ...opts, style: { display: "block" } }),
+              ringStep ? ringOverlay(model, ringStep, "yours") : null,
+            ),
+            right,
+          ),
+    );
+
+  // --- BEFORE: the §15.1 expectation-setter, placed in the right column — the same
+  // spot the answer buttons occupy once the read-back begins. ---
+  if (!state) {
+    return frame(
+      h(
+        "div",
+        { style: rightCol },
+        h("span", { style: prompt }, M.affirmPrompt),
+        h("div", { style: btnRow }, h("button", { type: "button", style: btn, onClick: begin }, M.affirmYes)),
+      ),
+      null,
     );
   }
 
-  // --- ended: the verdict (no-difference or different — the ceremony runs the whole
-  // plan; there is no early "Done", so PENDING is never a final state) ---
+  // --- AFTER: the verdict. Three terminal states (§14.6): NO-DIFFERENCE (affirmative,
+  // green), a certain DIFFERENT (red), and PENDING — Done before the milestone (neutral
+  // "stopped early", never dressed as a mismatch). Rendered in the right column beside
+  // the same figure, so the height barely changes from the reading stage. ---
   if (state.ended) {
-    // Three terminal states now (§14.6): NO-DIFFERENCE (affirmative, green), a
-    // certain DIFFERENT (red), and PENDING — Done pressed before the milestone
-    // (neutral "stopped early", never dressed as a mismatch).
     const msg =
       state.status === "no-difference"
         ? state.plan.mode === "paste-bind" ? M.noDifferenceBind : M.noDifferenceVoice
         : state.status === "pending" ? M.stoppedEarly
         : M.different;
     const tone = state.status === "no-difference" ? "#1a7f37" : state.status === "pending" ? "#57606a" : "#c4314b";
-    return h(
-      "div",
-      { className, role: "status", style: { display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", font: "inherit", maxWidth: VOICE_MAX, ...style } },
-      h("strong", { style: { color: tone } }, msg),
-      // The "a match means same value, not who they are" caveat scopes an AFFIRMATIVE
-      // result; on a DIFFERENT verdict there's no match to scope, so it's noise — omit it.
-      state.status === "no-difference" ? h("span", { style: hint }, M.recognitionNote) : null,
-      h("button", { type: "button", style: btn, onClick: restart }, M.again),
+    return frame(
+      h(
+        "div",
+        { style: rightCol, role: "status" },
+        h("strong", { style: { color: tone } }, msg),
+        // The "a match means same value, not who they are" caveat scopes an AFFIRMATIVE
+        // result; on a non-match there's no match to scope, so it's noise — omit it.
+        state.status === "no-difference" ? h("span", { style: hint }, M.recognitionNote) : null,
+        h("div", { style: btnRow }, h("button", { type: "button", style: btn, onClick: restart }, M.again)),
+      ),
+      null,
     );
   }
 
-  // --- reading, one cell at a time. In the reading state `step`/`model` are
-  // guaranteed non-null (a built plan means the value rendered). We name the cell by
-  // its 1-based grid address so the authenticator can point the reader at it (§15.5). ---
+  // --- DURING: reading one cell at a time. `step`/`model` are non-null here (a built
+  // plan means the value rendered). Name the cell by its 1-based grid address so the
+  // authenticator can point the reader at it (§15.5). ---
   const cell = model!.cells[step!.cellIndex];
   const address = `row ${cell.row + 1}, column ${cell.col + 1}`;
   const context = CONTEXT[state.plan.kind];
-
-  // The read-back controls: the "why these cells" context (when any), the per-cell
-  // instruction, and the reaction buttons — Matches / Doesn't-match / Done. The
-  // read-back is open-ended (the coverage meter's milestone is the sound sample; the
-  // user reads on for more coverage or presses Done to stop), so Done lives here
-  // beside the per-cell answers. Sits to the RIGHT of the figure (or alone when the
-  // host draws the figure).
   const readout = h(
     "div",
-    { style: { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 14em" } },
+    { style: rightCol },
     context ? h("span", { style: hint }, context) : null,
     state.plan.homoglyphExtra > 0 ? h("span", { style: { ...hint, color: "#9a6700" } }, M.homoglyphNote) : null,
     // name the exact cell so the authenticator can direct the remote reader to it
@@ -254,39 +281,13 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
         )
       : h(
           "div",
-          { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+          { style: btnRow },
           h("button", { type: "button", style: btn, onClick: () => apply((s) => respond(s, "match")) }, M.match),
           h("button", { type: "button", style: btnBad, onClick: () => setRelook(true) }, M.differ),
           h("button", { type: "button", style: btnGhost, onClick: onDone }, M.done),
         ),
   );
-
-  // The coverage meter with the sound-sample milestone tick — the same read-as-far-
-  // as-you-like progress signal as the guided walk (§14.4/§15.7).
-  const meter = ceremonyMeter(state);
-
-  // Host draws the figure → meter + controls. Otherwise, meter on top, then figure +
-  // controls on one row (wrapping to stacked on a narrow surface). The whole thing is
-  // capped to the side-by-side comparator width (VOICE_MAX) so the voice tab doesn't
-  // take on a width of its own — a long instruction/verdict wraps instead of widening.
-  return externalFigures
-    ? h("div", { className, style: { display: "flex", flexDirection: "column", gap: 10, font: "inherit", maxWidth: VOICE_MAX, ...style } }, meter, readout)
-    : h(
-        "div",
-        { className, style: { display: "flex", flexDirection: "column", gap: 12, font: "inherit", maxWidth: VOICE_MAX, ...style }, "data-entviz-layout": layout },
-        meter,
-        h(
-          "div",
-          { style: { display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" } },
-          h(
-            "div",
-            { style: figureBox },
-            h(Entviz, { value, ...opts, style: { display: "block" } }),
-            step ? ringOverlay(model, step, "yours") : null,
-          ),
-          readout,
-        ),
-      );
+  return frame(readout, step);
 }
 
 // The voice tab is capped to roughly the side-by-side comparator width so it doesn't
@@ -334,6 +335,12 @@ function prefersReducedMotion(): boolean {
 const prompt: CSSProperties = { fontSize: TEXT.body, maxWidth: VOICE_MAX, lineHeight: 1.5 };
 // Secondary chrome (hints, the homoglyph note, re-look copy).
 const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.75, maxWidth: 460 };
+// The right column beside the figure — the same slot at every stage (prompt, then
+// read-back controls, then verdict). basis 14em + min-width 0 so it takes the space
+// left of the figure and wraps its text; drops below the figure on a narrow panel.
+const rightCol: CSSProperties = { display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 14em" };
+// A button cluster that hugs its content (left-aligned) inside the stretch column.
+const btnRow: CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap" };
 const btn: CSSProperties = {
   font: "inherit", color: "inherit", fontSize: TEXT.body, padding: "6px 12px", borderRadius: 8, cursor: "pointer",
   border: "1px solid var(--entviz-walk-btn, color-mix(in srgb, currentColor 28%, transparent))",
