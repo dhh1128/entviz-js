@@ -64,11 +64,15 @@ test("voice-only, small: read all cells", () => {
 test("voice-only, medium constrained: read a run of consecutive cells", () => {
   const p = buildReadbackPlan(HEX512, {}, "voice-only", rngFrom(4));
   assert.equal(p.kind, "consecutive");
-  assert.equal(p.cells.length, 4);
-  // the run is consecutive filled cells in reading order (a contiguous slice)
+  assert.equal(p.goodCells, 4); // the sound sample (milestone) is a 4-cell run
+  // the sample is consecutive filled cells in reading order (a contiguous slice)
   const fi = filled(HEX512);
-  const start = fi.indexOf(p.cells[0]);
-  assert.deepEqual(p.cells, fi.slice(start, start + 4));
+  const sampleCells = p.cells.slice(0, p.goodCells);
+  const start = fi.indexOf(sampleCells[0]);
+  assert.deepEqual(sampleCells, fi.slice(start, start + 4));
+  // the rest of `cells` are the remaining filled cells (optional coverage past it)
+  assert.deepEqual([...p.cells].sort((a, b) => a - b), fi);
+  assert.ok(p.cells.length > p.goodCells);
 });
 
 test("voice-only, medium programmable: read all cells (no sound sample)", () => {
@@ -79,11 +83,15 @@ test("voice-only, medium programmable: read all cells (no sound sample)", () => 
   assert.equal(p.homoglyphExtra, 0);
 });
 
-test("voice-only, big: read the fingerprint-middle cells only", () => {
+test("voice-only, big: the fingerprint-middle cells are the sound sample, extras follow", () => {
   const p = buildReadbackPlan(BIG, {}, "voice-only", rngFrom(5));
   assert.equal(p.kind, "fingerprint-cells");
-  assert.deepEqual([...p.cells].sort((a, b) => a - b), fps(BIG));
-  assert.ok(p.cells.length > 0);
+  // milestone = the hash-anchored fingerprint cells
+  assert.equal(p.goodCells, fps(BIG).length);
+  assert.deepEqual([...p.cells.slice(0, p.goodCells)].sort((a, b) => a - b), fps(BIG));
+  // the full read extends past the sample to every filled cell (the Complete ceiling)
+  assert.ok(p.cells.length > p.goodCells);
+  assert.deepEqual([...p.cells].sort((a, b) => a - b), filled(BIG));
   assert.equal(p.homoglyphExtra, 0); // Crockford middle is homoglyph-clean
 });
 
@@ -101,15 +109,15 @@ test("voice-only, medium constrained + confusable alphabet: one extra compensati
 test("paste-bind, constrained non-big: bind on a couple of cells", () => {
   const p = buildReadbackPlan(HEX512, {}, "paste-bind", rngFrom(3));
   assert.equal(p.kind, "bind");
-  assert.equal(p.cells.length, 2);
+  assert.equal(p.goodCells, 2); // the binding sample is two cells
   for (const ci of p.cells) assert.ok(filled(HEX512).includes(ci));
 });
 
 test("paste-bind, big: bind on hash-anchored fingerprint cells", () => {
   const p = buildReadbackPlan(BIG, {}, "paste-bind", rngFrom(6));
   assert.equal(p.kind, "bind");
-  assert.equal(p.cells.length, 2);
-  for (const ci of p.cells) assert.ok(fps(BIG).includes(ci));
+  assert.equal(p.goodCells, 2);
+  for (const ci of p.cells.slice(0, p.goodCells)) assert.ok(fps(BIG).includes(ci));
 });
 
 test("paste-bind, programmable non-big: fall back to reading all cells", () => {
@@ -122,7 +130,7 @@ test("paste-bind, constrained + confusable alphabet: bind gets a compensation ce
   const p = buildReadbackPlan(B64URL, {}, "paste-bind", rngFrom(9));
   assert.equal(p.kind, "bind");
   assert.equal(p.homoglyphExtra, 1);
-  assert.equal(p.cells.length, BIND_CELLS_PLUS_EXTRA);
+  assert.equal(p.goodCells, BIND_CELLS_PLUS_EXTRA); // 2 bind + 1 homoglyph within the sample
 });
 const BIND_CELLS_PLUS_EXTRA = 3;
 
@@ -183,9 +191,38 @@ test("coverage: an empty plan reports 0 and never affirms", () => {
   const empty: ReadbackPlan = {
     mode: "voice-only", kind: "all-cells",
     cls: { sizeClass: "small", constrained: true, homoglyphProne: false, filledCells: 0 },
-    cells: [], homoglyphExtra: 0,
+    cells: [], goodCells: 0, homoglyphExtra: 0,
   };
   const s = startCeremony(empty);
   assert.equal(coverage(s), 0);
+  assert.equal(finish(s).status, "pending");
+});
+
+// --- milestone: NO-DIFFERENCE at the sample, then optional read-past ---------
+
+test("reducer: NO-DIFFERENCE at the sound-sample milestone is NOT terminal", () => {
+  let s = startCeremony(buildReadbackPlan(BIG, {}, "voice-only", rngFrom(5)));
+  const good = s.plan.goodCells;
+  assert.ok(good > 1 && s.plan.cells.length > good); // a real milestone with extras after
+  for (let i = 0; i < good; i++) s = respond(s, "match");
+  assert.equal(s.status, "no-difference"); // milestone reached
+  assert.equal(s.ended, false); // …but the ceremony does not end — extras remain
+  // reading the extras keeps NO-DIFFERENCE and ends only at the plan's end
+  while (!s.ended) s = respond(s, "match");
+  assert.equal(s.status, "no-difference");
+  assert.equal(s.ended, true);
+});
+
+test("reducer: Done AT the milestone freezes NO-DIFFERENCE (extras are optional)", () => {
+  let s = startCeremony(buildReadbackPlan(BIG, {}, "voice-only", rngFrom(5)));
+  for (let i = 0; i < s.plan.goodCells; i++) s = respond(s, "match");
+  const done = finish(s);
+  assert.equal(done.status, "no-difference");
+  assert.equal(done.ended, true);
+});
+
+test("reducer: Done BEFORE the milestone freezes PENDING", () => {
+  let s = startCeremony(buildReadbackPlan(BIG, {}, "voice-only", rngFrom(5)));
+  s = respond(s, "match"); // 1 of goodCells(>1) read
   assert.equal(finish(s).status, "pending");
 });

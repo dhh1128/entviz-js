@@ -58,11 +58,20 @@ export interface ReadbackPlan {
   mode: CeremonyMode;
   kind: ReadbackKind;
   cls: ValueClass;
-  /** ordered filled-cell indices the authenticator asks the reader to read aloud.
-   *  The UI names each by its grid address ("row 1, column 2") so the authenticator
-   *  can point the remote reader at it. */
+  /** ordered filled-cell indices to read aloud, each named by its grid address
+   *  ("row 1, column 2") in the UI. The FIRST `goodCells` are the SOUND SAMPLE (the
+   *  required read-back of §15.5); the remainder are the other filled cells the
+   *  authenticator MAY optionally keep reading for extra coverage past the milestone
+   *  (§14.4 "climb as far as you like"). Reading past the sample adds coverage of the
+   *  actual value — never less soundness. */
   cells: number[];
-  /** how many of `cells` were appended purely for §14.5 homoglyph compensation. */
+  /** the milestone: how many leading `cells` form the sound sample. Reading this
+   *  many reaches NO-DIFFERENCE (affirmative); the ceremony does NOT end there —
+   *  the user reads on through `cells` or presses Done. Equals `cells.length` for an
+   *  all-cells plan (sample == everything). */
+  goodCells: number;
+  /** how many of the SOUND SAMPLE cells were appended purely for §14.5 homoglyph
+   *  compensation (counted within `goodCells`). */
   homoglyphExtra: number;
 }
 
@@ -138,49 +147,58 @@ export function buildReadbackPlan(
   const fingerprintIdx = model.cells.filter((c) => c.fingerprint).map((c) => c.index);
 
   let kind: ReadbackKind;
-  let cells: number[];
+  // `sampleCells` is the SOUND SAMPLE (the required read-back); the milestone.
+  let sampleCells: number[];
 
   if (mode === "paste-bind") {
     // The machine already compared the whole pasted value; bind it to the live
     // reader with a couple of cells — hash-anchored if big, any cell if constrained.
     if (cls.sizeClass === "big") {
       kind = "bind";
-      cells = sample(fingerprintIdx, BIND_CELLS, rng);
+      sampleCells = sample(fingerprintIdx, BIND_CELLS, rng);
     } else if (cls.constrained) {
       kind = "bind";
-      cells = sample(filledIdx, BIND_CELLS, rng);
+      sampleCells = sample(filledIdx, BIND_CELLS, rng);
     } else {
       // programmable, non-big: no sound sample and no hash anchor — the machine's
       // compare can't be safely bound by a few cells, so read the value in full.
       kind = "all-cells";
-      cells = filledIdx;
+      sampleCells = filledIdx;
     }
   } else if (cls.sizeClass === "big") {
     kind = "fingerprint-cells";
-    cells = fingerprintIdx.slice();
+    sampleCells = fingerprintIdx.slice();
   } else if (cls.sizeClass === "medium" && cls.constrained) {
     // A run of consecutive filled cells from an unpredictable start (§15.5). Medium
     // ⇒ > SMALL_MAX_CELLS filled, so there are always enough for a full run.
     kind = "consecutive";
     const n = Math.min(SAMPLE_CELLS, filledIdx.length);
     const start = Math.floor(rng() * (filledIdx.length - n + 1));
-    cells = filledIdx.slice(start, start + n);
+    sampleCells = filledIdx.slice(start, start + n);
   } else {
     // small (any type), or medium programmable: read every cell (§15.5).
     kind = "all-cells";
-    cells = filledIdx;
+    sampleCells = filledIdx;
   }
 
   // §14.5 homoglyph compensation: only a *sampled* plan on a confusable alphabet
   // (an all-cells read already covers everything; the Crockford fingerprint is clean).
   let homoglyphExtra = 0;
   if (cls.homoglyphProne && (kind === "consecutive" || kind === "bind")) {
-    const extra = sample(filledIdx.filter((i) => !cells.includes(i)), 1, rng);
-    cells = [...cells, ...extra];
+    const extra = sample(filledIdx.filter((i) => !sampleCells.includes(i)), 1, rng);
+    sampleCells = [...sampleCells, ...extra];
     homoglyphExtra = extra.length;
   }
 
-  return { mode, kind, cls, cells, homoglyphExtra };
+  // The sound sample is the MILESTONE; the remaining filled cells (in reading order)
+  // are appended so the authenticator can OPTIONALLY read past it for extra coverage
+  // (§14.4 — the walk's "Complete" analog). For an all-cells sample there are none
+  // left, so goodCells == cells.length and the milestone is the end.
+  const goodCells = sampleCells.length;
+  const extras = filledIdx.filter((i) => !sampleCells.includes(i));
+  const cells = [...sampleCells, ...extras];
+
+  return { mode, kind, cls, cells, goodCells, homoglyphExtra };
 }
 
 // --- the ceremony reducer (§15.7, reusing the §14.6 discipline) -----------
@@ -197,18 +215,21 @@ export interface CeremonyState {
   ended: boolean;
 }
 
-// Affirmative once every planned cell has been confirmed (`index` past the end).
-// The plan already encodes the right coverage per §15.5, so there is no separate
-// bit threshold — reading the chosen set *is* the target. Caps at NO-DIFFERENCE,
-// never IDENTICAL (§3); an empty plan can never affirm.
+// Affirmative once the SOUND SAMPLE (the first `goodCells` cells) has been fully
+// confirmed — reading the §15.5 sample *is* the coverage target. Reading further
+// (the extra cells) only adds coverage; it can't un-affirm. NO-DIFFERENCE is NOT
+// terminal (§14.6): the ceremony ends only at a `differ`, the plan's end, or Done.
+// Caps at NO-DIFFERENCE, never IDENTICAL (§3); a zero-milestone plan never affirms.
 const affirmative = (plan: ReadbackPlan, index: number): boolean =>
-  plan.cells.length > 0 && index >= plan.cells.length;
+  plan.goodCells > 0 && index >= plan.goodCells;
 
 export function startCeremony(plan: ReadbackPlan): CeremonyState {
   return { plan, index: 0, status: "pending", ended: false };
 }
 
-/** Fraction of the planned cells confirmed so far (the read-back progress meter). */
+/** Fraction of the FULL read-back (sound sample + optional extras) confirmed so far
+ *  — the progress-meter fill. The UI marks the sound-sample milestone at
+ *  `goodCells / cells.length` (crossing it turns the verdict NO-DIFFERENCE). */
 export function coverage(state: CeremonyState): number {
   return state.plan.cells.length ? state.index / state.plan.cells.length : 0;
 }
