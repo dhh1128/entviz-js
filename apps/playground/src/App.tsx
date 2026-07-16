@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
-import { render as renderEntviz, SPEC_VERSION, CORNER_TOKENS, DEFAULT_CORNER_MAP, type CornerToken, type TrustAssumption } from "@entviz/core";
+import { render as renderEntviz, SPEC_VERSION, CORNER_TOKENS, type CornerToken, type TrustAssumption } from "@entviz/core";
 // Version badges read straight from source of truth so they never drift: the spec
 // revision from the core renderer, the package versions from their manifests.
 import corePkg from "../../../packages/core/package.json";
@@ -33,20 +33,21 @@ const PRESETS: { label: string; value: string }[] = [
 
 // The controls sidebar is tabbed so it doesn't run tall as the prop surface grows.
 // Value = what the entropy IS; Theme = the host environment; Pill = how the pill
-// renders. (A "Corpus" tab joins these as the trust-gated recognition channels land.)
-type TabId = "value" | "theme" | "pill" | "corpus";
-const TABS: [TabId, string][] = [["value", "Value"], ["theme", "Theme"], ["pill", "Pill"], ["corpus", "Corpus"]];
+// renders; Posture = the trust posture + its gated recognition channels.
+type TabId = "value" | "theme" | "pill" | "posture";
+const TABS: [TabId, string][] = [["pill", "Pill"], ["value", "Value"], ["posture", "Posture"], ["theme", "Theme"]];
 
-// A fixed CESR Ed25519 signature (role: signature) for the app card's second pill,
-// so two DIFFERENT roles are on screen at once — with "by role" corners, the key
-// and the signature take visibly different shapes.
-const SIG = "0B" + "Kx9Rn2Vw8Lm4Gs6Hd1Jb5Fc0Ea".repeat(4).slice(0, 86);
-
-function randomHex(bytes: number): string {
-  const u8 = new Uint8Array(bytes);
-  crypto.getRandomValues(u8);
-  return Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
-}
+// Fixed sample values of DIFFERENT types for the app-card prose, so a spread of role
+// icons is on screen at once (only the FIRST pill tracks the Value-tab input).
+const SIG = "0B" + "Kx9Rn2Vw8Lm4Gs6Hd1Jb5Fc0Ea".repeat(4).slice(0, 86); // CESR sig → signature
+const ADDR = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"; // ETH → address
+const SSH = "AAAAC3NzaC1lZDI1NTE5AAAAIH1234567890abcdefghijklmnopqrstuvwxyzABCD"; // SSH ed25519 → key
+const DID = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"; // → identifier
+const DIGEST = "EBfdlu8R27Fbx_ehrqwImnK_8Cm79sqbAQ4caaZG_LFv"; // CESR digest
+const HASHHEX = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // raw hex → raw
+// A hard-coded corpus posture (all recognition aids on) for the demo pill in the card,
+// so the trusted, non-monochrome option is visible at a glance regardless of the tab.
+const CORPUS_DEMO: TrustAssumption = { posture: "corpus", mnemonic: true, autoColor: true, icon: true };
 
 const mono = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const sans = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -75,6 +76,7 @@ function evzVars(p: Palette): Record<string, string> {
     "--entviz-menu-bg": p.panel, "--entviz-menu-fg": p.fg, "--entviz-menu-border": b1,
     "--entviz-toast-bg": p.fg, "--entviz-toast-fg": p.bg,
     // <EntvizPill> chrome
+    "--entviz-pill-highlight": `0 0 0 2px ${p.accent}`,
     "--entviz-pill-popover-bg": p.panel, "--entviz-pill-popover-border": b1,
     "--entviz-pill-menu-bg": p.panel, "--entviz-pill-menu-fg": p.fg, "--entviz-pill-menu-border": b1,
     "--entviz-pill-toast-bg": p.fg, "--entviz-pill-toast-fg": p.bg,
@@ -98,15 +100,10 @@ export function App() {
   const [fontSizePt, setFontSizePt] = useState(12);
   const [note, setNote] = useState("");
   const [locale, setLocale] = useState(""); // "" = auto-detect from the browser
-  // Blank by default: with no host label, the pill shows only the type + role, which
-  // TRACK the value (unlike a hardcoded string). A label is opt-in host text, and —
-  // when set — it wins over the gated mnemonic.
-  const [pillLabel, setPillLabel] = useState("");
-  const [showType, setShowType] = useState(true);
-  const [showIcon, setShowIcon] = useState(true);
-  // "" = default (round); "role" = apply DEFAULT_CORNER_MAP (shape follows the value's
-  // role); a token = force that one shape on every pill (for eyeballing the geometry).
-  const [corner, setCorner] = useState<CornerToken | "" | "role">("role");
+  const [pillLabel, setPillLabel] = useState("xyz");
+  const [typeSignal, setTypeSignal] = useState<"none" | "icon" | "text" | "autoCombo">("autoCombo");
+  // "" = default (round); a token = that explicit corner style on every pill.
+  const [corner, setCorner] = useState<CornerToken | "">("");
   // Corpus recognition (this.i ujdwjtex): the host-declared trust posture + which
   // gated channels it opts in. `wild` (default) keeps everything value-derived off.
   const [posture, setPosture] = useState<"wild" | "corpus">("wild");
@@ -114,7 +111,7 @@ export function App() {
   const [autoColorOn, setAutoColorOn] = useState(true);
   const [iconOn, setIconOn] = useState(true);
   const [themeIdx, setThemeIdx] = useState(0);
-  const [tab, setTab] = useState<TabId>("value");
+  const [tab, setTab] = useState<TabId>("pill");
 
   // The TrustAssumption a real host would attach to a same-origin set of values.
   // In the wild posture we pass nothing at all — the maximum-safety default.
@@ -138,24 +135,13 @@ export function App() {
   }, [value, fontSizePt, note]);
 
   const build = () => setValue(draft.trim());
-  const surprise = () => {
-    const v = randomHex(32);
-    setDraft(v);
-    setValue(v);
-  };
-
-  // The corner picker drives EITHER a role-map (shape follows role) or a forced
-  // single shape — never both, so `extra` (e.g. the sig pill's own value) still wins.
-  const cornerProps =
-    corner === "role" ? { cornerMap: DEFAULT_CORNER_MAP } : { corner: corner || undefined };
 
   const pill = (extra: Partial<React.ComponentProps<typeof EntvizPill>> = {}) => (
     <EntvizPill
       value={value}
       label={pillLabel || undefined}
-      showType={showType}
-      showIcon={showIcon}
-      {...cornerProps}
+      typeSignal={typeSignal}
+      corner={corner || undefined}
       trust={trust}
       fontSizePt={fontSizePt}
       note={note || null}
@@ -191,17 +177,15 @@ export function App() {
             <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.55, marginBottom: 16 }}>
               ▦ your application
             </div>
-            <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
-              When a peer shares their public key {pill()}, pin it the first time you see it — then, before you
-              trust the message they sign with it {pill({ value: SIG })}, confirm both are the
-              very ones you expect.
+            <p style={{ fontSize: 18, lineHeight: 2, margin: 0 }}>
+              Lorem ipsum dolor {pill({ highlight: true })} sit amet, consectetur {pill({ value: SIG, label: undefined })} adipiscing
+              elit, sed do eiusmod {pill({ value: ADDR, label: undefined })} tempor incididunt ut labore {pill({ value: SSH, label: undefined })} et
+              dolore magna aliqua. Ut enim {pill({ value: DID, label: undefined })} ad minim veniam, quis nostrud {pill({ value: DIGEST, label: undefined })} exercitation
+              ullamco laboris nisi. Here's a pill using the "corpus" posture, which enables recognition aids:{" "}
+              {pill({ value: HASHHEX, label: undefined, trust: CORPUS_DEMO })} — ut aliquip ex ea commodo consequat.
             </p>
-            {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
-                lives in this paragraph, and element opacity would dim its whole
-                subtree — including the position:fixed menu, which then reads as
-                semi-transparent over the page. */}
-            <p style={{ fontSize: 13, color: "color-mix(in srgb, currentColor 65%, transparent)", marginTop: 22 }}>
-              The same key, shown without its badge: {pill({ showIcon: false })}.
+            <p style={{ fontSize: 12, color: "color-mix(in srgb, currentColor 55%, transparent)", marginTop: 18 }}>
+              The highlighted pill reflects the Value tab; the rest are fixed samples of other types.
             </p>
           </div>
 
@@ -252,7 +236,7 @@ export function App() {
 
           {tab === "value" ? (
             <>
-              <label style={labelStyle}>Entropy</label>
+              <label style={labelStyle} title="The value shown by the highlighted pill in the card. Paste any high-entropy value.">Entropy</label>
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -261,38 +245,30 @@ export function App() {
                 rows={3}
                 style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid #ccc", resize: "vertical" }}
               />
-              <div style={{ display: "flex", gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, margin: "8px 0 20px", flexWrap: "wrap" }}>
                 <button onClick={build} style={primaryBtn} title="⌘↵ / Ctrl+Enter">Build</button>
-                <button onClick={surprise} style={ghostBtn}>Randomize</button>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-                {PRESETS.map((p) => (
-                  <button key={p.label} onClick={() => { setDraft(p.value); setValue(p.value); }} style={chip}>
-                    {p.label}
-                  </button>
-                ))}
               </div>
 
-              <label style={labelStyle}>
-                Note <span style={{ fontWeight: 400, color: "#888" }}>(≤10 printable-ASCII chars; never hashed)</span>
-              </label>
-              <input type="text" value={note} maxLength={20} placeholder="e.g. git"
-                onChange={(e) => setNote(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }} />
-
-              <label style={labelStyle}>
-                Pill label <span style={{ fontWeight: 400, color: "#888" }}>(first-party host text — trusted, unlike the note)</span>
+              <label style={labelStyle} title="First-party host text, trusted — unlike the note. Shown after the type; wins over the mnemonic.">
+                Pill label
               </label>
               <input type="text" value={pillLabel} placeholder="e.g. signing-key"
                 onChange={(e) => setPillLabel(e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc" }} />
+                style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }} />
+
+              <label style={labelStyle} title="≤10 printable-ASCII chars, rendered as a quiet caption inside the entviz; never hashed. Rarely used.">
+                Note
+              </label>
+              <input type="text" value={note} maxLength={20} placeholder="e.g. git"
+                onChange={(e) => setNote(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc" }} />
             </>
           ) : null}
 
           {tab === "theme" ? (
             <>
-              <label style={labelStyle}>
-                Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
+              <label style={labelStyle} title="The components ship no fonts or colors; they inherit the host's type and a few --entviz-* CSS vars.">
+                Ambient host theme
               </label>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
                 {PALETTES.map((p, i) => (
@@ -303,15 +279,15 @@ export function App() {
                 ))}
               </div>
 
-              <label style={labelStyle}>
-                Font size <span style={{ fontWeight: 400, color: "#888" }}>({fontSizePt}pt — the initial render size; also adjustable inside the pill)</span>
+              <label style={labelStyle} title="Initial render size in points; also adjustable inside the pill.">
+                Font size ({fontSizePt}pt)
               </label>
               <input type="range" min={6} max={30} step={2} value={fontSizePt}
                 onChange={(e) => setFontSizePt(Number(e.target.value))}
                 style={{ width: "100%", marginBottom: 16, accentColor: ACCENT }} />
 
-              <label style={labelStyle}>
-                Pill locale <span style={{ fontWeight: 400, color: "#888" }}>(chrome only — never the value; RTL mirrors chrome)</span>
+              <label style={labelStyle} title="Chrome only — never the value. RTL scripts mirror the chrome, not the entviz.">
+                Pill locale
               </label>
               <select value={locale} onChange={(e) => setLocale(e.target.value)} style={selectStyle}>
                 <option value="">auto (browser)</option>
@@ -322,74 +298,61 @@ export function App() {
 
           {tab === "pill" ? (
             <>
-              <label style={checkRow}>
-                <input type="checkbox" checked={showType} onChange={(e) => setShowType(e.target.checked)} />
-                Show type label
+              <label style={labelStyle} title="How the value's type shows: the trailing role icon (default), text, or nothing.">
+                Type signal
               </label>
-              <label style={checkRow}>
-                <input type="checkbox" checked={showIcon} onChange={(e) => setShowIcon(e.target.checked)} />
-                Show badge icon
-              </label>
-
-              <label style={{ ...labelStyle, marginTop: 16 }}>
-                Corner shape <span style={{ fontWeight: 400, color: "#888" }}>(this.i <code style={{ fontFamily: mono }}>gk37dm5n</code> — a gestalt cue for the value's <i>type</i>; carries no identity bits, so it needs no trust posture)</span>
-              </label>
-              <select value={corner} onChange={(e) => setCorner(e.target.value as CornerToken | "" | "role")} style={selectStyle}>
-                <option value="">default (round)</option>
-                <option value="role">▸ by role (digest·sig·key…)</option>
-                {CORNER_TOKENS.map((t) => <option key={t} value={t}>force: {t}</option>)}
+              <select value={typeSignal} onChange={(e) => setTypeSignal(e.target.value as "none" | "icon" | "text" | "autoCombo")} style={selectStyle}>
+                <option value="autoCombo">autoCombo (default)</option>
+                <option value="icon">icon</option>
+                <option value="text">text</option>
+                <option value="none">none</option>
               </select>
-              <p style={{ fontSize: 12, color: "#8a93a2", margin: "2px 0 0", lineHeight: 1.5 }}>
-                <b>by role</b> applies <code style={{ fontFamily: mono }}>DEFAULT_CORNER_MAP</code> so each entropy category takes a distinct
-                shape — the key and the signature in the card above differ. The <b>force</b> options pin one shape on every pill for eyeballing the geometry.
-              </p>
+
+              <label style={{ ...labelStyle, marginTop: 16 }} title="An explicit corner style. Corners are no longer derived from type — the role icon carries that.">
+                Corner shape
+              </label>
+              <select value={corner} onChange={(e) => setCorner(e.target.value as CornerToken | "")} style={selectStyle}>
+                <option value="">default (round)</option>
+                {CORNER_TOKENS.filter((t) => t !== "round").map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
             </>
           ) : null}
 
-          {tab === "corpus" ? (
+          {tab === "posture" ? (
             <>
-              <label style={labelStyle}>
-                Trust posture <span style={{ fontWeight: 400, color: "#888" }}>(this.i <code style={{ fontFamily: mono }}>ujdwjtex</code> — HOST-declared, per value; <b>never</b> an end-user toggle)</span>
+              <label style={labelStyle} title="Host-declared, per value — never an end-user toggle. Opens the value-derived recognition channels below.">
+                Trust posture
               </label>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                <button onClick={() => setPosture("wild")} style={posture === "wild" ? themeBtnActive : themeBtn}>
-                  wild (adversarial)
+              <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                <button onClick={() => setPosture("wild")} style={posture === "wild" ? themeBtnActive : themeBtn}
+                  title="Adversarial / cross-channel (the default): the pill carries zero identity bits — no value ever leaks.">
+                  wild
                 </button>
-                <button onClick={() => setPosture("corpus")} style={posture === "corpus" ? themeBtnActive : themeBtn}>
-                  corpus (trusted)
+                <button onClick={() => setPosture("corpus")} style={posture === "corpus" ? themeBtnActive : themeBtn}
+                  title="A same-origin, already-trusted set of values (e.g. your own KEL); opts into the recognition aids below.">
+                  corpus
                 </button>
               </div>
-              <p style={{ fontSize: 12, color: "#8a93a2", margin: "0 0 16px", lineHeight: 1.5 }}>
-                <b>wild</b> is the default: the pill carries <i>zero identity bits</i> — no value ever leaks.
-                <b> corpus</b> opts a same-origin, already-trusted set of values into the recognition aids below.
-                A real app sets this in code for values it vouches for; the only runtime way a value earns it is a
-                completed formal comparison (earned promotion, v2) — never a click.
-              </p>
 
               <div style={{ opacity: posture === "corpus" ? 1 : 0.4, transition: "opacity .15s" }}>
                 <div style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8a93a2", fontWeight: 600, margin: "0 0 8px" }}>
                   Gated channels
                 </div>
-                <label style={checkRow}>
+                <label style={checkRow} title="A short recognition anchor built from the entviz's own cells, e.g. DKxy…19f2…imBx. Never a verification claim.">
                   <input type="checkbox" checked={mnemonicOn} disabled={posture !== "corpus"}
                     onChange={(e) => setMnemonicOn(e.target.checked)} />
-                  Mnemonic label <span style={{ fontWeight: 400, color: "#888" }}>— 4 value chars + 4 fingerprint chars (<code style={{ fontFamily: mono }}>mmtxrg4w</code>)</span>
+                  Mnemonic label
                 </label>
-                <label style={checkRow}>
+                <label style={checkRow} title="Hashes the value into 1 of 16 hues, painted as a faint background tint — the recurring ones catch the eye.">
                   <input type="checkbox" checked={autoColorOn} disabled={posture !== "corpus"}
                     onChange={(e) => setAutoColorOn(e.target.checked)} />
-                  Auto-color tint <span style={{ fontWeight: 400, color: "#888" }}>— value → 1 of 16 hues, painted faintly (<code style={{ fontFamily: mono }}>tgowi7go</code>)</span>
+                  Auto-color tint
                 </label>
-                <label style={checkRow}>
+                <label style={checkRow} title="Replaces the leading cap with a value-derived mini of the entviz's own colorbar.">
                   <input type="checkbox" checked={iconOn} disabled={posture !== "corpus"}
                     onChange={(e) => setIconOn(e.target.checked)} />
-                  Colorbar icon <span style={{ fontWeight: 400, color: "#888" }}>— the 2×2 badge becomes a value-derived mini-colorbar (<code style={{ fontFamily: mono }}>wn3r6aex</code>)</span>
+                  Colorbar icon
                 </label>
-                <p style={{ fontSize: 12, color: "#8a93a2", margin: "6px 0 0", lineHeight: 1.5 }}>
-                  With <b>corpus</b> on, each pill shows e.g. <code style={{ fontFamily: mono }}>DKxy2sgz…19f2…imBx</code>, a faint hue, and a mini-colorbar
-                  leading cap — recognition anchors, never verification claims (two matching pills still route through Compare). The two card pills
-                  differ in value, so all three channels differ. Flip to <b>wild</b> and every value-derived cue vanishes (zero identity bits).
-                </p>
               </div>
             </>
           ) : null}
@@ -415,8 +378,6 @@ const themeBtnActive: React.CSSProperties = primaryBtn;
 // outlined = every secondary control (Randomize, inactive theme)
 const ghostBtn: React.CSSProperties = controlBase;
 const themeBtn: React.CSSProperties = controlBase;
-// same control, pill-shaped + lighter, for the quick-fill preset tags
-const chip: React.CSSProperties = { ...controlBase, fontWeight: 500, borderRadius: 999 };
 // footer doc links — the one accent, no underline until hover (browser default)
 const docLink: React.CSSProperties = { color: ACCENT, textDecoration: "none", fontWeight: 600 };
 // the controls sidebar: a bordered, subtly-tinted panel that signals "config surface",

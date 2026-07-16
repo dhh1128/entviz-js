@@ -6,7 +6,7 @@ import type { TrustAssumption } from "@entviz/core";
 const CESR = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx"; // 44 chars
 const LONG = "M".repeat(200);
 const corpus: TrustAssumption = { posture: "corpus" };
-const PREVIEW_CAP = 72;
+const PREVIEW_CAP = 100;
 
 afterEach(cleanup);
 

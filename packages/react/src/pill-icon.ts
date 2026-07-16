@@ -77,11 +77,10 @@ export function colorbarIcon(channels: ChannelDescription): ReactNode {
       viewBox: `0 0 ${VB} ${VB}`,
       preserveAspectRatio: "none",
       style: {
-        // Same slot as the badge: 1.25em wide (the viz's barWidth), full pill height.
-        alignSelf: "stretch",
-        width: "1.25em",
-        overflow: "hidden",
-        flex: "0 0 auto",
+        // Fills its (absolutely-positioned) leading-cap wrapper, which the pill sizes to
+        // the viz's colorbar width (~1.25em) × the full pill height.
+        width: "100%",
+        height: "100%",
         display: "block",
       },
     },

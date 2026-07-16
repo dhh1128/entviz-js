@@ -198,30 +198,47 @@ describe("EntvizPill rendering", () => {
     proseClean("compare");
   });
 
-  test("renders the pill with badge, type, and aria-label; tooltip previews the value", () => {
-    render(<EntvizPill value={HEX} />);
+  test("renders the pill with type, aria-label, tooltip, and a trailing role glyph", () => {
+    const { container } = render(<EntvizPill value={HEX} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
     // The hover tooltip previews the value (not "View visualization"); the pointer
     // cursor implies clickability. The accessible name is unchanged.
     expect(pill.getAttribute("title")).toBe(HEX);
     expect(pill.getAttribute("aria-label")).toBe("view visualization, hex");
+    // Default typeSignal="autoCombo" with no label: the type text falls back in ("hex"),
+    // and HEX (no role) gets the trailing "raw" (binary) glyph.
     expect(screen.getByText("hex")).toBeTruthy();
-    // badge = a 2x2 grid of 4 constant color cells
-    expect(pill.querySelectorAll('span[aria-hidden] > span').length).toBe(4);
+    expect(container.querySelector('svg[data-evz-role-icon="raw"]')).toBeTruthy();
   });
 
-  test("showIcon=false hides the badge; showType=false + label shows only the label", () => {
-    const { rerender } = render(<EntvizPill value={HEX} showIcon={false} />);
-    expect(screen.getByRole("button", { name: /view visualization/i }).querySelector("span[aria-hidden]")).toBeNull();
-    rerender(<EntvizPill value={HEX} showType={false} label="my key" />);
+  test("typeSignal controls the type cue: autoCombo / icon / text / none", () => {
+    // autoCombo (default): icon + type text when there's no label…
+    const { container, rerender } = render(<EntvizPill value={HEX} />);
+    expect(container.querySelector("svg[data-evz-role-icon]")).toBeTruthy();
+    expect(screen.getByText("hex")).toBeTruthy();
+    // …but a label REPLACES the type text (no doubling up).
+    rerender(<EntvizPill value={HEX} label="my key" />);
     expect(screen.queryByText("hex")).toBeNull();
+    expect(screen.getByText("my key")).toBeTruthy();
+    // "icon": role glyph, never the type text.
+    rerender(<EntvizPill value={HEX} typeSignal="icon" />);
+    expect(container.querySelector("svg[data-evz-role-icon]")).toBeTruthy();
+    expect(screen.queryByText("hex")).toBeNull();
+    // "text": type text, no role glyph.
+    rerender(<EntvizPill value={HEX} typeSignal="text" />);
+    expect(container.querySelector("svg[data-evz-role-icon]")).toBeNull();
+    expect(screen.getByText("hex")).toBeTruthy();
+    // "none": neither; a label still shows.
+    rerender(<EntvizPill value={HEX} typeSignal="none" label="my key" />);
+    expect(screen.queryByText("hex")).toBeNull();
+    expect(container.querySelector("svg[data-evz-role-icon]")).toBeNull();
     expect(screen.getByText("my key")).toBeTruthy();
   });
 
   test(">512-bit input: the pill shows the bare type, NOT the '+hash' caveat", () => {
     // the large-input caveat (v15: "+hash") is a visualization note; it must
     // never appear on the pill
-    render(<EntvizPill value={BIG} />);
+    render(<EntvizPill value={BIG} typeSignal="text" />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
     expect(pill.getAttribute("aria-label")).not.toContain("+hash");
     expect(screen.queryByText(/\+hash/i)).toBeNull();
@@ -232,7 +249,7 @@ describe("EntvizPill rendering", () => {
     // A CESR value: the pill reads scheme "cesr" (the type token) and the
     // closed-enum role "digest" as a secondary caption — both structured fields,
     // not substrings of the drawn "CESR Blake3-256:" label.
-    render(<EntvizPill value={CESR} />);
+    render(<EntvizPill value={CESR} typeSignal="text" />);
     expect(screen.getByText("cesr")).toBeTruthy();
     expect(screen.getByText("digest")).toBeTruthy();
     // the label's algorithm text never leaks onto the pill
@@ -242,7 +259,7 @@ describe("EntvizPill rendering", () => {
   });
 
   test("a bare encoding shows the type but no role caption (entviz does not guess)", () => {
-    render(<EntvizPill value={HEX} />);
+    render(<EntvizPill value={HEX} typeSignal="text" />);
     expect(screen.getByText("hex")).toBeTruthy();
     // none of the closed-enum role words appears for a bare hex value
     for (const role of ["key", "signature", "digest", "address", "identifier"]) {

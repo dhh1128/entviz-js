@@ -32,10 +32,8 @@ import {
   mnemonic,
   render,
   resolveChannels,
-  resolveCorner,
   type Characterization,
   type ChannelDescription,
-  type CornerMap,
   type CornerToken,
   type RenderOptions,
   type TrustAssumption,
@@ -43,6 +41,7 @@ import {
 import { cornerStyle } from "./corners.ts";
 import { autoTint } from "./auto-color.ts";
 import { colorbarIcon } from "./pill-icon.ts";
+import { RoleGlyph } from "./role-icon.ts";
 import { Entviz } from "./Entviz.ts";
 import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
@@ -61,16 +60,23 @@ export interface EntvizPillProps {
   // --- pill chrome (contextual) ---
   /** First-party custom text shown after the type (host-set, trusted — unlike the note). */
   label?: string;
-  /** Show the parser-derived type label (default true). Independent of `label`. */
-  showType?: boolean;
-  showIcon?: boolean;
-  /** Corner-shape channel (this.i gk37dm5n). An explicit corner treatment; wins over
-   *  `cornerMap`. UN-gated by any trust posture — the corner encodes the value's
-   *  semantic type (already disclosed as the trusted type text), never the value. */
+  /** How to signal the value's type:
+   *   - `autoCombo` (default): the trailing role **icon**, plus the type **text**
+   *     ("cesr key") only when there's no label/mnemonic — so a pill is never empty.
+   *   - `icon`: just the role icon (never the redundant type word).
+   *   - `text`: just the parser-derived type text.
+   *   - `none`: neither.
+   *  Independent of `label`, which still shows either way. */
+  typeSignal?: "none" | "icon" | "text" | "autoCombo";
+  /** Corner-shape (this.i gk37dm5n): an explicit, optional pill corner style
+   *  (`round` · `sharp` · `leaf`). Corners are no longer derived from the value's type —
+   *  the trailing role icon carries that cue. Defaults to the themeable round. */
   corner?: CornerToken;
-  /** Map the value's `role` (null → `"raw"`) to a corner treatment; ignored where
-   *  `corner` is set. Its own shareable object, kept out of the trust policy. */
-  cornerMap?: CornerMap;
+  /** Persistently highlight this pill (e.g. to mark 3 of 10 on a page) WITHOUT hover or
+   *  focus. Draws a ring via `box-shadow`, so it coexists with the hover/focus outline;
+   *  color/width are set by `--entviz-pill-highlight` (a full box-shadow value; default a
+   *  2px `currentColor` mix). Host-driven, not derived from the value. */
+  highlight?: boolean;
   /** The value's trust posture (this.i ujdwjtex) — a shareable, host-declared object
    *  that gates the value-derived channels. Absent, or `posture:"wild"`, keeps them
    *  all OFF (the default, maximum-safety wild posture). `posture:"corpus"` opts a
@@ -115,14 +121,11 @@ export interface EntvizPillProps {
   onEvent?: (e: EntvizEvent) => void;
 }
 
-// 2×2 row-major: gold + blue on top, black + red on bottom — keeps the two dark
-// cells off the bottom row so the badge doesn't read as bottom-heavy. Constant
-// on every entviz (zero identity bits — design §3.1).
-const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
-
 // The hover tooltip's value-preview cap. Long enough to show a full AID/UUID/ETH/hash
-// in one line; truncates a long key with an ellipsis (still far too long to grind).
-const VALUE_PREVIEW_CHARS = 72;
+// (and most identifiers) in one line; truncates a long key with an ellipsis (still far
+// too long to grind). A native `title` tooltip manages its own width/wrapping, so we
+// cap the character count rather than measure the viewport.
+const VALUE_PREVIEW_CHARS = 100;
 
 /** The unit word in the "Copied value · N <unit>" confirmation. The pill's type is
  *  the bare entropy category (e.g. "hex"), so hex is an exact match. */
@@ -260,7 +263,7 @@ function useFloating(anchorRef: RefObject<HTMLElement | null>, open: boolean, rt
 export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
-    label, showType = true, showIcon = true, corner, cornerMap, trust, maxWidth, locale, dir,
+    label, typeSignal = "autoCombo", corner, highlight, trust, maxWidth, locale, dir,
     messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
   } = props;
 
@@ -268,6 +271,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // source="pill", monotonic seq, and swallowing a throwing host handler (events.ts).
   const emit = useEmit(onEvent, "pill");
   useInjectStyles();
+
+  // The type cue (typeSignal). autoCombo (default) and icon both show the role glyph;
+  // showTypeText also depends on whether there's a label, so it's derived after shownLabel.
+  const showRoleGlyph = typeSignal === "icon" || typeSignal === "autoCombo";
 
   const { locale: resolved, messages: base } = useMemo(() => resolveMessages(locale), [locale]);
   const m: Messages = { ...base, ...overrides };
@@ -475,6 +482,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // corpus posture enabled it — explicit `label` wins (host text is more meaningful).
   const shownLabel = label ?? autoMnemonic;
   const labelIsMnemonic = !label && !!autoMnemonic;
+  // autoCombo shows the type text ONLY when there's no label/mnemonic in the slot — so a
+  // pill is never fully empty (it falls back to "cesr key"), but never doubles up either.
+  const showTypeText = typeSignal === "text" || (typeSignal === "autoCombo" && !shownLabel);
 
   // Auto-color channel (tgowi7go): a subtle value-hued background tint, gated by the
   // corpus posture. A transparent color-mix, so it composes with the host theme.
@@ -492,7 +502,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
   // concern, so it never appears here. `label` is first-party host text (or the
   // gated mnemonic); never the note (self-declared) on the pill.
-  const shownParts = [showType ? type : null, shownLabel].filter(Boolean) as string[];
+  const shownParts = [showTypeText ? type : null, shownLabel].filter(Boolean) as string[];
   const ariaText = shownParts.length ? shownParts.join(", ") : (type ?? "unrenderable");
   const ariaLabel = fmt(m.ariaView, { type: ariaText });
 
@@ -506,13 +516,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
 
   const cssVar = (name: string, fallback: string) => `var(--entviz-pill-${name}, ${fallback})`;
 
-  // Corner channel (gk37dm5n): an explicit `corner` wins; else resolve the value's
-  // role (null → "raw") through a host `cornerMap`; else keep the themeable default
-  // radius untouched, so an unconfigured pill is byte-for-byte unchanged.
-  const cornerToken = corner ?? (cornerMap ? resolveCorner(role, cornerMap) : null);
-  const cornerCss: CSSProperties = cornerToken
-    ? cornerStyle(cornerToken)
-    : { borderRadius: cssVar("radius", "0.5em") };
+  // Corner (gk37dm5n): an explicit optional style; else the themeable default radius, so
+  // an unconfigured pill is unchanged.
+  const cornerCss: CSSProperties = corner
+    ? cornerStyle(corner)
+    : { borderRadius: cssVar("radius", "999px") };
 
   // --- disclosure-lifecycle chrome (Cite · Visualize · Compare) --------------
   // Compare is offered only when the host opts in via onCompare (design §5 / Seam
@@ -550,69 +558,47 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     }),
   );
 
-  // --- badge / icon ---
-  // The pill's leading cap. By default it's the CONSTANT 2×2 badge — zero identity
-  // bits, a square color swatch bled flush to the pill edge. Under a corpus posture
-  // that opted in the icon channel (wn3r6aex), it is instead the VALUE-DERIVED colorbar
-  // icon — a horizontal micro-bar, deliberately distinct in shape from the 2×2 block so
-  // the two are never confused. Wild always keeps the constant badge.
-  const constBadge = h(
-    "span",
-    {
-      "aria-hidden": true,
-      style: {
-        display: "inline-grid",
-        gridTemplateColumns: "1fr 1fr",
-        gridTemplateRows: "1fr 1fr",
-        // Fill the pill's inner height (whatever the text's line box works out
-        // to, including descender room) with a fixed-width swatch. The pill's
-        // overflow:hidden clips the swatch's leading corners to the pill radius.
-        // (aspect-ratio + stretch collapses an empty grid item's width, so the
-        // width is set explicitly rather than derived from the height.)
-        alignSelf: "stretch",
-        width: "1.3em",
-        overflow: "hidden",
-        flex: "0 0 auto",
-      },
-    },
-    BADGE.map((c) => h("span", { key: c, style: { background: c } })),
-  );
-  const badge = showIcon
-    ? gate.icon && channels && !error
-      ? colorbarIcon(channels)
-      : constBadge
+  // --- leading cap (colorbar, corpus-only) ---
+  // EMPTY by default (wild) so the pill's left edge is clean and the text sits on the
+  // baseline. Under a corpus posture that opted in the icon channel (wn3r6aex), it is the
+  // VALUE-DERIVED colorbar — a vertical bar the width the colorbar has in the
+  // visualization. ABSOLUTELY positioned (out of the flex flow) so it can be full-height
+  // WITHOUT dragging the pill's baseline: the text stays the baseline anchor.
+  const leadingCap = gate.icon && channels && !error
+    ? h(
+        "span",
+        {
+          "aria-hidden": true,
+          style: { position: "absolute", insetBlock: 0, insetInlineStart: 0, width: "1.25em", overflow: "hidden" },
+        },
+        colorbarIcon(channels),
+      )
     : null;
 
   // --- pill text (type + optional role caption + label) ---
-  // Built from the STRUCTURED characterization axes, not a parsed label string:
+  // Built from the STRUCTURED characterization axes:
   //  - `type`  = entropyType (scheme ?? encoding), the primary token.
-  //  - `role`  = the closed-enum semantic role, shown as a small caption ONLY when
-  //              the recognizer asserted one (bare encodings show no role — entviz
-  //              does not guess). It's a redundant recognition cue, never an
-  //              equality claim.
-  //  - `label` = first-party host text.
-  const textBlock = shownParts.length
-    ? h(
-        "span",
-        // No own overflow-clip: the generous line box (pill lineHeight) already keeps
-      // descenders inside the pill, and the pill body's overflow:hidden handles the
-      // width cap. Clipping here would shear descenders (g, y, p). The tiny upward
-      // translate optically centers the ink: most UI fonts reserve more space above the
-      // cap than below the descender, so line-box centering alone sits the text low.
-      { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", transform: "translateY(-0.06em)" } },
-        showType && type
-          ? h("span", { key: "type", style: { opacity: 0.62 } }, type)
-          : null,
-        showType && type && role
-          ? h("span", { key: "role", style: pillRoleStyle }, role)
-          : null,
-        // The label slot: host text as-is, or the gated mnemonic in monospace so its
-        // value-derived characters read as a recognition anchor (and align across pills).
-        shownLabel
-          ? h("span", { key: "label", style: labelIsMnemonic ? mnemonicStyle : undefined }, shownLabel)
-          : null,
-      )
-    : null;
+  //  - `role`  = the closed-enum semantic role, shown as a caption at the SAME size as
+  //              the type (differs only in color) when the recognizer asserted one.
+  //  - `label` = first-party host text (or the gated mnemonic).
+  // Always rendered — even with no visible text — so the pill always has a text
+  // baseline to sit on the surrounding line.
+  const textBlock = h(
+    "span",
+    { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", alignItems: "baseline" } },
+    showTypeText && type
+      ? h("span", { key: "type", style: { opacity: 0.62 } }, type)
+      : null,
+    showTypeText && type && role
+      ? h("span", { key: "role", style: pillRoleStyle }, role)
+      : null,
+    shownLabel
+      ? h("span", { key: "label", style: labelIsMnemonic ? mnemonicStyle : undefined }, shownLabel)
+      : null,
+    // Zero-width-space baseline anchor when nothing else is shown (typeSignal icon/none
+    // with no label) — without it the pill has no baseline and drops below the line.
+    shownParts.length ? null : h("span", { key: "anchor", "aria-hidden": true }, "​"),
+  );
 
   const pillButton = h(
     "button",
@@ -629,15 +615,35 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       title: valuePreview,
       "aria-label": ariaLabel,
       "aria-expanded": isOpen,
+      // outline:none — focus is shown by the pill body's :focus-within outline (below),
+      // so the button doesn't draw a second, inner ring.
       style: {
-        display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
+        display: "inline-flex", alignItems: "baseline",
         font: "inherit", color: "inherit", background: "none", border: "none",
-        padding: 0, margin: 0, cursor: "pointer", maxWidth: "100%",
+        padding: 0, margin: 0, cursor: "pointer", maxWidth: "100%", outline: "none",
       },
     },
-    badge,
     textBlock,
   );
+
+  // --- trailing role glyph (un-gated) ---
+  // The value's semantic role as a small monochrome icon on the trailing edge (after the
+  // kebab). Un-gated: it shows the TYPE the pill already discloses, not the value — so no
+  // value-identity bits. Shown when `typeSignal === "icon"` (the default).
+  const roleGlyph = showRoleGlyph
+    ? h(
+        "span",
+        {
+          // Clicking the icon expands the pill, exactly like clicking its body — same
+          // pointer cursor, same effect. aria-hidden (no extra tab stop): keyboard/AT
+          // reach the same action through the pill button.
+          "aria-hidden": true,
+          onClick: () => (isOpen ? collapse() : openExpand()),
+          style: { opacity: 0.72, display: "inline-flex", alignItems: "center", flex: "0 0 auto", cursor: "pointer" },
+        },
+        RoleGlyph({ role }),
+      )
+    : null;
 
   const kebab = h(
     "button",
@@ -653,14 +659,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       "aria-controls": menuOpen ? menuId : undefined,
       "aria-label": m.actions,
       style: {
-        // Center the ⋮ on the SAME optical line as the text: inherit the pill's line
-        // box (don't force lineHeight:1, which shrinks the glyph box and drops it low),
-        // and apply the same upward nudge as the text so they align rather than the
-        // kebab sitting below the text.
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         font: "inherit", color: "inherit", background: "none", border: "none",
-        padding: "0 0.05em 0 0.15em", margin: 0, cursor: "pointer",
-        transform: "translateY(-0.06em)", opacity: menuOpen ? 0.85 : undefined,
+        padding: "0 0.05em", margin: 0, cursor: "pointer", flex: "0 0 auto",
+        opacity: menuOpen ? 0.85 : undefined,
       },
     },
     "⋮",
@@ -669,33 +671,40 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const pillBody = h(
     "span",
     {
+      className: "entviz-pill__body",
       style: {
+        // position:relative anchors the absolutely-positioned leading colorbar cap.
+        position: "relative",
         display: "inline-flex", alignItems: "center", gap: cssVar("gap", "0.35em"),
         font: "inherit", color: "currentColor",
-        // ZERO vertical padding so the badge swatch and the kebab fill the pill's full
-        // height (the leading cap + trailing edge, no margin around them). The optical
-        // centering AND the descender room come from a generous line box (lineHeight,
-        // below): equal space above ascenders / below descenders, and descenders aren't
-        // clipped. Inline-start padding is dropped for the badge cap; trailing is tight.
         paddingBlock: 0,
-        paddingInlineStart: showIcon ? 0 : "0.4em",
-        paddingInlineEnd: "0.15em",
+        // Reserve the colorbar cap's width (~1.25em) + a ~0.45em gap to the text when
+        // present; else a small leading pad.
+        paddingInlineStart: leadingCap ? "1.7em" : "0.4em",
+        paddingInlineEnd: "0.4em",
         ...cornerCss,
-        // Clip the badge swatch's leading corners to the pill radius, and cap the
-        // overall width so a long label clips instead of blowing out the line.
+        // Clip the colorbar cap's leading corners to the pill radius; cap the width so a
+        // long label clips instead of blowing out the line.
         overflow: "hidden",
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
         background: autoBg ?? cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
+        // Persistent highlight ring (box-shadow so it coexists with the hover/focus
+        // outline). Host-colorable via --entviz-pill-highlight; off unless `highlight`.
+        boxShadow: highlight
+          ? cssVar("highlight", "0 0 0 2px color-mix(in srgb, currentColor 45%, transparent)")
+          : undefined,
         whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.25,
-        // The visible chrome (type, role, label/mnemonic, ⋮) is NOT selectable, so a
-        // text selection that sweeps across the pill contributes only the value (from
-        // the hidden selectable span in the wrapper), not the chrome glyphs. (D)
+        // The visible chrome (type, role, label/mnemonic, ⋮, role glyph) is NOT selectable,
+        // so a text selection sweeping the pill contributes only the value (from the hidden
+        // selectable span in the wrapper), not the chrome glyphs. (D)
         userSelect: "none",
         WebkitUserSelect: "none",
       },
     },
+    leadingCap,
     pillButton,
     kebab,
+    roleGlyph,
   );
 
   const menu = menuOpen
@@ -769,9 +778,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     {
       ref: wrapRef,
       dir: dirAttr,
-      className,
-      // "middle" vertically centers the pill on the line (baseline sat it low).
-      style: { position: "relative", display: "inline-flex", verticalAlign: "middle", ...style },
+      className: className ? `entviz-pill__wrap ${className}` : "entviz-pill__wrap",
+      // "baseline" seats the pill's TEXT on the surrounding line's baseline. This works
+      // now that the leading cap (colorbar) is absolutely positioned — it no longer drags
+      // the flex baseline down, so the text (first in-flow item) is the anchor.
+      style: { position: "relative", display: "inline-flex", verticalAlign: "baseline", ...style },
       onMouseEnter: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.add("entviz-pill--hover"),
       onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.remove("entviz-pill--hover"),
     },
@@ -795,6 +806,15 @@ const PILL_CSS = `
 .entviz-pill__kebab { opacity: 0; transition: opacity .12s; }
 .entviz-pill--hover .entviz-pill__kebab,
 .entviz-pill__kebab:focus-visible { opacity: 0.7; }
+.entviz-pill__body { transition: outline-color .12s, border-color .12s; }
+.entviz-pill--hover .entviz-pill__body {
+  outline: 2px solid var(--entviz-pill-hover-outline, color-mix(in srgb, currentColor 45%, transparent));
+  outline-offset: 1px;
+}
+.entviz-pill__wrap:focus-within .entviz-pill__body {
+  outline: 2px solid var(--entviz-pill-focus-outline, color-mix(in srgb, currentColor 80%, transparent));
+  outline-offset: 1px;
+}
 @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
 .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 50%); }
 @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
@@ -813,9 +833,10 @@ function useInjectStyles(): void {
 // low-emphasis token beside the type. Dimmer + smaller than the type so it reads
 // as a secondary, redundant recognition cue — never competing with the primary
 // entropy type.
+// The role caption sits at the SAME size as the type and surrounding text — it is
+// distinguished only by color (a lighter ink), never by size or baseline.
 const pillRoleStyle: CSSProperties = {
   opacity: 0.42,
-  fontSize: "0.82em",
   alignSelf: "center",
 };
 

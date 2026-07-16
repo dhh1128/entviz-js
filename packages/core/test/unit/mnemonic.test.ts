@@ -25,12 +25,12 @@ test("small (<256 bit): first cell … last cell — both are real entviz cells"
   assert.equal(m.split("…").length, 2); // exactly one ellipsis
 });
 
-test("large (≥256 bit): first-two … middle … last (two ellipses); groups are cells", () => {
+test("large (≥256 bit): first … middle … last (three single cells)", () => {
   const v = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx"; // 264-bit CESR key
   const texts = cellTexts(v);
   const parts = mn(v).split("…");
   assert.equal(parts.length, 3);
-  assert.equal(parts[0], texts[0] + texts[1]); // first TWO cells, concatenated
+  assert.equal(parts[0], texts[0]); // FIRST cell only (not two)
   assert.equal(parts[2], texts[texts.length - 1]); // last cell
   assert.ok(texts.includes(parts[1])); // middle is one of the shown cells
 });
@@ -58,8 +58,8 @@ test("no shown cells → empty string", () => {
 });
 
 test("≥256 bit but too few cells to spread three groups → falls back to first…last", () => {
-  const cells = [cell("aa"), cell("bb"), cell("cc")]; // only 3 non-blank
-  assert.equal(mnemonic(cells, 300), "aa…cc");
+  const cells = [cell("aa"), cell("bb")]; // only 2 non-blank
+  assert.equal(mnemonic(cells, 300), "aa…bb");
 });
 
 test("blank cells are skipped when picking first/last", () => {

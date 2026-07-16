@@ -56,10 +56,10 @@ describe("EntvizPill auto-mnemonic", () => {
 
   test("the mnemonic renders in a monospace span (recognition anchor)", () => {
     const { container } = render(<EntvizPill value={CESR} trust={corpus} />);
+    // The monospace label span specifically (ancestors also carry the same textContent).
     const span = [...container.querySelectorAll("span")].find(
-      (s) => s.textContent === MN,
+      (s) => s.textContent === MN && s.style.fontFamily.includes("monospace"),
     );
     expect(span).toBeTruthy();
-    expect(span!.style.fontFamily).toContain("monospace");
   });
 });

@@ -3,55 +3,75 @@ import { cleanup, render } from "@testing-library/react";
 import { EntvizPill } from "../src/index.ts";
 import type { TrustAssumption } from "@entviz/core";
 
-// The colorbar icon wired into the pill (wn3r6aex), GATED by the trust posture. It
-// REPLACES the constant 2×2 badge only under a corpus posture with icon:true; wild
-// always keeps the constant zero-identity badge. showIcon:false hides both.
+// The pill's two icons after the layout change (no more constant 2×2 badge):
+//  - LEADING cap = the value-derived colorbar (wn3r6aex) — corpus + icon:true only,
+//    absolutely positioned; empty otherwise.
+//  - TRAILING role glyph — the value's semantic type, shown in every posture (un-gated),
+//    shown when `typeSignal === "icon"` (the default).
 
-const CESR = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx";
+const CESR = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx"; // role "key"
 const corpusIcon: TrustAssumption = { posture: "corpus", icon: true };
 
 afterEach(cleanup);
 
-const iconSvg = (c: HTMLElement) => c.querySelector('svg[data-evz-pill-icon="colorbar"]');
-// The constant badge is a 2×2 grid of solid swatches — detect it by its grid span.
-const constBadge = (c: HTMLElement) =>
-  [...c.querySelectorAll("span")].find((s) => s.style.display === "inline-grid");
+const colorbar = (c: HTMLElement) => c.querySelector('svg[data-evz-pill-icon="colorbar"]');
+const roleGlyph = (c: HTMLElement) => c.querySelector("svg[data-evz-role-icon]");
 
-describe("EntvizPill colorbar icon channel", () => {
-  test("wild default shows the constant 2×2 badge, not the colorbar icon", () => {
+describe("EntvizPill leading colorbar cap", () => {
+  test("wild default shows no colorbar cap", () => {
     const { container } = render(<EntvizPill value={CESR} />);
-    expect(iconSvg(container)).toBeNull();
-    expect(constBadge(container)).toBeTruthy();
+    expect(colorbar(container)).toBeNull();
   });
 
-  test("wild posture keeps the constant badge even with icon:true", () => {
+  test("wild posture shows no colorbar even with icon:true", () => {
     const wild: TrustAssumption = { posture: "wild", icon: true };
     const { container } = render(<EntvizPill value={CESR} trust={wild} />);
-    expect(iconSvg(container)).toBeNull();
-    expect(constBadge(container)).toBeTruthy();
+    expect(colorbar(container)).toBeNull();
   });
 
-  test("corpus posture with icon opted-in swaps in the colorbar icon", () => {
+  test("corpus + icon opted-in shows the colorbar cap", () => {
     const { container } = render(<EntvizPill value={CESR} trust={corpusIcon} />);
-    expect(iconSvg(container)).toBeTruthy();
-    expect(constBadge(container)).toBeUndefined(); // the 2×2 is gone
+    expect(colorbar(container)).toBeTruthy();
   });
 
-  test("corpus posture WITHOUT the icon flag keeps the constant badge", () => {
+  test("corpus WITHOUT the icon flag shows no colorbar", () => {
     const { container } = render(<EntvizPill value={CESR} trust={{ posture: "corpus" }} />);
-    expect(iconSvg(container)).toBeNull();
-    expect(constBadge(container)).toBeTruthy();
+    expect(colorbar(container)).toBeNull();
   });
 
-  test("showIcon:false hides both the badge and the colorbar icon", () => {
-    const { container } = render(<EntvizPill value={CESR} trust={corpusIcon} showIcon={false} />);
-    expect(iconSvg(container)).toBeNull();
-    expect(constBadge(container)).toBeUndefined();
-  });
-
-  test("an unrenderable pill (error) falls back to the constant badge", () => {
+  test("an unrenderable pill (error) shows no colorbar", () => {
     const { container } = render(<EntvizPill value={CESR} note="toolongnote" trust={corpusIcon} />);
-    expect(iconSvg(container)).toBeNull();
-    expect(constBadge(container)).toBeTruthy();
+    expect(colorbar(container)).toBeNull();
+  });
+});
+
+describe("EntvizPill trailing role glyph", () => {
+  test("shows the value's role glyph in the wild posture (un-gated)", () => {
+    const { container } = render(<EntvizPill value={CESR} />);
+    expect(roleGlyph(container)!.getAttribute("data-evz-role-icon")).toBe("key");
+  });
+
+  test("shows the role glyph in the corpus posture too", () => {
+    const { container } = render(<EntvizPill value={CESR} trust={corpusIcon} />);
+    expect(roleGlyph(container)!.getAttribute("data-evz-role-icon")).toBe("key");
+  });
+
+  test("a null-role value gets the \"raw\" glyph", () => {
+    const { container } = render(<EntvizPill value="0123456789abcdef" />);
+    expect(roleGlyph(container)!.getAttribute("data-evz-role-icon")).toBe("raw");
+  });
+
+  test("typeSignal other than \"icon\" hides the role glyph", () => {
+    const text = render(<EntvizPill value={CESR} typeSignal="text" />);
+    expect(roleGlyph(text.container)).toBeNull();
+    cleanup();
+    const none = render(<EntvizPill value={CESR} typeSignal="none" />);
+    expect(roleGlyph(none.container)).toBeNull();
+  });
+
+  test("the colorbar cap and the role glyph coexist (different sides)", () => {
+    const { container } = render(<EntvizPill value={CESR} trust={corpusIcon} />);
+    expect(colorbar(container)).toBeTruthy();
+    expect(roleGlyph(container)).toBeTruthy();
   });
 });

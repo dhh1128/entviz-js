@@ -379,7 +379,7 @@ set into **value-derived recognition channels** that make recurrence scannable.
   visualization doesn't (the key consistency rule — a base64url slice of the SHA-512 tail,
   the rejected v1, appears *nowhere* in the entviz). Shape scales with entropy: `< 256` bit →
   `first…last` (e.g. `550e84…00`); `≥ 256` bit → `first-two…middle…last` (e.g.
-  `DKxy2sgz…19f2…imBx`), where a >512-bit input's middle is a genuine fingerprint-middle cell.
+  `DKxy…19f2…imBx`), where a >512-bit input's middle is a genuine fingerprint-middle cell.
   The `…` is honest — the omitted middle cells are all present on expand. It fills the pill's
   label slot (in monospace) when enabled and no explicit `label` is set; explicit `label` wins.
 - **Channel 2 — the auto-color tint (`tgowi7go`).** `autoColorIndex(value)` (core) hashes

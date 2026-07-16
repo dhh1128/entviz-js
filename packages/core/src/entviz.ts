@@ -2349,16 +2349,8 @@ export {
 // entry point alongside render().
 export * from "./describe.ts";
 
-// Corner-shape channel (this.i gk37dm5n): pure role -> corner-token resolution.
-export {
-  resolveCorner,
-  CORNER_TOKENS,
-  DEFAULT_CORNER,
-  DEFAULT_CORNER_MAP,
-  type CornerToken,
-  type CornerKey,
-  type CornerMap,
-} from "./corners.ts";
+// Corner-shape vocabulary (this.i gk37dm5n): an explicit optional pill style.
+export { CORNER_TOKENS, type CornerToken } from "./corners.ts";
 
 // TrustAssumption gate (this.i ujdwjtex): posture -> which value-derived channels
 // (mnemonic/icon/autoColor) are enabled. Wild default = all off (maximum safety).

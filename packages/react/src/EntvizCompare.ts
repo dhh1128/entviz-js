@@ -801,19 +801,29 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
           : null,
       ),
     ),
-    // The acquisition field spans the WHOLE comparator, below both figures (#5).
-    // (Suppressed during a walk — no mid-walk reference edits.)
-    acquisition,
-    // DURING a walk: the active step (title, meter, question, answer buttons) is
-    // hoisted here — directly under the figures — inside an accented card, so the
-    // question and its buttons sit next to the highlighted figures rather than below
-    // the machine's verdict. The verdict + scoping note then follow as context.
-    walking && walkOffered ? h("div", { "data-entviz-walk-card": "", style: walkCardStyle }, walkEl) : null,
-    verdictChip,
-    scopingNoteEl,
-    // NOT walking: the walk LAUNCH buttons live here, below the verdict — an
-    // affordance to start a human double-check after seeing the machine's answer.
-    !walking && walkOffered ? launchButtons : null,
+    // EVERYTHING below the figures lives in ONE fill-wrapper. The figures row above is
+    // the SOLE width source; this wrapper fills that width without defining it
+    // (`belowFigures`: width:0 → no intrinsic contribution; min-width:100% → grow to the
+    // settled figure width). So any element placed here — acquisition, walk card,
+    // verdict, scoping note, launch buttons, or anything added later — is automatically
+    // bounded by the figures and wraps, and can NEVER re-widen the comparator. This is
+    // the single place the "figures set the width, text fills & wraps" rule lives, so it
+    // never has to be re-applied per element (the recurring over-expansion bug).
+    h(
+      "div",
+      { style: belowFigures },
+      // The acquisition field, below both figures (suppressed during a walk).
+      acquisition,
+      // DURING a walk: the active step (title, meter, question, answer buttons) in an
+      // accented card, directly under the highlighted figures; the verdict + scoping
+      // note then follow as context.
+      walking && walkOffered ? h("div", { "data-entviz-walk-card": "", style: walkCardStyle }, walkEl) : null,
+      verdictChip,
+      scopingNoteEl,
+      // NOT walking: the walk LAUNCH buttons — an affordance to start a human
+      // double-check after seeing the machine's answer.
+      !walking && walkOffered ? launchButtons : null,
+    ),
   );
 
   // The voice tab: the live ceremony. paste-bind when a text reference already
@@ -1005,19 +1015,18 @@ const fetchBtn: CSSProperties = {
 const machineCheckLabel: CSSProperties = {
   fontSize: TEXT.small, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7,
 };
+// The below-figures fill-wrapper: the SINGLE place that bounds all non-figure content to
+// the figure-driven width. width:0 → no intrinsic contribution (the figures set the
+// width); min-width:100% → grow back to that settled width so children fill & wrap. Every
+// child here (verdict, scoping, walk, buttons) inherits this, so none needs its own idiom.
+const belowFigures: CSSProperties = {
+  width: 0, minWidth: "100%", boxSizing: "border-box",
+  display: "flex", flexDirection: "column", gap: 10,
+};
+// A full-width verdict banner. It stretches to the wrapper (figure) width by default and
+// wraps a long sentence — no per-element width idiom needed (see belowFigures).
 const chipStyle: CSSProperties = {
   display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-  // Fill the comparator's figure-driven width and WRAP a long verdict, rather than
-  // letting the verdict text define the width. A raster verdict ("No visible
-  // difference…") is a full sentence; as a hug-content pill (align-self:flex-start,
-  // no cap) its one-line max-content became the widest element in the flex column,
-  // stretching the whole comparator to the popover's 720px max and leaving whitespace
-  // beside the figures. `width:0; min-width:100%` is the "fill parent, don't expand
-  // it" idiom: width:0 makes the chip contribute nothing to the column's intrinsic
-  // width (so the figures win), then min-width:100% grows it back to the settled
-  // column width so the text wraps inside it. Radius trimmed from a stadium (999) to a
-  // rounded rectangle since it's now a full-width, possibly multi-line banner.
-  width: 0, minWidth: "100%", boxSizing: "border-box",
   padding: "5px 11px", borderRadius: 10, border: "1px solid", font: "inherit", fontSize: TEXT.body,
 };
 const warnBanner: CSSProperties = {
@@ -1027,16 +1036,8 @@ const warnBanner: CSSProperties = {
 const provenance: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 const hint: CSSProperties = { fontSize: TEXT.small, opacity: 0.6 };
 // The §2.4 scoping caveat under an affirmative verdict ("equal to THIS reference…").
-// No maxWidth: it stretches to the comparator's width (the figures / the walk's
-// progress bar), so it doesn't wrap at an arbitrary column narrower than everything
-// around it. (Default `stretch` cross-alignment fills the column.)
-// Fill the comparator's figure-driven width and wrap, without DEFINING that width:
-// this sentence's one-line max-content (~618px) otherwise out-widens the figures and
-// re-introduces the same over-expansion the verdict banner had. Same fill-don't-expand
-// idiom (width:0 → no intrinsic contribution; min-width:100% → grow to the settled
-// column width). Keeps the "stretch to the comparator width, don't wrap at an arbitrary
-// narrower column" intent, now bounded by the figures instead of the popover's max.
-const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72, width: 0, minWidth: "100%", boxSizing: "border-box" };
+// Stretches to the figure width and wraps (bounded by the belowFigures wrapper).
+const scopingNote: CSSProperties = { fontSize: TEXT.small, opacity: 0.72 };
 // The active-walk card: a distinct, accented region so the question + answer buttons
 // read as "the thing to do now", sitting right under the highlighted figures. Theme-
 // agnostic — surface + hairline derive from currentColor (adapts to any host), and the
@@ -1048,6 +1049,8 @@ const walkCardStyle: CSSProperties = {
   borderInlineStartWidth: 3,
   borderInlineStartColor: "var(--entviz-compare-action, currentColor)",
   background: "color-mix(in srgb, currentColor 4%, transparent)",
+  // Fills the figure width and wraps its question inside — bounded by the belowFigures
+  // wrapper, so no per-element width idiom is needed here (that was the recurring bug).
 };
 
 export default EntvizCompare;
