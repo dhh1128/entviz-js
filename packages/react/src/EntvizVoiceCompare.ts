@@ -180,7 +180,9 @@ export function EntvizVoiceCompare(props: EntvizVoiceCompareProps): ReactNode {
       const next = compute(s);
       if (next.ended && !s.ended) {
         onComplete?.(next.status);
-        emit({ type: "voice.complete", status: next.status });
+        // Map core's "pending" (early Done, no verdict) to the event vocab's
+        // "pending-done"; the other statuses pass straight through (cf. walk.complete).
+        emit({ type: "voice.complete", status: next.status === "pending" ? "pending-done" : next.status });
       }
       return next;
     });

@@ -836,7 +836,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
     rng, // threaded down; EntvizVoiceCompare re-gates via safeRng (§5.4)
     // voice.complete forwards the ceremony outcome. No voice.start / voice.step —
     // the live check-order must never leave the endpoint (events.ts module doc).
-    onComplete: (status) => emit({ type: "voice.complete", status }),
+    onComplete: (status) => emit({ type: "voice.complete", status: status === "pending" ? "pending-done" : status }),
   });
 
   const tabButton = (key: "reference" | "voice", label: string, icon: ReactNode): ReactNode =>

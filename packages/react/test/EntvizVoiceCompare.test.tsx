@@ -252,6 +252,14 @@ describe("EntvizVoiceCompare onEvent firehose", () => {
     expect(last(onEvent, "voice.complete")).toMatchObject({ status: "different" });
   });
 
+  test("voice.complete maps an early Done before the sound-sample milestone (core 'pending') → 'pending-done'", () => {
+    const onEvent = vi.fn();
+    render(<EntvizVoiceCompare value={BIG} rng={rngFrom(1)} onEvent={onEvent} />);
+    affirm();
+    click(/done — that's enough/i); // stop below the fingerprint sound-sample milestone
+    expect(last(onEvent, "voice.complete")).toMatchObject({ status: "pending-done" });
+  });
+
   test("NO per-cell step ever leaves the endpoint — no voice.step and no walk.step, ever", () => {
     const onEvent = vi.fn();
     render(<EntvizVoiceCompare value={HEX512} rng={rngFrom(4)} onEvent={onEvent} />);

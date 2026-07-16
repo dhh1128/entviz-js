@@ -36,6 +36,7 @@ import {
   type ChannelDescription,
   type CornerToken,
   type RenderOptions,
+  type Role,
   type TrustAssumption,
 } from "@entviz/core";
 import { cornerStyle } from "./corners.ts";
@@ -147,7 +148,7 @@ export function pillType(ch: Characterization | null): string | null {
  *  beside the type when the recognizer asserted one; null (and omitted) for a
  *  bare encoding where entviz does not guess. This is a STRUCTURED field, not a
  *  substring of the label — so it appears only where it is honestly known. */
-export function pillRole(ch: Characterization | null): string | null {
+export function pillRole(ch: Characterization | null): Role | null {
   return ch ? ch.role : null;
 }
 
@@ -304,7 +305,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     } catch (e) {
       return {
         type: null as string | null,
-        role: null as string | null,
+        role: null as Role | null,
         sizeBits: 0,
         channels: null as ChannelDescription | null,
         svg: null as string | null,

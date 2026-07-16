@@ -28,8 +28,14 @@ export type DisclosureState = "pill" | "visualize" | "compare";
 export type Provenance = "pasted" | "file" | "url" | "dropped" | "provided";
 export type Medium = "text" | "svg" | "raster" | "ambiguous";
 export type VerdictState = "pending" | "different" | "no-difference" | "identical" | "unknown";
+// Event-surface status vocabularies. These mirror @entviz/core's WalkStatus /
+// CeremonyStatus, except core's "pending" (a walk/ceremony frozen by an early
+// "Done" before a verdict was reached) is surfaced as the self-documenting
+// "pending-done" — a completion event carrying a bare "pending" reads as a
+// contradiction. The emit sites map "pending" -> "pending-done" (EntvizWalk.ts,
+// EntvizCompare.ts, EntvizVoiceCompare.ts).
 export type WalkStatus = "no-difference" | "different" | "inconclusive" | "pending-done";
-export type CeremonyStatus = "no-difference" | "different";
+export type CeremonyStatus = "no-difference" | "different" | "pending-done";
 
 interface EntvizEventBase {
   /** Monotonic within a component instance. */

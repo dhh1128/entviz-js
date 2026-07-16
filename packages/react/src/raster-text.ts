@@ -59,8 +59,8 @@ function inkVector(r: Raster, rect: { x: number; y: number; w: number; h: number
   const grid: number[] = [];
   for (let by = 0; by < BY; by++) for (let bx = 0; bx < BX; bx++) {
     let sum = 0, n = 0;
-    for (let y = (by * GY / BY) | 0; y < ((by + 1) * GY / BY) | 0; y++)
-      for (let x = (bx * GX / BX) | 0; x < ((bx + 1) * GX / BX) | 0; x++) { sum += fine[y * GX + x]; n++; }
+    for (let y = (by * GY / BY) | 0; y < (((by + 1) * GY / BY) | 0); y++)
+      for (let x = (bx * GX / BX) | 0; x < (((bx + 1) * GX / BX) | 0); x++) { sum += fine[y * GX + x]; n++; }
     grid.push(n ? sum / n : 0);
   }
   const total = grid.reduce((a, b) => a + b, 0) || 1;

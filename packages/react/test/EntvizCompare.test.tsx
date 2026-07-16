@@ -868,7 +868,7 @@ describe("EntvizCompare onEvent firehose", () => {
     }
     const done = last(onEvent, "voice.complete");
     expect(done).toBeTruthy();
-    expect(["no-difference", "different"]).toContain(done.status);
+    expect(["no-difference", "different", "pending-done"]).toContain(done.status);
     // The live check-order must never leave the endpoint: no voice.start, no voice.step.
     expect(of(onEvent, "voice.start").length).toBe(0);
     expect(of(onEvent, "voice.step").length).toBe(0);

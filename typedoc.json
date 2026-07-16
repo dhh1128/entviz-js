@@ -7,6 +7,5 @@
   "readme": "packages/react/docs/integration.md",
   "excludePrivate": true,
   "excludeInternal": true,
-  "hideGenerator": true,
-  "skipErrorChecking": true
+  "hideGenerator": true
 }

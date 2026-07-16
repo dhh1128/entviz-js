@@ -457,7 +457,7 @@ function labelMods(ch: Characterization): string[] {
   } else if (scheme === "multihash") {
     const hashName = q.hash;
     if (hashName && hashName !== "sha2-256") mods.push(String(hashName));
-  } else if (BLOCKCHAIN_SCHEMES.has(scheme)) {
+  } else if (scheme !== null && BLOCKCHAIN_SCHEMES.has(scheme)) {
     // Network only on departure (testnet); mainnet silent. Variant dropped.
     const network = q.network;
     if (network && network !== "mainnet") mods.push(String(network));
