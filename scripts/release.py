@@ -192,6 +192,11 @@ def run_gate():
     """The same gate CI enforces."""
     print("Running the gate (npm test across the workspace)...")
     run(["npm", "test", "--workspaces", "--if-present"])
+    # tests type-strip (node --test / Vitest) and never see a type error, so the
+    # gate also runs the strict compiler over both packages — mirrors ci.yml's
+    # typecheck job. A type error aborts the release before any commit/push/tag.
+    print("Type-checking (npm run typecheck)...")
+    run(["npm", "run", "typecheck"])
 
 
 def prompt_message(part):

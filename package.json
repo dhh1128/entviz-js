@@ -8,11 +8,13 @@
     "apps/*"
   ],
   "scripts": {
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "typecheck": "tsc --noEmit -p tsconfig.typedoc.json"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typedoc": "^0.27.0"
+    "typedoc": "^0.27.0",
+    "typescript": "^5.8.0"
   },
   "license": "Apache-2.0",
   "repository": {
