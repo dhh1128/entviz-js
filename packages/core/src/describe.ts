@@ -431,7 +431,7 @@ export interface GridShape {
  * tokenization render() uses, so the offered shapes are exactly the achievable
  * ones — picking one and feeding its `targetAr` back to render reproduces it.
  */
-export function gridShapes(value: string, opts: RenderOptions = {}): GridShape[] {
+export function gridShapes(value: string): GridShape[] {
   const { core, alphabet } = classifyInput(value.trim());
   const { tokens, truncated } = tokenizeEntropy(core, alphabet);
   const count = truncated ? MAX_TOKENS : tokens.length;

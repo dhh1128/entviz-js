@@ -1854,7 +1854,7 @@ export function render(entropy: string, opts: RenderOptions = {}): string {
   const hasBottom = Boolean(suffix) || Boolean(note);
   const geom = computeGeometry(fontSizePt, grid, hasBottom);
   const {
-    fs, nucleusWidth, nucleusHeight, boxWidth, boxHeight, cellWidth, cellHeight,
+    nucleusWidth, nucleusHeight, boxWidth, boxHeight, cellWidth, cellHeight,
     barWidth, gridW, gridH, boundingW, boundingH, gridLeft, gridTop,
   } = geom;
   const { cellTextPx, labelTextPx } = cellTextSizes(fontSizePt, alphabet);
