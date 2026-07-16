@@ -41,6 +41,12 @@ export interface TrustAssumption {
   // EARNED PROMOTION — a value elevates to trusting once the user completes a
   // successful formal comparison. Not built in v1; the shape is reserved here so
   // v2 slots in without a breaking change.
+  //
+  // idea (tick ~43ml): an `autoLabel` RESOLVER — a (possibly async, lazy) function
+  // that looks a value up (registry / address book / KEL alias table) and returns a
+  // human name for the pill's label slot. Unlike the deterministic mnemonic channel
+  // (mmtxrg4w), this is a host-supplied LOOKUP, not value-derived; still corpus-gated
+  // and rule-out-never-rule-in (a looked-up name is not verification). Not built.
 }
 
 /** Which value-derived channels are enabled, after applying the posture gate. */
