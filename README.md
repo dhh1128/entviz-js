@@ -1,7 +1,9 @@
 # entviz-js
 
 [![CI](https://github.com/dhh1128/entviz-js/actions/workflows/ci.yml/badge.svg)](https://github.com/dhh1128/entviz-js/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/dhh1128/entviz-js/actions/workflows/codeql.yml/badge.svg)](https://github.com/dhh1128/entviz-js/actions/workflows/codeql.yml)
 [![Release](https://github.com/dhh1128/entviz-js/actions/workflows/release.yml/badge.svg)](https://github.com/dhh1128/entviz-js/actions/workflows/release.yml)
+[![Pages](https://github.com/dhh1128/entviz-js/actions/workflows/pages.yml/badge.svg)](https://github.com/dhh1128/entviz-js/actions/workflows/pages.yml)
 [![npm (@entviz/core)](https://img.shields.io/npm/v/@entviz/core.svg?label=%40entviz%2Fcore)](https://www.npmjs.com/package/@entviz/core)
 [![node-current (@entviz/core)](https://img.shields.io/node/v/@entviz/core)](https://www.npmjs.com/package/@entviz/core)
 [![types included](https://img.shields.io/npm/types/@entviz/core)](https://www.npmjs.com/package/@entviz/core)
