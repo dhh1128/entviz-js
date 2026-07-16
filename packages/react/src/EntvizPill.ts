@@ -115,6 +115,17 @@ export interface EntvizPillProps {
   /** Show the in-popover compare affordance (default true when `onCompare` is set).
    *  Lets a host keep the onCompare hook but suppress the built-in button. */
   showCompareAffordance?: boolean;
+  /** Called when the user asks to LOCATE this value's other occurrences in the host's
+   *  own corpus (e.g. "highlight every pill with this value"). Providing it opts the
+   *  pill into the in-popover "Find other occurrences…" affordance. This is the honest
+   *  in-corpus companion to the recognition aids — a RECOGNITION act, never an equality
+   *  verdict (that stays behind onCompare / the reference-requiring compare flow). The
+   *  pill holds no knowledge of the corpus, so it only surfaces the affordance and fires
+   *  the hook; finding + revealing the occurrences is the host's job. */
+  onLocate?: () => void;
+  /** Show the in-popover locate affordance (default true when `onLocate` is set). Lets a
+   *  host keep the onLocate hook but suppress the built-in button. */
+  showLocateAffordance?: boolean;
   onCopy?: (kind: CopyKind) => void;
   onError?: (message: string) => void;
   /** The typed event firehose (see events.ts). Notify-only, in addition to the
@@ -265,7 +276,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
     label, typeSignal = "autoCombo", corner, highlight, trust, maxWidth, locale, dir,
-    messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
+    messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance,
+    onLocate, showLocateAffordance, onCopy, onError, onEvent,
   } = props;
 
   // The event firehose: a stable `emit` bound to the latest onEvent, stamping
@@ -445,6 +457,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // the popover (the rail's Visualize step is the way back). disclosure.change fires
   // off the derived state, so no explicit emit here.
   const exitCompare = () => { setComparing(false); };
+  // Locate (this.i lc4ktz6n): notify the host to reveal this value's other occurrences in
+  // ITS corpus, emit the notify-only firehose event, then hand control back by collapsing
+  // (the host now owns the reveal — highlight/scroll — in its own document). Recognition,
+  // not a verdict; un-gated by the trust posture, like copy/compare.
+  const doLocate = () => { onLocate?.(); emit({ type: "locate" }); collapse(); };
 
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
@@ -527,6 +544,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // Compare is offered only when the host opts in via onCompare (design §5 / Seam
   // 2): the pill stays recognition-only unless a verification path is wanted.
   const compareAvailable = !!onCompare && (showCompareAffordance ?? true);
+  // Locate is a lateral RECOGNITION action ("where else is this in the corpus?"), not a
+  // step in the Cite·Visualize·Compare progression — so it's a footer action in the
+  // Visualize popover, not a rail step. Offered only when the host opts in via onLocate.
+  const locateAvailable = !!onLocate && (showLocateAffordance ?? true);
   const activeStep = comparing ? "compare" : "visualize";
   const railSteps: [string, string][] = compareAvailable
     ? [["cite", m.stepCite], ["visualize", m.stepVisualize], ["compare", m.stepCompare]]
@@ -727,6 +748,32 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // drop / URL acquisition, the verdict machine, the guided walk, the voice
   // ceremony) comes along unchanged; the pill only adds the rail + the deliberate,
   // reference-requiring entry into it.
+  // A footer action under the visualization — NOT a rail step: locating siblings is a
+  // lateral recognition move, not a stage of the verification progression. Offered only
+  // in Visualize (never mid-compare, never on an unrenderable pill). The label is
+  // English-fallbacked so it ships before the per-locale CATALOG is translated.
+  const locateLabel = m.locateAction ?? "Find other occurrences…";
+  const locateButton = locateAvailable
+    ? h(
+        "button",
+        {
+          key: "locate",
+          type: "button",
+          onClick: doLocate,
+          title: locateLabel,
+          "aria-label": locateLabel,
+          style: {
+            alignSelf: "center", marginTop: 2, font: "inherit", fontSize: "0.85em",
+            color: "inherit", opacity: 0.8, cursor: "pointer",
+            background: "none",
+            border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
+            borderRadius: cssVar("radius", "999px"), padding: "2px 10px",
+          },
+        },
+        locateLabel,
+      )
+    : null;
+
   const popoverBody = error
     ? h("span", { style: { color: cssVar("error", "#b00020"), fontFamily: "ui-monospace, monospace", fontSize: 12 } }, error)
     : comparing
@@ -734,7 +781,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // alignSelf centers the (content-width) visualization within the popover's
       // left-aligned column — the rail spans wider, so without this the glyph hugs
       // the left. (Its own toolbar is centered under it by Entviz's wrapper.)
-      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, messages: m, style: { alignSelf: "center" } })];
+      : [rail, h(Entviz, { key: "viz", value, targetAr, fontSizePt, note, controls: true, messages: m, style: { alignSelf: "center" } }), locateButton];
 
   const popover = isOpen
     ? toPortal(
