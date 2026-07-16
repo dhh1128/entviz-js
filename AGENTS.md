@@ -5,6 +5,31 @@ may already exist in your dev environment. New features can be added here,
 but should never violate the specification or the documentation about the
 entviz technology that have their definitive embodiment in the entviz repo. 
 
+## The Intent Layer (`this.i`)
+
+This repo practices intent-driven development: **comprehension is the primary
+output, not code.** Every significant design decision, tradeoff, and goal is
+recorded in [`this.i`](this.i) at the repo root — a hierarchical "intent code"
+tree of `goal` / `decision` / `constraint` nodes, each with an 8-character id, a
+`why:` rationale, and an optional `status:`. The full methodology (format, node
+kinds, fields, workflow) is vendored in
+[`docs/intent-methodology.md`](docs/intent-methodology.md) — **read it before
+editing `this.i`.**
+
+- **Intent check before implementing.** Read `this.i` (and the sister repo's
+  `docs/spec.md` when your change could touch rendered output) to confirm your
+  plan aligns with recorded intent.
+- **Update `this.i` first** when a task involves a design choice — capture the
+  decision and its *why* before writing code.
+- **Ledger vs. showroom.** The `tick` ledger (below) is the workshop for
+  transient tasks/debt/ideas; `this.i` is the showroom for settled intent. A
+  tick that proves to be a durable design decision **graduates** into `this.i`
+  when it closes.
+- **SSOT boundary.** The core entviz spec/algorithm intent is authoritative in
+  the sister `entviz` repo; `this.i` here records intent for the JS/TS surface
+  (`@entviz/core` derivations, `@entviz/react` chrome) around the closed
+  artifact — it must never diverge from the spec.
+
 <!-- >>> tick stanza >>> (managed by `tick init`) -->
 
 ## Task tracking: `tick`

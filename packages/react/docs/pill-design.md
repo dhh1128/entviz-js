@@ -108,8 +108,11 @@ value-derived visual (glance-equivalence) — both rejected.
 
 ### 3.3 Why no value characters and no value-derived visual
 
-- **No truncated value chars** (`014d…b5e2`): this trains the prefix/suffix
-  heuristic that vanity-grinding attacks defeat (threat-model T1/T6; paper §5.1).
+- **No SHORT truncated value chars inline** (`014d…b5e2`): an ~8-char head+tail
+  teaser is both glanceable *and* grindable (a ~48-bit prefix collision is feasible),
+  so it trains the prefix/suffix heuristic vanity-grinding defeats (threat-model
+  T1/T6; paper §5.1). This is about a *short inline* teaser — **not** a full-value
+  hover preview, which shows the whole identifier and is far too long to grind (§14).
 - **No single color / color-bar crop**: a lossy projection of identity invites
   glance-equivalence. A *constant* badge (zero identity bits) does not.
 
@@ -125,8 +128,9 @@ value-derived visual (glance-equivalence) — both rejected.
 
 ### 3.5 Interaction
 
-- **Hover/focus signals only** — cursor + subtle affordance + tooltip
-  *"View visualization"*. It does **not** auto-pop the entviz (avoids accidental
+- **Hover/focus signals only** — pointer cursor + subtle affordance; the tooltip
+  **previews the value** (§14), not a "View visualization" hint (the cursor already
+  signals clickability). It does **not** auto-pop the entviz (avoids accidental
   triggers while reading; respects touch/AT; viewing takes intent).
 - **Click / Enter / Space → expand** (Fork B: expand is the default primary
   action). A host whose context is "use this value" rather than "verify it" may
@@ -173,6 +177,9 @@ every platform; no theme/font adaptation.
 | Prop | Type | Default | Notes |
 |---|---|---|---|
 | `showIcon` | `boolean` | `true` | Render the constant badge. |
+| `corner` | `CornerToken` | none | Corner-shape channel (this.i `gk37dm5n`). Explicit corner treatment; wins over `cornerMap`. **Un-gated** — encodes the value's `role` (already disclosed as the type text), not the value, so it carries no identity bits and is safe in any posture. |
+| `cornerMap` | `CornerMap` | none | Map the value's `role` (`null` → `"raw"`) to a corner treatment. Its own shareable object (kept out of the trust policy). See §12. |
+| `trust` | `TrustAssumption` | none | The value's **trust posture** (this.i `ujdwjtex`). Absent / `posture:"wild"` → all value-derived channels off (the maximum-safety default). `posture:"corpus"` opts a same-origin, already-trusted value set into the recognition channels it enables (`mnemonic`, …). **Never expose changing this to the end user.** See §13. |
 | `maxWidth` | `number \| string` | none | Clip overflow; type yields first. |
 | `className`, `style` | — | — | Applied to the **pill chrome**, not the entviz. |
 | `locale` | `string` | auto (`navigator.languages`) | Override locale (§8). |
@@ -320,3 +327,103 @@ open), and consider `vi`. English is the fallback for any unmatched tag.
 - In-container **controls** (font size, AR, channel toggles) — architecture
   reserved in §7, not designed.
 - An opt-in **click→copy-value** primary action for "use this value" hosts (§3.5).
+
+## 12. Corner-shape channel (`gk37dm5n`)
+
+A gestalt cue that encodes the value's **semantic `role`** — signature vs. digest
+vs. key vs. address vs. identifier — in the pill's corner geometry, so a scanner of
+a homogeneous stream (e.g. a KERI KEL) can tell *categories* apart at a glance.
+
+**Un-gated by the trust posture.** Unlike the mnemonic/icon/color channels, the
+corner derives from the *type* entviz already discloses as trusted text, not from
+the value — so it leaks no identity bits, an attacker can't forge it without
+producing a value of that role, and it is safe even in the wild posture.
+
+- **Resolution** (pure, `@entviz/core`): `resolveCorner(role, cornerMap)` — the
+  closed `role` enum with `null` normalized to `"raw"`, resolved against the host
+  map; total (explicit entry → `default` → built-in `DEFAULT_CORNER`).
+- **Vocabulary** (`CORNER_TOKENS`, six shapes — one per role bucket): chosen for
+  mutual *distinctiveness* at pill size (radius magnitude barely reads, so the signal
+  is round-vs-angular, diagonal asymmetry, and leading-edge treatments) —
+  `round` (softly rounded), `sharp` (square), `leaf` (rounded diagonal TL+BR),
+  `bevel` (angular chamfer on the *other* diagonal TR+BL), `notch` (a triangular bite
+  in the leading edge, under the badge), `arrow` (leading corners clipped to a leftward
+  chevron). `round`/`sharp`/`leaf` are per-corner `border-radius` (border intact);
+  `bevel`/`notch`/`arrow` are `clip-path` (the cut edges drop the hairline border,
+  reading as a deliberate cut).
+- **`DEFAULT_CORNER_MAP`**: a ready-to-use `role → corner` **bijection** — all five
+  roles plus `raw` get distinct shapes out of the box: `identifier→round`,
+  `raw→sharp`, `signature→leaf`, `key→bevel`, `digest→notch`, `address→arrow`.
+- **`role → "raw"` is honest, not a gap:** `role` is `null` exactly when the
+  recognizer asserts no category (bare hex is just hex); shaping it as a `digest`
+  would claim knowledge entviz doesn't have.
+
+Typical use in a KEL viewer keys mostly on CESR roles — or just reuse
+`DEFAULT_CORNER_MAP`: `{ identifier: "round", raw: "sharp", signature: "leaf", key: "bevel", digest: "notch", address: "arrow", default: "round" }`.
+
+## 13. Trust posture & the corpus recognition channels (`ujdwjtex`)
+
+entviz's pill is built for the **wild** posture — adversarial, zero identity bits, so
+it can never be glance-compared. A host that owns a closed, single-origin, already-trusted
+body of values (a **corpus** — e.g. a KERI KEL from the user's own machine) can opt that
+set into **value-derived recognition channels** that make recurrence scannable.
+
+- **The gate is a `TrustAssumption`** — a shareable, host-declared, v1-immutable object,
+  passed via the `trust` prop. Provenance is per-**value**, not per-viewport: configure one
+  assumption for a same-origin set, reference it from each of those pills; foreign entropy
+  gets a different assumption (or none → wild). `resolveChannels(trust)` (core) is the pure
+  gate: outside `posture:"corpus"`, **every** channel is off regardless of flags; within
+  corpus, each channel is opt-in (default off).
+- **Channel 1 — the auto-mnemonic (`mmtxrg4w`).** `mnemonic(cells, sizeBits)` (core) is built
+  **only from the entviz's own displayed cells**, so it can never show a character the
+  visualization doesn't (the key consistency rule — a base64url slice of the SHA-512 tail,
+  the rejected v1, appears *nowhere* in the entviz). Shape scales with entropy: `< 256` bit →
+  `first…last` (e.g. `550e84…00`); `≥ 256` bit → `first-two…middle…last` (e.g.
+  `DKxy2sgz…19f2…imBx`), where a >512-bit input's middle is a genuine fingerprint-middle cell.
+  The `…` is honest — the omitted middle cells are all present on expand. It fills the pill's
+  label slot (in monospace) when enabled and no explicit `label` is set; explicit `label` wins.
+- **Channel 2 — the auto-color tint (`tgowi7go`).** `autoColorIndex(value)` (core) hashes
+  the value's fingerprint (its *last* byte — a different slice from the mnemonic's, so the
+  channels are semi-independent) into a 16-hue `AUTO_COLOR_PALETTE`. The pill paints it as a
+  **transparent** background tint (`autoTint`, react), so the host theme shows through and it
+  reads on light *and* dark without a per-theme palette. 16 hues = 4 bits = a **soft
+  pre-filter** ("the red ones"), never a partition — collisions are expected at scale.
+- **Channel 3 — the colorbar icon (`wn3r6aex`).** Under corpus + `icon:true`, the constant
+  2×2 badge is replaced by a value-derived **mini of the entviz's own colorbar**, in the same
+  leading-cap slot: a **vertical** bar the same width the colorbar has in the visualization
+  (`barWidth = 2·boxHeight` ≈ 1.25em), filling the pill height, bands stacked top→bottom at
+  heights ∝ **count⁴** (the viz's dominance function, so one band usually dominates), with the
+  two gutter markers as opaque **white discs + black halo** — exactly as the viz draws them
+  (`colorbarIcon`, react; pure layout in `colorbarIconGeometry`). Because it draws the actual
+  colorbar data, it's independent of the auto-color tint. It stays visually distinct from the
+  2×2 block (a banded vertical bar vs. a square grid), so a constant badge and a derived icon
+  are never confused; wild always keeps the constant badge.
+- **Recognition, never verification.** A matching mnemonic, tint, or icon is a
+  *rule-out-not-rule-in* cue — two matching pills still route through Compare.
+
+**Security — the posture is never an end-user affordance.** Trust is asserted by the party
+that *knows* the provenance (the host, in code), not by the reader deciding whether to trust.
+The pill therefore exposes **no** control to change its own posture — a "mark as trusted"
+button would be a one-click false-reassurance vector. The only runtime elevation is **earned
+promotion** (this.i `xlqpkhfy`, tick `~2lia`, v2): a value rises wild→trusting by the user
+*completing a successful formal comparison*, never by a toggle.
+
+## 14. Copy-on-selection & the hover value preview
+
+Two affordances that make the value reachable without opening the pill — both
+**un-gated** (they don't depend on the trust posture), because neither is the §3.3
+short-prefix grinding vector.
+
+- **Copy-on-selection (D).** The visible chrome (badge/icon, type, role, label/mnemonic,
+  ⋮) is `user-select: none`; a hidden, `aria-hidden`, *selectable* span carries the raw
+  value. So a text selection sweeping a paragraph that contains the pill contributes only
+  the **value** to the clipboard — not the type/label/kebab glyphs. (Copying is fine in any
+  posture; "Copy value" already exists.) The value now lives, hidden, in the DOM — a
+  select-all grabs it, same exposure as Copy value; relevant only if `value` is secret.
+- **Hover value preview (E).** The tooltip shows the value (first `VALUE_PREVIEW_CHARS`
+  ≈ 72 chars, `…` beyond) — the full value for essentially every identifier. This is **not**
+  §3.3's grinding vector: that targets a *short* (~8-char) glanceable, grindable teaser,
+  whereas a 50–75 char prefix is the whole value for most inputs and a hundreds-of-bits
+  prefix is computationally out of reach to grind. The old "View visualization" tooltip is
+  gone — the pointer cursor already signals clickability. The accessible name is unchanged
+  (`aria-label` = "view visualization, {type}").

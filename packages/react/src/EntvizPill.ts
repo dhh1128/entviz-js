@@ -29,11 +29,20 @@ import { createPortal } from "react-dom";
 import {
   characterize,
   describeChannels,
+  mnemonic,
   render,
+  resolveChannels,
+  resolveCorner,
   type Characterization,
   type ChannelDescription,
+  type CornerMap,
+  type CornerToken,
   type RenderOptions,
+  type TrustAssumption,
 } from "@entviz/core";
+import { cornerStyle } from "./corners.ts";
+import { autoTint } from "./auto-color.ts";
+import { colorbarIcon } from "./pill-icon.ts";
 import { Entviz } from "./Entviz.ts";
 import { EntvizCompare } from "./EntvizCompare.ts";
 import { copyEntviz, type CopyKind } from "./copy-actions.ts";
@@ -55,6 +64,19 @@ export interface EntvizPillProps {
   /** Show the parser-derived type label (default true). Independent of `label`. */
   showType?: boolean;
   showIcon?: boolean;
+  /** Corner-shape channel (this.i gk37dm5n). An explicit corner treatment; wins over
+   *  `cornerMap`. UN-gated by any trust posture — the corner encodes the value's
+   *  semantic type (already disclosed as the trusted type text), never the value. */
+  corner?: CornerToken;
+  /** Map the value's `role` (null → `"raw"`) to a corner treatment; ignored where
+   *  `corner` is set. Its own shareable object, kept out of the trust policy. */
+  cornerMap?: CornerMap;
+  /** The value's trust posture (this.i ujdwjtex) — a shareable, host-declared object
+   *  that gates the value-derived channels. Absent, or `posture:"wild"`, keeps them
+   *  all OFF (the default, maximum-safety wild posture). `posture:"corpus"` opts a
+   *  same-origin, already-trusted set of values into the recognition affordances it
+   *  enables (e.g. `mnemonic`). NEVER expose changing this to the end user. */
+  trust?: TrustAssumption;
   maxWidth?: number | string;
   locale?: string;
   /** Chrome writing direction. "auto" (default) follows the locale's script. */
@@ -97,6 +119,10 @@ export interface EntvizPillProps {
 // cells off the bottom row so the badge doesn't read as bottom-heavy. Constant
 // on every entviz (zero identity bits — design §3.1).
 const BADGE = ["#e7be00", "#2f3fbf", "#000000", "#ff3f2f"];
+
+// The hover tooltip's value-preview cap. Long enough to show a full AID/UUID/ETH/hash
+// in one line; truncates a long key with an ellipsis (still far too long to grind).
+const VALUE_PREVIEW_CHARS = 72;
 
 /** The unit word in the "Copied value · N <unit>" confirmation. The pill's type is
  *  the bare entropy category (e.g. "hex"), so hex is an exact match. */
@@ -234,7 +260,7 @@ function useFloating(anchorRef: RefObject<HTMLElement | null>, open: boolean, rt
 export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
-    label, showType = true, showIcon = true, maxWidth, locale, dir,
+    label, showType = true, showIcon = true, corner, cornerMap, trust, maxWidth, locale, dir,
     messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance, onCopy, onError, onEvent,
   } = props;
 
@@ -250,7 +276,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const dirAttr: "rtl" | "ltr" | undefined = rtl ? "rtl" : dir === "ltr" ? "ltr" : undefined;
 
   const opts: RenderOptions = { targetAr, fontSizePt, note };
-  const { type, role, channels, svg, error } = useMemo(() => {
+  const { type, role, channels, svg, error, sizeBits } = useMemo(() => {
     try {
       // v13: read the STRUCTURED characterization (scheme/role/qualifiers/
       // entropyType) instead of string-parsing the drawn label. `type` is the
@@ -263,6 +289,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       return {
         type: pillType(ch),
         role: pillRole(ch),
+        sizeBits: ch.sizeBits,
         channels: chan as ChannelDescription | null,
         svg: render(value, opts),
         error: null as string | null,
@@ -271,6 +298,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       return {
         type: null as string | null,
         role: null as string | null,
+        sizeBits: 0,
         channels: null as ChannelDescription | null,
         svg: null as string | null,
         error: e instanceof Error ? e.message : String(e),
@@ -432,11 +460,39 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const onMenuKey = (e: ReactKeyboardEvent) =>
     onMenuKeyNav(e, () => [...(menuFloat.ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]);
 
+  // Trust gate (ujdwjtex): which value-derived channels this posture enables. Absent
+  // or wild → all off (maximum safety). The mnemonic (mmtxrg4w) is the first such
+  // channel; it's value-derived text, so it renders ONLY under a corpus posture.
+  const gate = resolveChannels(trust);
+  // The mnemonic reads the entviz's OWN cells (channels), so it only ever shows text
+  // the visualization shows. `channels` is null exactly when render failed, so this is
+  // skipped on an unrenderable pill.
+  const autoMnemonic = useMemo(
+    () => (gate.mnemonic && channels ? mnemonic(channels.cells, sizeBits) : null),
+    [gate.mnemonic, channels, sizeBits],
+  );
+  // The label slot shows explicit host text when given, else the mnemonic when the
+  // corpus posture enabled it — explicit `label` wins (host text is more meaningful).
+  const shownLabel = label ?? autoMnemonic;
+  const labelIsMnemonic = !label && !!autoMnemonic;
+
+  // Auto-color channel (tgowi7go): a subtle value-hued background tint, gated by the
+  // corpus posture. A transparent color-mix, so it composes with the host theme.
+  const autoBg = gate.autoColor && !error ? autoTint(value) : null;
+
+  // The hover tooltip previews the value — in BOTH postures. This does NOT reintroduce
+  // §3.3's grinding vector: that targets a SHORT (~8-char) head+tail teaser, which is
+  // both glanceable AND grindable (a ~48-bit prefix collision is feasible). This preview
+  // shows the FULL value for essentially every identifier, and a >VALUE_PREVIEW_CHARS-char
+  // (hundreds-of-bits) prefix is computationally out of reach to grind. The old "View
+  // visualization" hint is dropped — the pointer cursor already signals clickability.
+  const valuePreview = value.length > VALUE_PREVIEW_CHARS ? value.slice(0, VALUE_PREVIEW_CHARS) + "…" : value;
+
   // Type is the trusted, derived channel — the BARE entropy type only. The
   // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
-  // concern, so it never appears here. `label` is first-party host text; never the
-  // note (self-declared) on the pill.
-  const shownParts = [showType ? type : null, label].filter(Boolean) as string[];
+  // concern, so it never appears here. `label` is first-party host text (or the
+  // gated mnemonic); never the note (self-declared) on the pill.
+  const shownParts = [showType ? type : null, shownLabel].filter(Boolean) as string[];
   const ariaText = shownParts.length ? shownParts.join(", ") : (type ?? "unrenderable");
   const ariaLabel = fmt(m.ariaView, { type: ariaText });
 
@@ -449,6 +505,14 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   ];
 
   const cssVar = (name: string, fallback: string) => `var(--entviz-pill-${name}, ${fallback})`;
+
+  // Corner channel (gk37dm5n): an explicit `corner` wins; else resolve the value's
+  // role (null → "raw") through a host `cornerMap`; else keep the themeable default
+  // radius untouched, so an unconfigured pill is byte-for-byte unchanged.
+  const cornerToken = corner ?? (cornerMap ? resolveCorner(role, cornerMap) : null);
+  const cornerCss: CSSProperties = cornerToken
+    ? cornerStyle(cornerToken)
+    : { borderRadius: cssVar("radius", "0.5em") };
 
   // --- disclosure-lifecycle chrome (Cite · Visualize · Compare) --------------
   // Compare is offered only when the host opts in via onCompare (design §5 / Seam
@@ -486,33 +550,37 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     }),
   );
 
-  // --- badge ---
-  // The badge is the pill's leading cap: a square color swatch bled over the
-  // pill's 1px border on the top, bottom, and leading edge (via negative margins)
-  // so its color runs flush to the pill's outer edge with a crisp square corner.
-  // The pill's own leading corners are squared to match (pillBody, below).
+  // --- badge / icon ---
+  // The pill's leading cap. By default it's the CONSTANT 2×2 badge — zero identity
+  // bits, a square color swatch bled flush to the pill edge. Under a corpus posture
+  // that opted in the icon channel (wn3r6aex), it is instead the VALUE-DERIVED colorbar
+  // icon — a horizontal micro-bar, deliberately distinct in shape from the 2×2 block so
+  // the two are never confused. Wild always keeps the constant badge.
+  const constBadge = h(
+    "span",
+    {
+      "aria-hidden": true,
+      style: {
+        display: "inline-grid",
+        gridTemplateColumns: "1fr 1fr",
+        gridTemplateRows: "1fr 1fr",
+        // Fill the pill's inner height (whatever the text's line box works out
+        // to, including descender room) with a fixed-width swatch. The pill's
+        // overflow:hidden clips the swatch's leading corners to the pill radius.
+        // (aspect-ratio + stretch collapses an empty grid item's width, so the
+        // width is set explicitly rather than derived from the height.)
+        alignSelf: "stretch",
+        width: "1.3em",
+        overflow: "hidden",
+        flex: "0 0 auto",
+      },
+    },
+    BADGE.map((c) => h("span", { key: c, style: { background: c } })),
+  );
   const badge = showIcon
-    ? h(
-        "span",
-        {
-          "aria-hidden": true,
-          style: {
-            display: "inline-grid",
-            gridTemplateColumns: "1fr 1fr",
-            gridTemplateRows: "1fr 1fr",
-            // Fill the pill's inner height (whatever the text's line box works out
-            // to, including descender room) with a fixed-width swatch. The pill's
-            // overflow:hidden clips the swatch's leading corners to the pill radius.
-            // (aspect-ratio + stretch collapses an empty grid item's width, so the
-            // width is set explicitly rather than derived from the height.)
-            alignSelf: "stretch",
-            width: "1.3em",
-            overflow: "hidden",
-            flex: "0 0 auto",
-          },
-        },
-        BADGE.map((c) => h("span", { key: c, style: { background: c } })),
-      )
+    ? gate.icon && channels && !error
+      ? colorbarIcon(channels)
+      : constBadge
     : null;
 
   // --- pill text (type + optional role caption + label) ---
@@ -538,7 +606,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         showType && type && role
           ? h("span", { key: "role", style: pillRoleStyle }, role)
           : null,
-        label ? h("span", { key: "label" }, label) : null,
+        // The label slot: host text as-is, or the gated mnemonic in monospace so its
+        // value-derived characters read as a recognition anchor (and align across pills).
+        shownLabel
+          ? h("span", { key: "label", style: labelIsMnemonic ? mnemonicStyle : undefined }, shownLabel)
+          : null,
       )
     : null;
 
@@ -552,7 +624,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) { e.preventDefault(); doCopy("value"); }
         else if (e.key === "ArrowDown") { e.preventDefault(); openMenu(); }
       },
-      title: m.view,
+      // No "View visualization" hover hint — the pointer cursor already signals
+      // clickability. The tooltip previews the value instead (both postures; see above).
+      title: valuePreview,
       "aria-label": ariaLabel,
       "aria-expanded": isOpen,
       style: {
@@ -606,13 +680,18 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         paddingBlock: 0,
         paddingInlineStart: showIcon ? 0 : "0.4em",
         paddingInlineEnd: "0.15em",
-        borderRadius: cssVar("radius", "0.3em"),
+        ...cornerCss,
         // Clip the badge swatch's leading corners to the pill radius, and cap the
         // overall width so a long label clips instead of blowing out the line.
         overflow: "hidden",
         border: cssVar("border", "1px solid color-mix(in srgb, currentColor 25%, transparent)"),
-        background: cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
-        whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.35,
+        background: autoBg ?? cssVar("bg", "color-mix(in srgb, currentColor 6%, transparent)"),
+        whiteSpace: "nowrap", maxWidth: maxWidth ?? "24em", lineHeight: 1.25,
+        // The visible chrome (type, role, label/mnemonic, ⋮) is NOT selectable, so a
+        // text selection that sweeps across the pill contributes only the value (from
+        // the hidden selectable span in the wrapper), not the chrome glyphs. (D)
+        userSelect: "none",
+        WebkitUserSelect: "none",
       },
     },
     pillButton,
@@ -697,6 +776,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.remove("entviz-pill--hover"),
     },
     pillBody,
+    // Hidden but SELECTABLE copy of the raw value (D): a text selection sweeping the
+    // paragraph includes this (the visible chrome is user-select:none), so Ctrl/Cmd+C
+    // yields the value, not the type/label/⋮. aria-hidden so it adds no SR noise.
+    h("span", { "aria-hidden": true, style: selectableValueStyle }, value),
     menu,
     popover,
     h("span", { "aria-live": "polite", style: srOnly }, toast),
@@ -736,12 +819,27 @@ const pillRoleStyle: CSSProperties = {
   alignSelf: "center",
 };
 
+// The auto-mnemonic (mmtxrg4w): monospace so its value-derived characters line up
+// across pills and read as a recognition anchor rather than prose. A hair of
+// letter-spacing helps the eye lock onto individual glyphs.
+const mnemonicStyle: CSSProperties = {
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  letterSpacing: "0.02em",
+};
+
 const srOnly: CSSProperties = {
   position: "absolute",
   clip: "rect(0 0 0 0)",
   width: 1,
   height: 1,
   overflow: "hidden",
+};
+// Visually hidden like srOnly, but explicitly SELECTABLE so a text selection over the
+// pill copies the raw value (the visible chrome is user-select:none). (D)
+const selectableValueStyle: CSSProperties = {
+  ...srOnly,
+  userSelect: "text",
+  WebkitUserSelect: "text",
 };
 const menuStyle: CSSProperties = {
   zIndex: 30, display: "flex", flexDirection: "column", minWidth: 210,

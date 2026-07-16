@@ -198,10 +198,12 @@ describe("EntvizPill rendering", () => {
     proseClean("compare");
   });
 
-  test("renders the pill with badge, type, tooltip, and aria-label", () => {
+  test("renders the pill with badge, type, and aria-label; tooltip previews the value", () => {
     render(<EntvizPill value={HEX} />);
     const pill = screen.getByRole("button", { name: /view visualization/i });
-    expect(pill.getAttribute("title")).toBe("View visualization");
+    // The hover tooltip previews the value (not "View visualization"); the pointer
+    // cursor implies clickability. The accessible name is unchanged.
+    expect(pill.getAttribute("title")).toBe(HEX);
     expect(pill.getAttribute("aria-label")).toBe("view visualization, hex");
     expect(screen.getByText("hex")).toBeTruthy();
     // badge = a 2x2 grid of 4 constant color cells
@@ -427,9 +429,10 @@ describe("EntvizPill dir + locale", () => {
   test("locale localizes chrome; messages override wins", () => {
     const { rerender } = render(<EntvizPill value={HEX} locale="fr" />);
     expect(screen.getByRole("button", { name: /voir la visualisation/i })).toBeTruthy();
-    rerender(<EntvizPill value={HEX} locale="fr" messages={{ view: "Custom" }} />);
-    // the aria-label stays French; the `view` override changes the tooltip
-    expect(screen.getByRole("button", { name: /voir la visualisation/i }).getAttribute("title")).toBe("Custom");
+    // A messages override wins over the locale's chrome (the accessible name here,
+    // since the collapsed pill no longer carries a `view` tooltip).
+    rerender(<EntvizPill value={HEX} locale="fr" messages={{ ariaView: "Custom {type}" }} />);
+    expect(screen.getByRole("button", { name: "Custom hex" })).toBeTruthy();
   });
 });
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { EntvizPill, SUPPORTED_LOCALES } from "@entviz/react";
-import { render as renderEntviz, SPEC_VERSION } from "@entviz/core";
+import { render as renderEntviz, SPEC_VERSION, CORNER_TOKENS, DEFAULT_CORNER_MAP, type CornerToken, type TrustAssumption } from "@entviz/core";
 // Version badges read straight from source of truth so they never drift: the spec
 // revision from the core renderer, the package versions from their manifests.
 import corePkg from "../../../packages/core/package.json";
@@ -20,6 +20,7 @@ const DOC_LINKS: [string, string][] = [
 
 // Showcase inputs spanning the parsers the port supports (hex/UUID/ETH/text).
 const PRESETS: { label: string; value: string }[] = [
+  { label: "CESR pubkey (role: key)", value: "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx" },
   { label: "hex (64 digits)", value: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
   { label: "UUID", value: "550e8400-e29b-41d4-a716-446655440000" },
   { label: "ETH (EIP-55)", value: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" },
@@ -29,6 +30,17 @@ const PRESETS: { label: string; value: string }[] = [
   // is the default so the "pubkey" pill label matches the value.
   { label: "RSA-2048 public key", value: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv6PUUaSriz8CO7cvdTC9VHXbB/cONdugWSsMVsP5UBm73e2HPWVNxN1UsiXxC8ELPBODBPZWeI8Z05geCMed0Qm4CI6DgJEV53jp5fAUZPG7PSMXRCMK3CIfUrkw6SyRW8MrXI7JA24qPLpkSR+dNkb1rd+6Y4t+LFBa6qSqceQV8aXnZ48DzkW6YJ8wU6P357TqRn3Oi5SCSsN8+IYQ43Benu/HcS0ZMQIsjnr0K66dnI+PbVRr+t/TsPN+ioYIPWjs2pJciDLuhTyvXC2IyRIMUkogPiF0hIGaAF1oLJ34nmJj4Vkh+Pkh9/+DPAfkjW+jAaBBRDDoyzik/Pj0jwIDAQAB" },
 ];
+
+// The controls sidebar is tabbed so it doesn't run tall as the prop surface grows.
+// Value = what the entropy IS; Theme = the host environment; Pill = how the pill
+// renders. (A "Corpus" tab joins these as the trust-gated recognition channels land.)
+type TabId = "value" | "theme" | "pill" | "corpus";
+const TABS: [TabId, string][] = [["value", "Value"], ["theme", "Theme"], ["pill", "Pill"], ["corpus", "Corpus"]];
+
+// A fixed CESR Ed25519 signature (role: signature) for the app card's second pill,
+// so two DIFFERENT roles are on screen at once — with "by role" corners, the key
+// and the signature take visibly different shapes.
+const SIG = "0B" + "Kx9Rn2Vw8Lm4Gs6Hd1Jb5Fc0Ea".repeat(4).slice(0, 86);
 
 function randomHex(bytes: number): string {
   const u8 = new Uint8Array(bytes);
@@ -78,17 +90,38 @@ function evzVars(p: Palette): Record<string, string> {
 }
 
 export function App() {
-  // Default to the largest entropy (a fingerprint-rendering value) so the visualize
-  // view shows a full glyph out of the box.
-  const BIG = PRESETS[PRESETS.length - 1];
-  const [draft, setDraft] = useState(BIG.value);
-  const [value, setValue] = useState(BIG.value);
+  // Default to a CESR Ed25519 public key so the first/third pills show a real role
+  // ("cesr · key") out of the box, matching the "public key" narrative in the card.
+  const DEFAULT = PRESETS[0];
+  const [draft, setDraft] = useState(DEFAULT.value);
+  const [value, setValue] = useState(DEFAULT.value);
   const [fontSizePt, setFontSizePt] = useState(12);
   const [note, setNote] = useState("");
   const [locale, setLocale] = useState(""); // "" = auto-detect from the browser
-  const [pillLabel, setPillLabel] = useState("pubkey");
+  // Blank by default: with no host label, the pill shows only the type + role, which
+  // TRACK the value (unlike a hardcoded string). A label is opt-in host text, and —
+  // when set — it wins over the gated mnemonic.
+  const [pillLabel, setPillLabel] = useState("");
   const [showType, setShowType] = useState(true);
+  const [showIcon, setShowIcon] = useState(true);
+  // "" = default (round); "role" = apply DEFAULT_CORNER_MAP (shape follows the value's
+  // role); a token = force that one shape on every pill (for eyeballing the geometry).
+  const [corner, setCorner] = useState<CornerToken | "" | "role">("role");
+  // Corpus recognition (this.i ujdwjtex): the host-declared trust posture + which
+  // gated channels it opts in. `wild` (default) keeps everything value-derived off.
+  const [posture, setPosture] = useState<"wild" | "corpus">("wild");
+  const [mnemonicOn, setMnemonicOn] = useState(true);
+  const [autoColorOn, setAutoColorOn] = useState(true);
+  const [iconOn, setIconOn] = useState(true);
   const [themeIdx, setThemeIdx] = useState(0);
+  const [tab, setTab] = useState<TabId>("value");
+
+  // The TrustAssumption a real host would attach to a same-origin set of values.
+  // In the wild posture we pass nothing at all — the maximum-safety default.
+  const trust: TrustAssumption | undefined =
+    posture === "corpus"
+      ? { posture: "corpus", mnemonic: mnemonicOn, autoColor: autoColorOn, icon: iconOn }
+      : undefined;
 
   const opts = { fontSizePt, note: note || null };
   const theme = PALETTES[themeIdx];
@@ -111,11 +144,19 @@ export function App() {
     setValue(v);
   };
 
+  // The corner picker drives EITHER a role-map (shape follows role) or a forced
+  // single shape — never both, so `extra` (e.g. the sig pill's own value) still wins.
+  const cornerProps =
+    corner === "role" ? { cornerMap: DEFAULT_CORNER_MAP } : { corner: corner || undefined };
+
   const pill = (extra: Partial<React.ComponentProps<typeof EntvizPill>> = {}) => (
     <EntvizPill
       value={value}
       label={pillLabel || undefined}
       showType={showType}
+      showIcon={showIcon}
+      {...cornerProps}
+      trust={trust}
       fontSizePt={fontSizePt}
       note={note || null}
       locale={locale || undefined}
@@ -152,7 +193,8 @@ export function App() {
             </div>
             <p style={{ fontSize: 18, lineHeight: 1.8, margin: 0, maxWidth: "52ch" }}>
               When a peer shares their public key {pill()}, pin it the first time you see it — then, before you
-              trust what they send next, confirm it’s the very same key.
+              trust the message they sign with it {pill({ value: SIG })}, confirm both are the
+              very ones you expect.
             </p>
             {/* Mute the prose with a translucent TEXT color, not `opacity`: the pill
                 lives in this paragraph, and element opacity would dim its whole
@@ -199,72 +241,158 @@ export function App() {
             distinct from the themed host-app card on the left. */}
         <section style={sidebarStyle}>
           <div style={sidebarCaption}>Playground controls</div>
-          <label style={labelStyle}>
-            Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
-          </label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-            {PALETTES.map((p, i) => (
-              <button key={p.name} onClick={() => setThemeIdx(i)}
-                style={i === themeIdx ? themeBtnActive : themeBtn}>
-                {p.name}
+          <div role="tablist" aria-label="Playground controls" style={tabBar}>
+            {TABS.map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+                style={tab === id ? tabActive : tabBtn}>
+                {label}
               </button>
             ))}
           </div>
 
-          <label style={labelStyle}>Entropy</label>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") build(); }}
-            spellCheck={false}
-            rows={3}
-            style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid #ccc", resize: "vertical" }}
-          />
-          <div style={{ display: "flex", gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
-            <button onClick={build} style={primaryBtn} title="⌘↵ / Ctrl+Enter">Build</button>
-            <button onClick={surprise} style={ghostBtn}>Randomize</button>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-            {PRESETS.map((p) => (
-              <button key={p.label} onClick={() => { setDraft(p.value); setValue(p.value); }} style={chip}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {tab === "value" ? (
+            <>
+              <label style={labelStyle}>Entropy</label>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") build(); }}
+                spellCheck={false}
+                rows={3}
+                style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid #ccc", resize: "vertical" }}
+              />
+              <div style={{ display: "flex", gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
+                <button onClick={build} style={primaryBtn} title="⌘↵ / Ctrl+Enter">Build</button>
+                <button onClick={surprise} style={ghostBtn}>Randomize</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {PRESETS.map((p) => (
+                  <button key={p.label} onClick={() => { setDraft(p.value); setValue(p.value); }} style={chip}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
 
-          <label style={labelStyle}>
-            Font size <span style={{ fontWeight: 400, color: "#888" }}>({fontSizePt}pt — the initial render size; also adjustable inside the pill)</span>
-          </label>
-          <input type="range" min={6} max={30} step={2} value={fontSizePt}
-            onChange={(e) => setFontSizePt(Number(e.target.value))}
-            style={{ width: "100%", marginBottom: 16, accentColor: ACCENT }} />
+              <label style={labelStyle}>
+                Note <span style={{ fontWeight: 400, color: "#888" }}>(≤10 printable-ASCII chars; never hashed)</span>
+              </label>
+              <input type="text" value={note} maxLength={20} placeholder="e.g. git"
+                onChange={(e) => setNote(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }} />
 
-          <label style={labelStyle}>
-            Note <span style={{ fontWeight: 400, color: "#888" }}>(≤10 printable-ASCII chars; never hashed)</span>
-          </label>
-          <input type="text" value={note} maxLength={20} placeholder="e.g. git"
-            onChange={(e) => setNote(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", fontFamily: mono, fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }} />
+              <label style={labelStyle}>
+                Pill label <span style={{ fontWeight: 400, color: "#888" }}>(first-party host text — trusted, unlike the note)</span>
+              </label>
+              <input type="text" value={pillLabel} placeholder="e.g. signing-key"
+                onChange={(e) => setPillLabel(e.target.value)}
+                style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc" }} />
+            </>
+          ) : null}
 
-          <label style={labelStyle}>
-            Pill locale <span style={{ fontWeight: 400, color: "#888" }}>(chrome only — never the value; RTL mirrors chrome)</span>
-          </label>
-          <select value={locale} onChange={(e) => setLocale(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 16 }}>
-            <option value="">auto (browser)</option>
-            {SUPPORTED_LOCALES.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
+          {tab === "theme" ? (
+            <>
+              <label style={labelStyle}>
+                Ambient host theme <span style={{ fontWeight: 400, color: "#888" }}>— the components ship no fonts/colors; they inherit the host's type + a few <code style={{ fontFamily: mono }}>--entviz-*</code> vars</span>
+              </label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+                {PALETTES.map((p, i) => (
+                  <button key={p.name} onClick={() => setThemeIdx(i)}
+                    style={i === themeIdx ? themeBtnActive : themeBtn}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
 
-          <label style={labelStyle}>
-            Pill label <span style={{ fontWeight: 400, color: "#888" }}>(first-party host text — trusted, unlike the note)</span>
-          </label>
-          <input type="text" value={pillLabel} placeholder="e.g. signing-key"
-            onChange={(e) => setPillLabel(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 10 }} />
-          <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-            <input type="checkbox" checked={showType} onChange={(e) => setShowType(e.target.checked)} />
-            Show type label
-          </label>
+              <label style={labelStyle}>
+                Font size <span style={{ fontWeight: 400, color: "#888" }}>({fontSizePt}pt — the initial render size; also adjustable inside the pill)</span>
+              </label>
+              <input type="range" min={6} max={30} step={2} value={fontSizePt}
+                onChange={(e) => setFontSizePt(Number(e.target.value))}
+                style={{ width: "100%", marginBottom: 16, accentColor: ACCENT }} />
+
+              <label style={labelStyle}>
+                Pill locale <span style={{ fontWeight: 400, color: "#888" }}>(chrome only — never the value; RTL mirrors chrome)</span>
+              </label>
+              <select value={locale} onChange={(e) => setLocale(e.target.value)} style={selectStyle}>
+                <option value="">auto (browser)</option>
+                {SUPPORTED_LOCALES.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </>
+          ) : null}
+
+          {tab === "pill" ? (
+            <>
+              <label style={checkRow}>
+                <input type="checkbox" checked={showType} onChange={(e) => setShowType(e.target.checked)} />
+                Show type label
+              </label>
+              <label style={checkRow}>
+                <input type="checkbox" checked={showIcon} onChange={(e) => setShowIcon(e.target.checked)} />
+                Show badge icon
+              </label>
+
+              <label style={{ ...labelStyle, marginTop: 16 }}>
+                Corner shape <span style={{ fontWeight: 400, color: "#888" }}>(this.i <code style={{ fontFamily: mono }}>gk37dm5n</code> — a gestalt cue for the value's <i>type</i>; carries no identity bits, so it needs no trust posture)</span>
+              </label>
+              <select value={corner} onChange={(e) => setCorner(e.target.value as CornerToken | "" | "role")} style={selectStyle}>
+                <option value="">default (round)</option>
+                <option value="role">▸ by role (digest·sig·key…)</option>
+                {CORNER_TOKENS.map((t) => <option key={t} value={t}>force: {t}</option>)}
+              </select>
+              <p style={{ fontSize: 12, color: "#8a93a2", margin: "2px 0 0", lineHeight: 1.5 }}>
+                <b>by role</b> applies <code style={{ fontFamily: mono }}>DEFAULT_CORNER_MAP</code> so each entropy category takes a distinct
+                shape — the key and the signature in the card above differ. The <b>force</b> options pin one shape on every pill for eyeballing the geometry.
+              </p>
+            </>
+          ) : null}
+
+          {tab === "corpus" ? (
+            <>
+              <label style={labelStyle}>
+                Trust posture <span style={{ fontWeight: 400, color: "#888" }}>(this.i <code style={{ fontFamily: mono }}>ujdwjtex</code> — HOST-declared, per value; <b>never</b> an end-user toggle)</span>
+              </label>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button onClick={() => setPosture("wild")} style={posture === "wild" ? themeBtnActive : themeBtn}>
+                  wild (adversarial)
+                </button>
+                <button onClick={() => setPosture("corpus")} style={posture === "corpus" ? themeBtnActive : themeBtn}>
+                  corpus (trusted)
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: "#8a93a2", margin: "0 0 16px", lineHeight: 1.5 }}>
+                <b>wild</b> is the default: the pill carries <i>zero identity bits</i> — no value ever leaks.
+                <b> corpus</b> opts a same-origin, already-trusted set of values into the recognition aids below.
+                A real app sets this in code for values it vouches for; the only runtime way a value earns it is a
+                completed formal comparison (earned promotion, v2) — never a click.
+              </p>
+
+              <div style={{ opacity: posture === "corpus" ? 1 : 0.4, transition: "opacity .15s" }}>
+                <div style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8a93a2", fontWeight: 600, margin: "0 0 8px" }}>
+                  Gated channels
+                </div>
+                <label style={checkRow}>
+                  <input type="checkbox" checked={mnemonicOn} disabled={posture !== "corpus"}
+                    onChange={(e) => setMnemonicOn(e.target.checked)} />
+                  Mnemonic label <span style={{ fontWeight: 400, color: "#888" }}>— 4 value chars + 4 fingerprint chars (<code style={{ fontFamily: mono }}>mmtxrg4w</code>)</span>
+                </label>
+                <label style={checkRow}>
+                  <input type="checkbox" checked={autoColorOn} disabled={posture !== "corpus"}
+                    onChange={(e) => setAutoColorOn(e.target.checked)} />
+                  Auto-color tint <span style={{ fontWeight: 400, color: "#888" }}>— value → 1 of 16 hues, painted faintly (<code style={{ fontFamily: mono }}>tgowi7go</code>)</span>
+                </label>
+                <label style={checkRow}>
+                  <input type="checkbox" checked={iconOn} disabled={posture !== "corpus"}
+                    onChange={(e) => setIconOn(e.target.checked)} />
+                  Colorbar icon <span style={{ fontWeight: 400, color: "#888" }}>— the 2×2 badge becomes a value-derived mini-colorbar (<code style={{ fontFamily: mono }}>wn3r6aex</code>)</span>
+                </label>
+                <p style={{ fontSize: 12, color: "#8a93a2", margin: "6px 0 0", lineHeight: 1.5 }}>
+                  With <b>corpus</b> on, each pill shows e.g. <code style={{ fontFamily: mono }}>DKxy2sgz…19f2…imBx</code>, a faint hue, and a mini-colorbar
+                  leading cap — recognition anchors, never verification claims (two matching pills still route through Compare). The two card pills
+                  differ in value, so all three channels differ. Flip to <b>wild</b> and every value-derived cue vanishes (zero identity bits).
+                </p>
+              </div>
+            </>
+          ) : null}
         </section>
       </div>
     </div>
@@ -299,4 +427,24 @@ const sidebarStyle: React.CSSProperties = {
 const sidebarCaption: React.CSSProperties = {
   fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase",
   color: "#8a93a2", fontWeight: 600, marginBottom: 16,
+};
+// Tab bar for the controls sidebar — a row of segmented buttons over a hairline.
+const tabBar: React.CSSProperties = {
+  display: "flex", gap: 4, marginBottom: 18, borderBottom: "1px solid #e3e6ef", paddingBottom: 0,
+};
+const tabBtn: React.CSSProperties = {
+  font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+  padding: "7px 12px", border: "none", borderBottom: "2px solid transparent",
+  background: "none", color: "#8a93a2", marginBottom: -1,
+};
+const tabActive: React.CSSProperties = { ...tabBtn, color: ACCENT, borderBottom: `2px solid ${ACCENT}` };
+// Shared <select> styling (locale, corner shape).
+const selectStyle: React.CSSProperties = {
+  width: "100%", boxSizing: "border-box", fontSize: 13, padding: "8px 10px",
+  borderRadius: 8, border: "1px solid #ccc", marginBottom: 4, background: "#fff",
+};
+// A checkbox + label row.
+const checkRow: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 400,
+  color: "#333", margin: "0 0 10px",
 };

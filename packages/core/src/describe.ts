@@ -387,6 +387,35 @@ export function describeChannels(value: string, opts: RenderOptions = {}): Chann
   return buildModel(value, opts);
 }
 
+/**
+ * A short recognition mnemonic for a TRUSTED corpus (this.i mmtxrg4w), built ONLY
+ * from the entviz's own displayed cells — so it can never show a character the
+ * visualization doesn't. Shape scales with the entropy so it stays distinctive:
+ *   - `< 256` bits → `first…last` (first cell · last cell).
+ *   - `≥ 256` bits → `first-two…middle…last`. For a >512-bit input the middle cell is
+ *     a genuine fingerprint-middle cell (still shown by the entviz); otherwise it's the
+ *     centre value cell.
+ * The `…` is honest: it marks the omitted middle cells (all present when expanded).
+ * Pure over the cell model; GATED at the pill by the corpus posture. Takes the cells
+ * (from {@link describeChannels}) + `sizeBits` (from `characterize`), so it reuses what
+ * the pill already computed rather than re-deriving.
+ */
+export function mnemonic(cells: CellDescription[], sizeBits: number): string {
+  const shown = cells.filter((c) => !c.blank && c.text !== null);
+  if (shown.length === 0) return "";
+  const t = (c: CellDescription) => c.text as string;
+  const first = t(shown[0]);
+  const last = t(shown[shown.length - 1]);
+  // Small entropy, or too few cells to spread three groups: first cell … last cell.
+  if (sizeBits < 256 || shown.length < 4) return `${first}…${last}`;
+  // Larger: first TWO cells … a middle cell … last cell. Prefer a real fingerprint-middle
+  // cell for the middle when the input has them (>512-bit), else the centre value cell.
+  const second = t(shown[1]);
+  const fp = shown.filter((c) => c.fingerprint);
+  const middle = t(fp.length ? fp[Math.floor(fp.length / 2)] : shown[Math.floor(shown.length / 2)]);
+  return `${first}${second}…${middle}…${last}`;
+}
+
 /** One achievable grid arrangement for a value, with the `targetAr` that selects
  *  it (`render`/`chooseGrid` snap to it). The reshape picker offers these. */
 export interface GridShape {

@@ -182,6 +182,30 @@ export function fingerprintCore(
   return prefix && prefixSemantic ? prefix + core : core;
 }
 
+// The mnemonic (mmtxrg4w) now lives in describe.ts — it reads the entviz's OWN cells,
+// so it can only ever show text the visualization shows.
+//
+// Shared: the value's normalized core + its primary fingerprint (the same digest the
+// visualization keys off). The auto-color channel below derives from this.
+function classifyForFingerprint(value: string): { core: string; digest: Uint8Array } {
+  const { core, prefix, prefixSemantic } = classifyInput(value.trim());
+  return { core, digest: computeFingerprint(fingerprintCore(core, prefix, prefixSemantic)) };
+}
+
+// tgowi7go: a value → small-palette index for the auto-color tint. 16 evenly-spaced
+// hues; a value hashes into one via the LAST fingerprint byte — a DIFFERENT byte from
+// the mnemonic's leading bytes, so color and mnemonic are semi-independent channels.
+// 16 colors = 4 bits: a SOFT pre-filter ("the red ones catch my eye → then I check"),
+// never a partition. GATED at the pill by the corpus posture (resolveChannels.autoColor).
+export const AUTO_COLOR_PALETTE: readonly string[] = Array.from(
+  { length: 16 },
+  (_, i) => `hsl(${(i * 360) / 16} 70% 55%)`,
+);
+export function autoColorIndex(value: string): number {
+  const { digest } = classifyForFingerprint(value);
+  return digest[digest.length - 1] % AUTO_COLOR_PALETTE.length;
+}
+
 // The second, domain-separated digest: SHA-512(DOMAIN_TAG ‖ core). Computed for
 // EVERY input (v9): it drives the two color-bar markers on all inputs (and,
 // on >512-bit inputs, the 4 fingerprint-middle cells — see fingerprintMiddleTokens).
@@ -2324,6 +2348,26 @@ export {
 // the same render model, re-exported so they ship from the single @entviz/core
 // entry point alongside render().
 export * from "./describe.ts";
+
+// Corner-shape channel (this.i gk37dm5n): pure role -> corner-token resolution.
+export {
+  resolveCorner,
+  CORNER_TOKENS,
+  DEFAULT_CORNER,
+  DEFAULT_CORNER_MAP,
+  type CornerToken,
+  type CornerKey,
+  type CornerMap,
+} from "./corners.ts";
+
+// TrustAssumption gate (this.i ujdwjtex): posture -> which value-derived channels
+// (mnemonic/icon/autoColor) are enabled. Wild default = all off (maximum safety).
+export {
+  resolveChannels,
+  type Posture,
+  type TrustAssumption,
+  type ResolvedChannels,
+} from "./trust.ts";
 
 // Machine-comparison engines (compareValues, detectMedium, …) for <EntvizCompare>.
 export * from "./compare.ts";
