@@ -52,6 +52,9 @@ export type EntvizEventPayload =
   | { type: "render.error"; message: string }
   | { type: "disclosure.change"; state: DisclosureState; prev: DisclosureState }
   | { type: "copy"; kind: CopyKind; ok: boolean }
+  // The host was asked to LOCATE this value's other occurrences in its own corpus
+  // (recognition, never verification — no equality is asserted). Notify-only.
+  | { type: "locate" }
   // ---- display ----
   | { type: "display.resize"; fontSizePt: number }
   | { type: "display.reshape"; targetAr: number; cols: number; rows: number }

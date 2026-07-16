@@ -180,6 +180,37 @@ Entviz-JS Port = goal:
             as a plain, un-gated cosmetic style — round (capsule) | sharp | leaf.
           status: drafted
 
+        Locate is the in-corpus recognition companion to Compare = decision:
+          id: lc4ktz6n
+          why: >
+            The pill has ALWAYS documented three affordances — locate / expand / copy
+            (pill-design.md §2.1, §10) — but only expand and copy were built; "locate" was a
+            named intent with no realization. This adds it: an optional onLocate host hook plus
+            an in-popover "Find other occurrences…" action. Locate answers "where else does
+            THIS value appear in the corpus?" — the honest in-corpus RECOGNITION companion to
+            Compare's cross-origin VERIFICATION. It sits firmly on the recognition side of the
+            seam (@uibwfl47): it asserts no equality, only "same value string, shown here too";
+            true sameness across origins still routes through onCompare's reference-requiring
+            flow. Three consequences fall out of the pill being a CONTEXT-FREE artifact that
+            holds no knowledge of the corpus: (1) the pill only SURFACES the affordance and
+            FIRES the hook — the host finds and reveals (highlight/scroll) the occurrences in
+            its own document; (2) locate is UN-GATED by the TrustAssumption (@ujdwjtex) — like
+            copy and compare, it discloses nothing value-derived, so no posture is required
+            (contrast the gated mnemonic/icon/color channels); (3) on click it fires onLocate,
+            emits a notify-only `locate` firehose event, and COLLAPSES the popover — handing
+            control back so the host's reveal is visible. Placed as a FOOTER action in the
+            Visualize state, NOT a rail step: locate is a lateral move, not a stage of the
+            Cite·Visualize·Compare progression, so putting it in the rail would misrepresent the
+            lifecycle. Driving consumer: cesrview (@hcnqi6xk), which until now piggybacked its
+            cross-reference selection on the pill's onOpenChange — an OVERLOADED signal (expand
+            ≠ "select this value"); onLocate gives it an honest, dedicated trigger. Rejected: a
+            "Locate" rail step (wrong semantics, see above); baking corpus search into the pill
+            (violates the context-free artifact contract — the pill can't know the corpus).
+            Accepted tradeoff: the "Find other occurrences…" label ships English-only with a
+            call-site fallback; translating it across the CATALOG locales is a follow-up
+            (~74sc). React chrome only — the closed SVG artifact is untouched (SSOT boundary).
+          status: drafted
+
     Pill vertical density = decision:
       id: yja5x6pf
       why: >

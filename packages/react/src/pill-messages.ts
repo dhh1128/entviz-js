@@ -28,6 +28,11 @@ export interface Messages {
   stepCompare: string; // rail: comparison against a supplied reference
   teachVisualize: string; // teaching header shown in the expanded (Visualize) state
   compareAction: string; // "Compare against a reference…" affordance label
+  /** "Find other occurrences…" — the in-corpus locate affordance label. Optional +
+   *  English-fallback at the call site (like the ctl* keys) so the per-locale CATALOG
+   *  need not be re-translated in the same change that ships the feature; translating
+   *  it across locales is a follow-up (~74sc). */
+  locateAction?: string;
   /** ✕ popover-close aria-label/tooltip. Present in every shipped locale; optional
    *  only so a host `messages` override may omit it (then it falls back to "Close"). */
   close?: string;
@@ -71,6 +76,7 @@ const en: Messages = {
   stepCompare: "Compare",
   teachVisualize: "This is the full visualization — read the cells to check a value; a glance can’t.",
   compareAction: "Compare against another value…",
+  locateAction: "Find other occurrences…",
   close: "Close",
   ctlSize: "size", ctlSmaller: "smaller", ctlLarger: "larger", ctlShape: "shape",
   ctlCopiedValue: "Copied value", ctlCopiedComparison: "Copied comparison text",

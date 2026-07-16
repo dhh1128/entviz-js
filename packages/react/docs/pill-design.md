@@ -32,6 +32,12 @@ controls (font-size / aspect-ratio); it only reserves the architecture for them.
    - **The pill affords *locate / expand / copy*. No equality decision can be
      made from it.** Verification physically routes through expansion to the full
      entviz, where the discrete channels live.
+   - *Locate* is realized by the optional `onLocate` hook plus the in-popover
+     **"Find other occurrences…"** action: a host-implemented, in-corpus
+     recognition move ("where else does this value appear *here*?"), never an
+     equality claim. Its verification sibling is `onCompare` (the
+     reference-requiring compare flow); locate stays firmly on the recognition
+     side of the seam.
 
 2. **The entviz is a closed, unmodified artifact** (spec *Closed profile*). The
    profile forbids *any* overlaid content — no logo, caption, watermark, or
@@ -191,6 +197,8 @@ every platform; no theme/font adaptation.
 | `onExpand` | `() => void` | — | Notify host on expand. |
 | `onCopy` | `(kind: CopyKind) => void` | — | Notify host on copy. |
 | `onError` | `(message: string) => void` | — | As today, for a bad `value`/`note`. |
+| `onLocate` | `() => void` | — | Opt into the in-popover **"Find other occurrences…"** action (§2.1). Fires when the user asks to locate this value's siblings in the host's corpus; the host reveals them. Recognition, never a verdict. Also emits a notify-only `locate` event on `onEvent`. |
+| `showLocateAffordance` | `boolean` | `true` when `onLocate` set | Keep the `onLocate` hook but suppress the built-in button (host renders its own trigger). |
 
 Theming via CSS custom properties (e.g. `--entviz-pill-radius`,
 `--entviz-pill-gap`, `--entviz-badge-border`), so hosts restyle without forking.

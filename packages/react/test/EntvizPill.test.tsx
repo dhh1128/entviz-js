@@ -808,3 +808,56 @@ describe("EntvizPill popover accessibility", () => {
     expect(dialog.style.maxHeight).toBeTruthy();
   });
 });
+
+// The in-corpus recognition companion to Compare: "where else does THIS value
+// appear here?" — a host callback + a popover affordance, never an equality claim.
+describe("EntvizPill locate affordance", () => {
+  const expand = () => fireEvent.click(screen.getByRole("button", { name: /view visualization/i }));
+
+  test("expanded (no onLocate): recognition-only, no locate action offered", () => {
+    render(<EntvizPill value={HEX} />);
+    expand();
+    expect(screen.queryByRole("button", { name: /find other occurrences/i })).toBeNull();
+  });
+
+  test("onLocate opts in the in-corpus 'find other occurrences' popover action", () => {
+    render(<EntvizPill value={HEX} onLocate={vi.fn()} />);
+    expand();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: /find other occurrences/i })).toBeTruthy();
+    // locate is recognition, not verification: it opens no reference-acquisition field.
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+  });
+
+  test("clicking locate fires onLocate, emits a notify-only locate event, and hands back by collapsing", () => {
+    const onLocate = vi.fn();
+    const onEvent = vi.fn();
+    render(<EntvizPill value={UUID} onLocate={onLocate} onEvent={onEvent} />);
+    expand();
+    fireEvent.click(screen.getByRole("button", { name: /find other occurrences/i }));
+    expect(onLocate).toHaveBeenCalledTimes(1);
+    expect(onEvent.mock.calls.some(([e]) => e.type === "locate" && e.source === "pill")).toBe(true);
+    // the host now reveals the occurrences in its own document, so the popover closes.
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("showLocateAffordance={false} keeps the hook but hides the built-in button", () => {
+    render(<EntvizPill value={HEX} onLocate={vi.fn()} showLocateAffordance={false} />);
+    expand();
+    expect(screen.queryByRole("button", { name: /find other occurrences/i })).toBeNull();
+  });
+
+  test("locate is offered only in Visualize — never once the user has entered Compare", () => {
+    render(<EntvizPill value={HEX} onLocate={vi.fn()} onCompare={vi.fn()} />);
+    expand();
+    expect(screen.getByRole("button", { name: /find other occurrences/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /compare against another value/i }));
+    expect(screen.queryByRole("button", { name: /find other occurrences/i })).toBeNull();
+  });
+
+  test("the locate label falls back to English under a locale that has no translation yet", () => {
+    render(<EntvizPill value={HEX} onLocate={vi.fn()} locale="fr" />);
+    fireEvent.click(screen.getAllByRole("button")[0]); // expand (the pill's own label is French here)
+    expect(screen.getByRole("button", { name: /find other occurrences/i })).toBeTruthy();
+  });
+});
