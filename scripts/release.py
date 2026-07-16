@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Cut an entviz-js release: bump version, run the gate, commit, push, tag.
 
-HUMAN-run only. Pushes to main and tags are reserved for a human maintainer;
-AI agents must not run this script.
+HUMAN-run by default: pushes to main and tags are reserved for a human
+maintainer. An AI agent may run this script ONLY when a human has explicitly
+instructed it to cut a release.
 
 The version follows the entviz-family spec-tracking convention: 0.<spec-major>.x
 means "this port is compliant with entviz spec v<spec-major>" (so 0.10.x ⇒ spec
