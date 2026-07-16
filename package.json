@@ -16,7 +16,7 @@
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "typedoc": "^0.28.20",
-    "typescript": "^7.0.2"
+    "typescript": "^5.8.0"
   },
   "license": "Apache-2.0",
   "repository": {
