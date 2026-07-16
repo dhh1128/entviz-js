@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@entviz/core": "0.15.1",
-    "@entviz/react": "0.15.1",
+    "@entviz/core": "0.15.2",
+    "@entviz/react": "0.15.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
