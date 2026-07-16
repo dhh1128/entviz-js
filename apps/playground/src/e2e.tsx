@@ -64,7 +64,16 @@ const trust: TrustAssumption | undefined =
 function Fixture() {
   switch (component) {
     case "entviz":
-      return <Entviz value={value} fontSizePt={fontSizePt} note={note} targetAr={targetAr} onEvent={onEvent} />;
+      return (
+        <Entviz
+          value={value}
+          fontSizePt={fontSizePt}
+          note={note}
+          targetAr={targetAr}
+          controls={has("controls")}
+          onEvent={onEvent}
+        />
+      );
     case "compare":
       return (
         <EntvizCompare
