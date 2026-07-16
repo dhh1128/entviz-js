@@ -126,20 +126,18 @@ Entviz-JS Port = goal:
         Colorbar icon = decision:
           id: wn3r6aex
           why: >
-            Gated by ujdwjtex. Replace the constant zero-identity badge with a
-            value-derived micro-icon — a variation on the entviz colorbar (rotate
-            horizontal, squished to pill height; the two colorbar markers positioned
-            across the full horizontal extent). Directly reintroduces the value-derived
-            visual that §3.3 forbids in the wild, so it is STRICTLY corpus-only. Safe
-            under uibwfl47: a ~3-bit gestalt is an honest difference-detector and
-            grind-trivial for the rule-in it never claims. The real hazard is MIXING a
-            constant badge (wild) and a derived icon (corpus) on one screen — a user
-            can't tell which icons carry signal. Mitigations: (i) keep the derived icon
-            VISUALLY DISTINCT from the constant 2x2 badge (block vs. horizontal
-            micro-bar); (ii) prefer a uniform posture per screen. Derive the icon from a
-            DIFFERENT slice of the fingerprint than autoColor (tgowi7go) so the two
-            channels are semi-independent (color+shape = accessibility win + more
-            combined rule-out).
+            Gated by ujdwjtex. The pill's LEADING CAP is empty by default; under a corpus
+            posture with this channel on, it becomes a value-derived micro-icon — a faithful
+            MINI of the entviz's own colorbar: a vertical bar the viz's colorbar width
+            (2*boxHeight ~1.25em), full pill height, bands ∝ count^4 (the viz's dominance
+            function), the two gutter markers as opaque white discs + black halo. Drawn from
+            the ACTUAL colorbar data (describeChannels), so it's a rich fingerprint projection
+            independent of the autoColor byte. ABSOLUTELY positioned so it never drags the
+            text baseline. Directly reintroduces the value-derived visual §3.3 forbids in the
+            wild, so STRICTLY corpus-only. NOTE (2026-07-16): the old constant 2x2 badge is
+            GONE entirely — the leading cap is now empty (wild) or this colorbar (corpus), so
+            the badge-vs-derived-icon MIXING hazard no longer exists; the TYPE cue moved to a
+            trailing monochrome role icon (gk37dm5n), a different slot and color family.
           status: drafted
 
         Auto color tint = decision:
@@ -160,37 +158,26 @@ Entviz-JS Port = goal:
             `autoColorIndex(value) -> 0..N` + palette in @entviz/core.
           status: drafted
 
-        Corner shape by role = decision:
+        Type cue is a role icon (not corner shape) = decision:
           id: gk37dm5n
           why: >
-            UN-GATED (needs no TrustAssumption) — the exception in this subtree. Corner
-            geometry encodes the semantic TYPE, not the value, so it carries NO new
-            identity bits: the type is already disclosed as trusted pill text, and the
-            shape derives from entviz's own characterize(), which an attacker can't forge
-            without actually producing that value-type. So it is safe even in the wild.
-            Keyed on the closed `role` enum (key | signature | digest | address |
-            identifier) with null normalized to "raw". role — not entropyType — is the
-            right axis because it is the SEMANTIC-CATEGORY axis a KEL scanner cares about
-            ("signature vs digest vs key"), whereas entropyType drags in encoding
-            distinctions (base64 vs hex) that aren't the point AND collapses all CESR to
-            "cesr" (a KEL is mostly CESR, so that collapse is fatal). role splits CESR
-            correctly — audited 2026-07-15: E->digest, D->key, 0B->signature; DID/UUID
-            ->identifier, SSH->key, BTC->address. null->"raw" is not a gap but MORE
-            HONEST: role is null exactly when the recognizer has no basis for a category
-            (bare hex is just hex), and shaping it "digest" would assert knowledge entviz
-            doesn't have. Shape is a separate, shareable CornerMap object (kept out of the
-            trust policy, since an app may want one shape vocabulary across both trusted
-            and foreign pills):
-              type CornerKey = Role | "raw"
-              type CornerMap = Partial<Record<CornerKey, CornerToken>> & { default?: CornerToken }
-            Corner tokens are a small CURATED enum of named treatments — NOT raw radii,
-            which would mint 50 confusable shapes. Settled to SIX (one per role bucket),
-            chosen for mutual distinctiveness at pill size: round | sharp | leaf | bevel |
-            notch | arrow (leaf/bevel = the rounded/angular diagonal pair; notch/arrow =
-            leading-edge treatments). DEFAULT_CORNER_MAP is a full bijection
-            (identifier→round, raw→sharp, signature→leaf, key→bevel, digest→notch,
-            address→arrow). Resolver-FUNCTION form dropped from v1 (role is a clean closed
-            set; reserve it if a real entropyType-level need appears).
+            The value's semantic TYPE (role) is an UN-GATED cue (it carries no value-identity
+            bits — the type is already disclosed, and derives from entviz's own
+            characterize(), unforgeable without producing that value-type). HOW to show it
+            pivoted (2026-07-16):
+            REJECTED v1 — encode role in the pill's CORNER GEOMETRY (a role→corner map,
+            resolveCorner/CornerMap/DEFAULT_CORNER_MAP, six shapes round|sharp|leaf|bevel|
+            notch|arrow as a bijection over the 5 roles + raw). Owner's verdict: per-type
+            corner shapes read as arbitrary ("some look better than others"), and distinct
+            geometry is hard to distinguish at pill size.
+            SETTLED — a trailing monochrome ICON per role (vendored Lucide, stroke:
+            currentColor so it adapts to the host theme, ISC-licensed): key | signature |
+            digest(hash) | address(link) | identifier(@) | raw(binary 01). It sits after the
+            kebab, is clickable (expands like the body), and reads the type far more legibly
+            than a shape. `typeSignal` (autoCombo default | icon | text | none): autoCombo
+            shows the icon PLUS the type text ("cesr key") only when there's no label, so a
+            pill is never empty. The whole role→corner machinery is DELETED. `corner` remains
+            as a plain, un-gated cosmetic style — round (capsule) | sharp | leaf.
           status: drafted
 
     Pill vertical density = decision:

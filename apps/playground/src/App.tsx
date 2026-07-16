@@ -185,7 +185,7 @@ export function App() {
               {pill({ value: HASHHEX, label: undefined, trust: CORPUS_DEMO })} — ut aliquip ex ea commodo consequat.
             </p>
             <p style={{ fontSize: 12, color: "color-mix(in srgb, currentColor 55%, transparent)", marginTop: 18 }}>
-              The highlighted pill reflects the Value tab; the rest are fixed samples of other types.
+              The top pill, which is highlighted, reflects the Value tab; the rest are fixed samples of other types.
             </p>
           </div>
 

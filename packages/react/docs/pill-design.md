@@ -18,8 +18,9 @@ controls (font-size / aspect-ratio); it only reserves the architecture for them.
 - An **entviz** is the *visualization*. It is **not** a "fingerprint."
 - The **fingerprint** is an internal construct (SHA-512 of the normalized text)
   that drives most channels. Never expose the word "fingerprint" in UI chrome.
-- User-facing verb is **"View visualization."** Accessible label is
-  **"view visualization, {type}."**
+- The pill's **accessible label** is **"view visualization, {type}."** (There is no
+  visible "View visualization" tooltip — the pointer cursor signals clickability and the
+  hover tooltip previews the value; §3.5, §14.)
 
 ## 2. First principles (every decision below derives from these)
 
@@ -61,31 +62,33 @@ expands on demand.
 ### 3.1 Anatomy
 
 ```
-┌────────────────────────────┐
-│ �859 hex·256             ⋮  │   ← resting (kebab appears on hover/focus)
-└────────────────────────────┘
-   │   │                    │
- badge type             copy menu (Fork A-c: pointer/kb only at rest)
-(const)(trusted)
-   └──── click body → expand ────┘
+┌──────────────────────────────┐
+│  cesr key            ⋮   🔑  │   ← resting (kebab appears on hover/focus)
+└──────────────────────────────┘
+   │                    │    │
+ type cue          copy menu  role icon (type)
+ (icon/text)          (⋮)     (trailing, clickable)
+   └──── click body / icon → expand ────┘
 ```
 
-- **Badge** (left): a **constant** 2×2 of the entviz palette — gold `#e7be00`
-  and blue `#2f3fbf` on the top row, black `#000000` and red `#ff3f2f` on the
-  bottom (the two dark cells split across rows so it doesn't read bottom-heavy) —
-  with a hairline border so black reads on dark and gold reads on light. It is **the
-  same on every entviz** — a *type badge* meaning "this is an entviz, color
-  hiding beneath," carrying **zero identity bits**, so it can never be
-  glance-compared for verification. Toggle with `showIcon` (default `true`).
-- **Type** text: the parser-derived category (`hex·256`, `UUID`, `BTC address`,
-  …) — the trusted channel. For a >512-bit input it carries the spec's
-  truncation marker + real byte length (e.g. `fingerprint-of hex(2048)`), so a
-  collapsed glance already tells you the text channel is truncated.
-- **No note. No value characters. No value-derived visual.** (§3.2, §3.3.)
-- **Copy menu** (kebab `⋮`): **Fork A-(c)** — appears on hover/focus for
-  pointer+keyboard users (keeps the resting inline pill minimal); the same
-  actions are *always* present in the expanded view, so touch/AT users reach them
-  there. See §6.
+- **Leading cap** (left): **empty** in the default *wild* posture — the pill carries a
+  constant badge no longer, and no value bits at all. Under a *corpus* posture with the
+  icon channel opted in, it becomes the **value-derived colorbar** (a mini of the entviz's
+  own colorbar), *absolutely positioned* so it never shifts the text baseline (§13).
+- **Type cue** — `typeSignal` (default `autoCombo`): the value's type as a trailing **role
+  icon** (`key` · `signature` · `digest` · `address` · `identifier` · `raw`), *plus* the
+  parser-derived **type text** ("cesr key") only when there's no label/mnemonic — so a pill
+  is never empty but never doubles up. Force `icon` / `text` / `none` as needed. The type
+  is the trusted channel (spec label-strip); for a >512-bit input the text still carries the
+  truncation marker.
+- **Role icon** (trailing): a monochrome `currentColor` Lucide glyph. It shows the *type*
+  the pill already discloses, never the value — **zero value-identity bits** — and is
+  clickable (expands, like the body).
+- **Copy menu** (kebab `⋮`): appears on hover/focus for pointer+keyboard users; the same
+  actions are *always* present in the expanded view, so touch/AT users reach them there (§6).
+- **Hover** previews the value (§14); **hover** and **focus** draw a configurable outline
+  (`--entviz-pill-{hover,focus}-outline`). A host can also set a persistent `highlight` ring.
+- **No note on the pill; no *short* value-char teaser** (§3.2, §3.3).
 
 ### 3.2 Why no note on the pill
 
@@ -176,10 +179,10 @@ every platform; no theme/font adaptation.
 
 | Prop | Type | Default | Notes |
 |---|---|---|---|
-| `showIcon` | `boolean` | `true` | Render the constant badge. |
-| `corner` | `CornerToken` | none | Corner-shape channel (this.i `gk37dm5n`). Explicit corner treatment; wins over `cornerMap`. **Un-gated** — encodes the value's `role` (already disclosed as the type text), not the value, so it carries no identity bits and is safe in any posture. |
-| `cornerMap` | `CornerMap` | none | Map the value's `role` (`null` → `"raw"`) to a corner treatment. Its own shareable object (kept out of the trust policy). See §12. |
-| `trust` | `TrustAssumption` | none | The value's **trust posture** (this.i `ujdwjtex`). Absent / `posture:"wild"` → all value-derived channels off (the maximum-safety default). `posture:"corpus"` opts a same-origin, already-trusted value set into the recognition channels it enables (`mnemonic`, …). **Never expose changing this to the end user.** See §13. |
+| `typeSignal` | `"autoCombo" \| "icon" \| "text" \| "none"` | `"autoCombo"` | How the value's type shows: role **icon** + type **text** only when there's no label (`autoCombo`); just the icon; just the text; or neither. §3.1. |
+| `corner` | `CornerToken` | `"round"` (capsule) | Explicit pill corner style — `round` · `sharp` · `leaf` (this.i `gk37dm5n`). No longer derived from type (the role icon carries that). §12. |
+| `highlight` | `boolean` | `false` | Persistently mark the pill (e.g. 3 of 10) with a ring via `--entviz-pill-highlight` — distinct from the transient hover/focus outline. Host-driven, not value-derived. |
+| `trust` | `TrustAssumption` | none | The value's **trust posture** (this.i `ujdwjtex`). Absent / `posture:"wild"` → all value-derived channels off (the maximum-safety default). `posture:"corpus"` opts a same-origin, already-trusted value set into the recognition channels it enables (`mnemonic`, `autoColor`, `icon`). **Never expose changing this to the end user.** See §13. |
 | `maxWidth` | `number \| string` | none | Clip overflow; type yields first. |
 | `className`, `style` | — | — | Applied to the **pill chrome**, not the entviz. |
 | `locale` | `string` | auto (`navigator.languages`) | Override locale (§8). |
@@ -310,9 +313,9 @@ open), and consider `vi`. English is the fallback for any unmatched tag.
 
 | Decision | Grounding |
 |---|---|
-| Pill affords locate/expand/copy only; no equality decision | recognition ≠ verification (paper §2.3, §5.1) |
-| No truncated value chars | prefix/suffix grinding (threat-model T1/T6) |
-| No value-derived visual; constant badge | glance-equivalence; zero identity bits |
+| Wild pill affords locate/expand/copy only; no equality decision | recognition ≠ verification (paper §2.3, §5.1) |
+| No SHORT truncated value-char teaser inline | prefix/suffix grinding (threat-model T1/T6) — a full-value hover preview is not grindable (§14) |
+| No value-derived visual in the WILD posture; leading cap empty | glance-equivalence; zero identity bits. The corpus posture opts in, gated (§13) |
 | No note on the pill | bound false-reassurance vector (threat-model *User note*) |
 | Type on the trusted channel | spec label-strip (top = trusted) |
 | Entviz unmodified, chrome external/below | spec *Closed profile* |
@@ -328,38 +331,21 @@ open), and consider `vi`. English is the fallback for any unmatched tag.
   reserved in §7, not designed.
 - An opt-in **click→copy-value** primary action for "use this value" hosts (§3.5).
 
-## 12. Corner-shape channel (`gk37dm5n`)
+## 12. Corner-shape (`gk37dm5n`)
 
-A gestalt cue that encodes the value's **semantic `role`** — signature vs. digest
-vs. key vs. address vs. identifier — in the pill's corner geometry, so a scanner of
-a homogeneous stream (e.g. a KERI KEL) can tell *categories* apart at a glance.
+An **explicit, optional** pill corner style set via the `corner` prop.
 
-**Un-gated by the trust posture.** Unlike the mnemonic/icon/color channels, the
-corner derives from the *type* entviz already discloses as trusted text, not from
-the value — so it leaks no identity bits, an attacker can't forge it without
-producing a value of that role, and it is safe even in the wild posture.
+**History (and why it's now simple).** An earlier iteration derived the corner from the
+value's *role* (a `role → corner` map, `resolveCorner`/`CornerMap`/`DEFAULT_CORNER_MAP`,
+six shapes) so a scanner could tell categories apart by geometry. That channel is
+**removed**: the **trailing role icon** carries the type cue far more legibly, and
+per-type corner shapes read as arbitrary. What remains is a plain style knob.
 
-- **Resolution** (pure, `@entviz/core`): `resolveCorner(role, cornerMap)` — the
-  closed `role` enum with `null` normalized to `"raw"`, resolved against the host
-  map; total (explicit entry → `default` → built-in `DEFAULT_CORNER`).
-- **Vocabulary** (`CORNER_TOKENS`, six shapes — one per role bucket): chosen for
-  mutual *distinctiveness* at pill size (radius magnitude barely reads, so the signal
-  is round-vs-angular, diagonal asymmetry, and leading-edge treatments) —
-  `round` (softly rounded), `sharp` (square), `leaf` (rounded diagonal TL+BR),
-  `bevel` (angular chamfer on the *other* diagonal TR+BL), `notch` (a triangular bite
-  in the leading edge, under the badge), `arrow` (leading corners clipped to a leftward
-  chevron). `round`/`sharp`/`leaf` are per-corner `border-radius` (border intact);
-  `bevel`/`notch`/`arrow` are `clip-path` (the cut edges drop the hairline border,
-  reading as a deliberate cut).
-- **`DEFAULT_CORNER_MAP`**: a ready-to-use `role → corner` **bijection** — all five
-  roles plus `raw` get distinct shapes out of the box: `identifier→round`,
-  `raw→sharp`, `signature→leaf`, `key→bevel`, `digest→notch`, `address→arrow`.
-- **`role → "raw"` is honest, not a gap:** `role` is `null` exactly when the
-  recognizer asserts no category (bare hex is just hex); shaping it as a `digest`
-  would claim knowledge entviz doesn't have.
-
-Typical use in a KEL viewer keys mostly on CESR roles — or just reuse
-`DEFAULT_CORNER_MAP`: `{ identifier: "round", raw: "sharp", signature: "leaf", key: "bevel", digest: "notch", address: "arrow", default: "round" }`.
+- **Vocabulary** (`CORNER_TOKENS`): `round` (the default — a **capsule**, semicircle
+  ends), `sharp` (square), `leaf` (rounded diagonal TL+BR, square TR+BL). All are
+  per-corner `border-radius`, so the pill's 1px border stays intact on every edge.
+- **Un-gated** by the trust posture — it's a cosmetic style, not value-derived.
+- Themeable: `round` threads `--entviz-pill-radius`.
 
 ## 13. Trust posture & the corpus recognition channels (`ujdwjtex`)
 
@@ -388,16 +374,16 @@ set into **value-derived recognition channels** that make recurrence scannable.
   **transparent** background tint (`autoTint`, react), so the host theme shows through and it
   reads on light *and* dark without a per-theme palette. 16 hues = 4 bits = a **soft
   pre-filter** ("the red ones"), never a partition — collisions are expected at scale.
-- **Channel 3 — the colorbar icon (`wn3r6aex`).** Under corpus + `icon:true`, the constant
-  2×2 badge is replaced by a value-derived **mini of the entviz's own colorbar**, in the same
-  leading-cap slot: a **vertical** bar the same width the colorbar has in the visualization
+- **Channel 3 — the colorbar icon (`wn3r6aex`).** Under corpus + `icon:true`, the pill's
+  (otherwise empty) **leading cap** becomes a value-derived **mini of the entviz's own
+  colorbar**: a **vertical** bar the same width the colorbar has in the visualization
   (`barWidth = 2·boxHeight` ≈ 1.25em), filling the pill height, bands stacked top→bottom at
   heights ∝ **count⁴** (the viz's dominance function, so one band usually dominates), with the
   two gutter markers as opaque **white discs + black halo** — exactly as the viz draws them
-  (`colorbarIcon`, react; pure layout in `colorbarIconGeometry`). Because it draws the actual
-  colorbar data, it's independent of the auto-color tint. It stays visually distinct from the
-  2×2 block (a banded vertical bar vs. a square grid), so a constant badge and a derived icon
-  are never confused; wild always keeps the constant badge.
+  (`colorbarIcon`, react; pure layout in `colorbarIconGeometry`). It's *absolutely positioned*
+  so it never shifts the baseline. Because it draws the actual colorbar data, it's independent
+  of the auto-color tint. In every other case (wild, or corpus without this channel) the
+  leading cap is simply empty.
 - **Recognition, never verification.** A matching mnemonic, tint, or icon is a
   *rule-out-not-rule-in* cue — two matching pills still route through Compare.
 
