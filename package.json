@@ -9,9 +9,11 @@
   ],
   "scripts": {
     "docs": "typedoc",
-    "typecheck": "tsc --noEmit -p tsconfig.typedoc.json"
+    "typecheck": "tsc --noEmit -p tsconfig.typedoc.json",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^24.0.0",
     "typedoc": "^0.27.0",
     "typescript": "^5.8.0"

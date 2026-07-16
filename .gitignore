@@ -16,3 +16,9 @@ docs/api/
 /_site/
 
 .worktrees
+
+# Playwright E2E artifacts (run: npm run test:e2e)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
