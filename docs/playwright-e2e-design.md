@@ -1,8 +1,9 @@
 # Playwright browser E2E for `@entviz/react` — design
 
-**Status:** design, pre-implementation. **Audience:** implementers of `@entviz/react`.
-**Tracks:** `tick 2sky` ("playwright tests on the react", idea → to be graduated to a
-committed todo on approval).
+**Status:** IMPLEMENTED (v1, green in CI) — see [§11 As-built](#11-as-built-what-actually-shipped)
+for what was delivered and the one deviation from this design. **Audience:** implementers
+of `@entviz/react`.
+**Tracks:** `tick 2sky` ("playwright tests on the react").
 **Depends on:** the existing Vitest/jsdom suite (`packages/react/test/`), the
 `rng-guard` production gate (`packages/react/src/rng-guard.ts`), the event surface
 (`packages/react/src/events.ts`), and the Vite playground (`apps/playground/`).
@@ -188,5 +189,46 @@ non-flaky.
 Scoped 2026-07-16 against the state at `v0.15.2`, after the TypeDoc type-hygiene pass
 (`1d103fc`) whose raster-text precedence bug is the motivating example in §1 — a defect the
 jsdom suite structurally could not have caught. Consistent with the repo's design-first
-methodology (`docs/intent-methodology.md`): this doc is the workshop for `tick 2sky`; on
-approval it graduates the idea into a committed implementation todo.
+methodology (`docs/intent-methodology.md`): this doc was the workshop for `tick 2sky`.
+
+## 11. As-built (what actually shipped)
+
+Implemented 2026-07-16 on top of `v0.15.3`, in these commits: harness/walking-skeleton,
+P0/P1 specs, CI job, P2 a11y. **11 specs across 4 files, all green locally and in CI.**
+
+**What matches the design:** the dev-only `/e2e.html` fixture (query-param props,
+`window.__evz` firehose, seeded rng, no StrictMode), Chromium-only, order-independent
+assertions, and the CI `e2e` job (not yet a required check).
+
+**Delivered coverage:**
+- `geometry.spec.ts` (4) — real measured pill width (label-driven) and `<Entviz>` SVG
+  dimensions scaling with `fontSizePt`.
+- `events.spec.ts` (3) — `<Entviz controls>` toolbar drives `display.resize` /
+  `display.reshape` / `copy`; **Copy value verified by reading the real system clipboard**.
+- `compare.spec.ts` (2) — matching vs different text reference → correct `verdict.change`.
+- `a11y.spec.ts` (2) — Actions/shape menus open on ArrowDown, move focus in, Escape
+  restores focus to the trigger.
+
+**Deviation from the design (§5/§6):** the design preferred a production-parity
+`vite preview` webServer. **As built, the webServer runs the Vite _dev_ server.** Rationale:
+(a) the dev-only fixture must NOT be added to the playground's production build input, or it
+would ship to the public Pages deploy — the dev server serves `/e2e.html` without touching
+the build, mirroring the existing `calibrate.html` precedent; (b) all v1 assertions are
+geometry/events/clipboard/a11y, which are build-mode-independent; (c) dev mode also lets the
+seeded rng be honored for any future order-specific spec. The prod-only concern (the rng
+CSPRNG gate under `NODE_ENV=production`) is already covered by `rng-guard.test.ts`. Revisit
+`vite preview` if a spec ever needs minified/prod-React parity.
+
+**Also as-built, worth a glance:** `<Entviz>` fixture gained a `controls` query param (the
+toolbar is opt-in, `controls=false` by default). No report-artifact upload in CI yet (kept
+the job minimal; the list reporter surfaces failures in the log).
+
+**No product bugs surfaced.** Every red-to-green iteration was test-side (collapsed pill
+chrome is not `fontSizePt`-scaled; the toolbar needs `controls=1`). So per the run's
+agreed rule, **no `0.15.4` was cut** — this is purely additive test infra. The two
+dead-code fixes requested alongside shipped separately in **`v0.15.3`**.
+
+**Deferred follow-ups (`tick ~4vlu`):** promote `e2e` to a required check once flake
+rate is known; add a Playwright browser cache + report-artifact upload to the CI job; the
+real-canvas raster verdict path (needs an image/SVG reference fixture); pixel snapshots
+(Chromium-only, thresholded); cross-browser (WebKit/Firefox).
