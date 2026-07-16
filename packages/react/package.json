@@ -1,6 +1,6 @@
 {
   "name": "@entviz/react",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "description": "React components for entviz — render and compare high-entropy values as SVG visualizations.",
   "type": "module",
   "main": "src/index.ts",
@@ -21,7 +21,7 @@
     "react-dom": ">=17"
   },
   "dependencies": {
-    "@entviz/core": "0.15.2"
+    "@entviz/core": "0.15.3"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
