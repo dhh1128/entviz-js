@@ -131,8 +131,18 @@ function sizeBitsFor(core: string, alphabet: Alphabet, sizeBasis: SizeBasis): nu
 // (SAID/said hashes) -> digest; signatures -> signature.
 const CESR_DIGEST_MARKERS = ["blake3", "blake2b", "blake2s", "sha3", "sha2", "sha"];
 
-function cesrRole(name: string): Role {
+// CESR primitives that are recognized but carry NO role in the closed enum. A
+// Dater ("datetime") is a low-entropy, directly human-readable temporal value —
+// entviz recognizes it only to LABEL it correctly (not `raw`), NOT to endorse
+// visualizing it as entropy. It MUST short-circuit to role=null here rather than
+// fall through to the "key" default below. Checked BEFORE the sig/digest markers
+// so a future temporal primitive whose name happened to contain one of those
+// substrings stays role-less. See this.i:idxs1gs0.
+const CESR_NONENTROPY_MARKERS = ["datetime"];
+
+function cesrRole(name: string): Role | null {
   const low = name.toLowerCase();
+  if (CESR_NONENTROPY_MARKERS.some((m) => low.includes(m))) return null;
   if (low.includes("sig")) return "signature";
   if (CESR_DIGEST_MARKERS.some((m) => low.includes(m))) return "digest";
   // seeds, public keys, ciphers, blinding factors, random numbers, tags ->

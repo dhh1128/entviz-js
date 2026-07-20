@@ -785,13 +785,46 @@ const CESR_4_BYTE_CODES: [string, string, number][] = [
   ["1AAC", "Ed448 nt pubkey", 80], ["1AAD", "Ed448 pubkey", 80], ["1AAE", "Ed448 sig", 156],
   ["1AAH", "X25519 100 cipher 24 salt", 100], ["1AAI", "secp256r1 nt pubkey", 48],
   ["1AAJ", "secp256r1 pub/enc key", 48], ["1AAR", "FN-DSA-512 sig", 892], ["1AAQ", "FN-DSA-512 pubkey", 1200],
+  // Dater (MtrDex.DateTime): an ISO-8601 datetime with `:`->`c`, `.`->`d`,
+  // `+`->`p` substitutions, so the whole qb64 is base64url. Recognized only to
+  // LABEL it correctly (not `raw`); a datetime is low-entropy and directly
+  // human-readable, so entviz does NOT treat it as a comparison target and
+  // characterize assigns it NO role (see this.i:idxs1gs0). It is a Matter code
+  // with a fixed 4-char prefix + fixed size, so it fits this flat table with no
+  // special path (unlike the Indexer below).
+  ["1AAG", "datetime", 36],
 ];
 const CESR_4_BYTE_LENGTHS = new Set(CESR_4_BYTE_CODES.map((x) => x[2]));
+
+// CESR Indexer code table (keri.core.coring.IdrDex) — the indexed signatures a
+// KEL carries (controller/witness sigs). STRUCTURALLY DIFFERENT from the Matter
+// tables above: each qb64 is `hard-code + index + material`, so the characters
+// AFTER the hard code vary with the signature's index and CANNOT be matched as a
+// fixed leading substring. Recognition therefore keys on (hard-code, full-size
+// `fs`) ONLY; the index chars stay in the core like any other body chars (and so
+// still drive the cells and the fingerprint). Every variant of one algorithm —
+// current-only ("Crt"), "Big" (2-char hard code, wider index) — collapses to a
+// single label. Matter-vs-Indexer is decided by (code, length), never by leading
+// char alone: `A` is a Matter seed at 44 but an Indexer sig at 88; parseCesr
+// tries Matter first, then this table. See issue #36, this.i:idxs1gs0.
+const CESR_INDEXER_CODES: [string, string, number][] = [
+  // [hard_code, label, fs]
+  ["A", "Ed25519 idx sig", 88], ["B", "Ed25519 idx sig", 88],
+  ["C", "secp256k1 idx sig", 88], ["D", "secp256k1 idx sig", 88],
+  ["E", "secp256r1 idx sig", 88], ["F", "secp256r1 idx sig", 88],
+  ["0A", "Ed448 idx sig", 156], ["0B", "Ed448 idx sig", 156],
+  ["2A", "Ed25519 idx sig", 92], ["2B", "Ed25519 idx sig", 92],
+  ["2C", "secp256k1 idx sig", 92], ["2D", "secp256k1 idx sig", 92],
+  ["2E", "secp256r1 idx sig", 92], ["2F", "secp256r1 idx sig", 92],
+  ["3A", "Ed448 idx sig", 160], ["3B", "Ed448 idx sig", 160],
+];
+const CESR_INDEXER_LENGTHS = new Set(CESR_INDEXER_CODES.map((x) => x[2]));
 const BASE64URL_NO_PAD_RE = /^[A-Za-z0-9\-_]+$/;
 
 // The derivation code is IDENTITY (it stays IN the core — rendered AND
 // fingerprinted), not a stripped prefix. Decoded type goes in the label.
-function parseCesr(text: string): Parsed | null {
+/** @internal */
+export function parseCesr(text: string): Parsed | null {
   if (!text) return null;
   const lenText = text.length;
   const code = text[0];
@@ -803,11 +836,27 @@ function parseCesr(text: string): Parsed | null {
   } else if (CESR_1_BYTE_LENGTHS.has(lenText)) {
     items = CESR_1_BYTE_CODES;
   }
-  if (!items) return null;
-  for (const [prefix, label, length] of items) {
-    if (text.startsWith(prefix) && lenText === length) {
-      if (BASE64URL_NO_PAD_RE.test(text)) {
-        return { type: `CESR ${label}`, core: text, alphabet: BASE64URL, prefix: null, suffix: null };
+  if (items) {
+    for (const [prefix, label, length] of items) {
+      if (text.startsWith(prefix) && lenText === length) {
+        if (BASE64URL_NO_PAD_RE.test(text)) {
+          return { type: `CESR ${label}`, core: text, alphabet: BASE64URL, prefix: null, suffix: null };
+        }
+      }
+    }
+  }
+  // Matter did not match — try the Indexer table (indexed signatures).
+  // Deliberately AFTER Matter so (code, length) decides Matter-vs-Indexer, never
+  // the leading char alone. Match keys on the hard code + full size only; the
+  // variable index chars are left in the core (like the Matter derivation code
+  // above, they are bound by the fingerprint and rendered in the cells). See
+  // this.i:idxs1gs0.
+  if (CESR_INDEXER_LENGTHS.has(lenText)) {
+    for (const [hard, label, fs] of CESR_INDEXER_CODES) {
+      if (lenText === fs && text.startsWith(hard)) {
+        if (BASE64URL_NO_PAD_RE.test(text)) {
+          return { type: `CESR ${label}`, core: text, alphabet: BASE64URL, prefix: null, suffix: null };
+        }
       }
     }
   }
