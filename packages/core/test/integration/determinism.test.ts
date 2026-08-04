@@ -44,6 +44,39 @@ for (const [input, opts] of DETERMINISM_CASES) {
   });
 }
 
+// v16 (this.i:hrpb1nd): two values sharing a bech32 data payload under DIFFERENT
+// human-readable parts must render differently. Through v15 the HRP was
+// validated by the polymod and then dropped — it entered neither the cells nor
+// the fingerprint — so each pair below was byte-identical in every channel a
+// human compares (cells, surround, nucleus, edge colours, ellipse, colour bar,
+// blank map, quartile marks), differing only in the 12px grey label. The nostr
+// pair is the case that forced the issue: a public key and its secret key.
+const HRP_SIBLINGS: [string, string, string][] = [
+  ["cosmos/osmo (generic bech32)",
+    "cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e",
+    "osmo1qqqsyqcyq5rqwzqfpg9scrgwpugpzysntdz28t"],
+  ["bc1/tb1 (segwit mainnet vs testnet)",
+    "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+    "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"],
+  ["addr1/addr_test1 (Cardano Shelley)",
+    "addr1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xmyv4nxw6rfdf4kcmtwdac8zunnw36hvamc09a8klra0elsr0jfpr",
+    "addr_test1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xmyv4nxw6rfdf4kcmtwdac8zunnw36hvamc09a8klra0els30xwlp"],
+  ["npub/nsec (nostr public vs secret key)",
+    "npub1802mpadp48s09v7y6hn0wzqe9ga5chtw07qfz23mf3wkuluqjy3swt0n8f",
+    "nsec1802mpadp48s09v7y6hn0wzqe9ga5chtw07qfz23mf3wkuluqjy3szayjpu"],
+];
+for (const [name, a, b] of HRP_SIBLINGS) {
+  test(`v16 HRP binds: ${name} render differently`, () => {
+    assert.notEqual(render(a), render(b));
+    // Not merely a different label: the GRID channel itself must differ (the
+    // surround field the fingerprint drives), so the divergence is visible to a
+    // reader who never looks at the 12px label strip.
+    const grid = (svg: string) =>
+      svg.slice(svg.indexOf('data-channel="grid"'), svg.indexOf('data-channel="ellipse"'));
+    assert.notEqual(grid(render(a)), grid(render(b)));
+  });
+}
+
 // MNT-F1: the data-entviz-lib stamp must equal the published package version,
 // and LIB_VERSION must be read from package.json (not a stale literal). This
 // fails the instant release.py bumps package.json but the stamp lags.

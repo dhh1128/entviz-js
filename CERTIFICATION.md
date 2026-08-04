@@ -1,6 +1,6 @@
 # Conformance certification — @entviz/core
 
-**Spec:** entviz v15 · **Corpus:** entviz `compliance/` (pinned `v0.15.0`) ·
+**Spec:** entviz v16 · **Corpus:** entviz `compliance/` (pinned `v0.16.0`) ·
 **Tiers:** A (render model) + B (canonical raster, cairosvg) · **Result:**
 **full conformance — every corpus vector passes**, with no skip list and no
 subset.
@@ -10,16 +10,16 @@ Run from the entviz repo against the whole corpus:
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers A
-# -> 90/90 vectors passed   (render + error + invariant pairs + spec-version match)
+# -> 99/99 vectors passed   (render + error + invariant pairs + spec-version match)
 
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers B
-# -> 83/83 vectors passed   (raster via cairosvg)
+# -> 92/92 vectors passed   (raster via cairosvg)
 ```
 
 CI runs both tiers on every push as hard gates (`.github/workflows/ci.yml`:
 `conformance` + `conformance-tier-b`), cross-checking out the reference corpus
-at the pinned tag `v0.15.0`.
+at the pinned tag `v0.16.0`.
 
 ## Coverage
 
@@ -37,15 +37,21 @@ Crockford resolves to ULID, not hex) match by construction:
 - **DID** (W3C DID Core) and **URN** (RFC 8141) — v11 prefix-fold; includes the
   large `did-jwk-large` / `did-peer-2` on the large-input path
 - **base58** — Bitcoin legacy, Ripple, IPFS CIDv0 (multihash-labeled)
-- **bech32** — Bitcoin SegWit (incl. P2WSH), Litecoin, Bitcoin Cash, and generic
-  Cosmos-SDK chains (BIP-173/350 checksum-validated, HRP names the chain)
+- **bech32** — Bitcoin SegWit (incl. P2WSH and testnet), Litecoin, Bitcoin Cash,
+  Cardano Shelley (mainnet + testnet), nostr `npub`/`nsec`, and generic Cosmos-SDK
+  chains (BIP-173/350 checksum-validated). **v16:** the HRP is identity and binds
+  the fingerprint by prefix-fold on every bech32 path, so HRP siblings over one
+  payload (`cosmos1`/`osmo1`, `bc1`/`tb1`, `addr1`/`addr_test1`, `npub`/`nsec`)
+  render differently; CashAddr is the deliberate exception and stays unfolded
+  with its 8-char checksum in the core
 - **base32** (RFC 4648) — Stellar, IPFS CIDv1 (multicodec-labeled via varint decode)
 - **crockford32** — ULID · **base36** — GLEIF LEI (ISO 7064 MOD 97-10) ·
   **decimal** — Snowflake (clock-free sign-bit gate)
 - **CESR** (KERI AID/SAID derivation codes), **SSH** public keys (ed25519/rsa/
   dss/ecdsa), **SWHID**, **gitoid**, **EOS**, **Cardano**, and the alphabet-
   **disproof** path (e.g. `b64-large`)
-- **6 error vectors** — note length/charset, font-size range, EIP-55 bad checksum
+- **12 error vectors** — note length/charset, font-size range, EIP-55 bad
+  checksum, and the bech32/CashAddr/base58check/LEI bad-checksum rejections
 - **7 invariant pairs** — case/format-folding equivalences (UUID dashed≡undashed,
   ULID canonical≡lowercase, DID/URN normalization, …) all render-model-identical
 

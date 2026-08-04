@@ -149,6 +149,12 @@ test("parse: BTC SegWit bech32 lowercased", () => {
   assert.equal(p.type, "BTC SegWit");
   assert.equal(p.alphabet, BECH32);
   assert.equal(p.prefix, "bc1");
+  // v16: the HRP is identity, bound by prefix-fold, and the verified 6-char
+  // checksum leaves the core for the suffix (it used to sit inside the core,
+  // which inflated size_bits and bound the HRP only by accident).
+  assert.equal(p.prefixSemantic, true);
+  assert.equal(p.suffix, "v8f3t4");
+  assert.equal(p.core, "qw508d6qejxtdg4y5r3zarvary0c5xw7k");
 });
 
 test("parse: Ripple address -> XRP/base58", () => {
@@ -164,6 +170,11 @@ test("parse: Litecoin bech32 (ltc1)", () => {
   const p = parse("ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n9")!;
   assert.equal(p.type, "LTC");
   assert.equal(p.alphabet, BECH32);
+  // v16: same treatment as segwit — fold the HRP, checksum out of the core.
+  assert.equal(p.prefix, "ltc1");
+  assert.equal(p.prefixSemantic, true);
+  assert.equal(p.suffix, "gmn4n9");
+  assert.equal(p.core, "qw508d6qejxtdg4y5r3zarvary0c5xw7k");
 });
 
 test("parse: Litecoin legacy (L..) -> base58", () => {
@@ -225,6 +236,10 @@ test("parse: Cardano Shelley (addr1) -> bech32, checksum suffix", () => {
   assert.equal(p.type, "ADA Shelley");
   assert.equal(p.alphabet, BECH32);
   assert.equal(p.suffix!.length, 6);
+  // v16: addr1 (mainnet) vs addr_test1 (testnet) over one payload were
+  // byte-identical entvizes before the fold; the HRP now binds.
+  assert.equal(p.prefix, "addr1");
+  assert.equal(p.prefixSemantic, true);
 });
 
 test("parse: Stellar account (G..) -> base32 uppercased", () => {
@@ -352,6 +367,39 @@ test("parse: generic bech32 (cosmos) -> checksum-valid, hrp1 prefix", () => {
   assert.equal(p.prefix, "cosmos1");
   assert.equal(p.alphabet, BECH32);
   assert.equal(p.suffix!.length, 6);
+  // v16: the HRP names the chain / network / key role, so it is identity and
+  // folds. It cannot ride in the core: bech32's charset excludes b, i, o and 1.
+  assert.equal(p.prefixSemantic, true);
+});
+
+test("parse (v16): the HRP folds on every bech32 path, but NOT on CashAddr", () => {
+  // Generic, segwit, Litecoin and Cardano Shelley all fold `<hrp>1`, and each
+  // carries its verified 6-char checksum as the suffix rather than in the core.
+  for (const value of [
+    "cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e",
+    "osmo1qqqsyqcyq5rqwzqfpg9scrgwpugpzysntdz28t",
+    "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+    "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+    "ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n9",
+    "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
+  ]) {
+    const p = parse(value)!;
+    assert.equal(p.prefixSemantic, true, value);
+    assert.equal(p.suffix!.length, 6, value);
+    // The checksum is the LAST 6 characters of the input, and the core stops
+    // where it starts — the core never contains the checksum.
+    assert.equal(p.suffix, value.slice(-6).toLowerCase(), value);
+    assert.ok(!p.core.endsWith(p.suffix!), value);
+  }
+  // CashAddr is the deliberate exception: its prefix is OPTIONAL, so folding the
+  // literal prefix would make a bare address and its prefixed spelling diverge.
+  // It is safe unfolded because its 8-char checksum stays INSIDE the core and
+  // covers the prefix. See this.i:hrpb1nd.
+  const bch = parse("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a")!;
+  assert.equal(bch.prefixSemantic, undefined);
+  assert.equal(bch.suffix, null);
+  assert.equal(bch.core, "qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a");
+  assert.equal(bch.core.slice(-8), "y22gdx6a"); // the 8-char checksum, in-core
 });
 
 test("parse: <letters>1<chars> with bad checksum -> rejected (v14)", () => {

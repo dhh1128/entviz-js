@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 TypeScript implementation of [entviz](https://github.com/dhh1128/entviz) (spec
-**v15**) — visualize high-entropy values as comparable SVG diagrams — plus a
+**v16**) — visualize high-entropy values as comparable SVG diagrams — plus a
 React component. An npm workspace:
 
 - **`packages/core`** (`@entviz/core`) — the renderer. Pure TypeScript, runs
@@ -94,7 +94,7 @@ PYTHONPATH=src:. python -m compliance.runner \
 ## Spec version & drift
 
 Each rendered SVG stamps the entviz spec revision it targets
-(`SPEC_VERSION` in `packages/core/src/entviz.ts`, currently **v15**). The spec
+(`SPEC_VERSION` in `packages/core/src/entviz.ts`, currently **v16**). The spec
 and its reference Python impl live in the [entviz](https://github.com/dhh1128/entviz)
 repo and move independently; this port can lag. CI's `conformance` job checks
 out the reference, compares `SPEC_VERSION` against ours, and:
@@ -105,10 +105,11 @@ out the reference, compares `SPEC_VERSION` against ours, and:
   runs the corpus informationally — so spec drift is always visible without
   blocking unrelated work.
 
-As of this writing this port targets **v15**, matching the reference: the full
+As of this writing this port targets **v16**, matching the reference: the full
 render model (deterministic blank-map `row,col` markers + plus-shaped max marker,
 decoupled color-bar band order + the two fixed-slot bar markers, fingerprint-edge
-cell colors, the hybrid fingerprint blank fills, and the DID/URN **prefix-fold**)
+cell colors, the hybrid fingerprint blank fills, and the DID/URN/bech32-HRP
+**prefix-fold**)
 and the **complete parser dispatch** are implemented — no parser remains unported.
 See [`CERTIFICATION.md`](CERTIFICATION.md).
 

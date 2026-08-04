@@ -301,10 +301,10 @@ function describeFromParsed(parsed: Parsed): Described {
 }
 
 // Reading-order [{text, bind}] parts (Wrinkle 4).
-//  - A folded identity prefix (did:/urn:/gitoid:/swh: scheme, prefixSemantic) ->
-//    bind="fold".
-//  - Any other shown prefix (presentation framing: 0x, Qm, b, G, 1, HRP, SSH
-//    structural bytes, bech32 <hrp>1) -> bind="none".
+//  - A folded identity prefix (did:/urn:/gitoid:/swh: scheme, and from v16 the
+//    bech32 <hrp>1; prefixSemantic) -> bind="fold".
+//  - Any other shown prefix (presentation framing: 0x, Qm, b, G, 1, the CashAddr
+//    prefix, SSH structural bytes) -> bind="none".
 //  - The core (incl. in-core discriminators like a CESR code) -> bind="core".
 //  - A shown suffix (base58check/LEI checksum) -> bind="none".
 function partsFromParsed(parsed: Parsed): Part[] {
@@ -354,14 +354,27 @@ const PREFIX_ELLIPSIS = "...";
 const PREFIX_MIN_HEAD = 4;
 
 // The literal front prefix that was stripped from the visualized core, or null.
-// This is a leading bind="none" part — a presentation sigil peeled off the front
-// (0x, bc1, cosmos1, Stellar G, the SSH structural header, …). A folded identity
-// prefix (bind="fold": did/urn/gitoid/swhid) is NOT returned — it is already
-// shown verbatim as the PRIMARY slot. A bind="core" leading part (e.g. a CESR
-// derivation code, in the first cell) is likewise not a stripped prefix.
+// This is a leading part bound "none" or "fold" — either a presentation sigil
+// peeled off the front (0x, Stellar G, the SSH structural header, …) or a folded
+// identity prefix (did:key:, urn:isbn:, swh:1:cnt:, and from v16 the bech32
+// cosmos1/bc1/addr1 HRP). Either way the cells do not begin at the character the
+// reader pasted, so the label has to say what was removed.
+//
+// The slot is dropped by the caller only when the PRIMARY slot ALREADY displays
+// this prefix — the did/urn/gitoid/swhid case, where PRIMARY is literally
+// "did:key" — so it is never shown twice and never lost. Before v16 the rule was
+// 'bind="none" only', which was equivalent while every folded prefix was also
+// the PRIMARY; folding the bech32 HRP breaks that coincidence, because a Cosmos
+// address's PRIMARY is "bech32" and the HRP would otherwise vanish from the
+// label entirely (this.i:hrpb1nd).
+//
+// A bind="core" leading part (e.g. a CESR derivation code, in the first cell) is
+// not a stripped prefix.
 function strippedPrefix(ch: Characterization): string | null {
   const parts = ch.parts || [];
-  if (parts.length > 0 && parts[0].bind === "none") return parts[0].text;
+  if (parts.length > 0 && (parts[0].bind === "none" || parts[0].bind === "fold")) {
+    return parts[0].text;
+  }
   return null;
 }
 
@@ -500,9 +513,11 @@ function labelSize(ch: Characterization): string | null {
  *    trailing `:`. The `+hash ` marker is reflected here so a text-only consumer
  *    still sees it (the renderer styles it as a bold-red tspan). The trailing
  *    `<prefix>` slot echoes a front prefix stripped from the visualized
- *    core (a bind="none" leading part); it is the only slot that may be truncated
- *    (to `lineChars`) and may then end in `...`. Fold-prefix schemes
- *    (did/urn/gitoid/swhid) show their prefix as PRIMARY and get no extra slot.
+ *    core (a bind="none" or bind="fold" leading part); it is the only slot that
+ *    may be truncated (to `lineChars`) and may then end in `...`. The slot is
+ *    dropped only when the prefix, minus a trailing `:`, equals the PRIMARY
+ *    string — the did/urn/gitoid/swhid case. A folded bech32 HRP keeps its slot
+ *    (`bech32, cosmos1`), since its PRIMARY is the scheme name (v16).
  *  - bottom = `...<suffix>` then ` (<note>)` — the bound (now-verified) checksum
  *    and the user caption. Empty string when neither is present.
  *
@@ -520,6 +535,13 @@ export function renderLabel(
   if (size !== null) slots.push(size);
 
   let prefix = strippedPrefix(ch);
+  if (prefix && prefix.replace(/:+$/, "") === slots[0]) {
+    // v16: PRIMARY already displays this prefix verbatim (did:key, urn:isbn,
+    // swh:1:cnt, gitoid:blob:sha256). Showing it again would double it. The test
+    // is exact rather than "is it folded?", because a folded bech32 HRP's
+    // PRIMARY is the scheme name (bech32/BTC/ADA) and the HRP must still show.
+    prefix = null;
+  }
   if (prefix) {
     if (lineChars !== null) {
       // Budget left for the prefix = the line budget minus the marker and the

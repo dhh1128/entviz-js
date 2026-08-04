@@ -26,7 +26,7 @@ import {
 import { characterize, compactJson, renderLabel, TRUNC_MARKER } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v15";
+export const SPEC_VERSION = "v16";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -1041,7 +1041,20 @@ function parseBitcoin(text: string): Parsed | null {
     if (!bech32ChecksumValid(prefix.replace(/1$/, ""), data)) {
       throw new Error(`Bitcoin segwit address ${text} fails its bech32 checksum`);
     }
-    return { type: "BTC SegWit", core: data, alphabet: BECH32, prefix, suffix: null };
+    // v16: the HRP is identity (bc1 mainnet vs tb1 testnet), bound by
+    // prefix-fold; the 6-char checksum leaves the core and becomes the shown
+    // suffix, as every other verified checksum already does (this.i:sufxbind).
+    // Until v16 this parser kept the checksum inside the core, which bound the
+    // HRP only by accident — moving it out without folding would have made bc1
+    // and tb1 collide, so the two changes land together.
+    return {
+      type: "BTC SegWit",
+      core: data.slice(0, -6),
+      alphabet: BECH32,
+      prefix,
+      suffix: data.slice(-6),
+      prefixSemantic: true,
+    };
   }
   return null;
 }
@@ -1069,7 +1082,16 @@ function parseLitecoin(text: string): Parsed | null {
     if (!bech32ChecksumValid(prefix.replace(/1$/, ""), data)) {
       throw new Error(`Litecoin address ${text} fails its bech32 checksum`);
     }
-    return { type: "LTC", core: data, alphabet: BECH32, prefix, suffix: null };
+    // v16: same treatment as Bitcoin segwit above — fold the identity HRP, move
+    // the verified checksum out of the core and into the suffix.
+    return {
+      type: "LTC",
+      core: data.slice(0, -6),
+      alphabet: BECH32,
+      prefix,
+      suffix: data.slice(-6),
+      prefixSemantic: true,
+    };
   }
   return null;
 }
@@ -1087,6 +1109,14 @@ function parseBitcoinCash(text: string): Parsed | null {
   if (!cashaddrVerify(prefix, m[2])) {
     throw new Error(`Bitcoin Cash address ${text} fails its CashAddr checksum`);
   }
+  // v16 EXCEPTION — CashAddr is deliberately NOT folded, and keeps its 8-char
+  // checksum inside the core. (1) It is not vulnerable: the checksum covers the
+  // prefix and lives in the core, so `bitcoincash:X` and `bchtest:X` already
+  // have different cores. (2) The CashAddr prefix is OPTIONAL (a bare `q…`/`p…`
+  // body defaults to `bitcoincash`), so folding the literal prefix would make a
+  // bare address and its prefixed spelling — the same address — fingerprint
+  // differently, while folding a synthesized canonical prefix would put text in
+  // `parts` the user never typed. See this.i:hrpb1nd.
   return { type: "BCH", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1] ?? null, suffix: null };
 }
 
@@ -1110,7 +1140,18 @@ function parseCardano(text: string): Parsed | null {
     if (!bech32ChecksumValid(hrp.toLowerCase().replace(/1$/, ""), data)) {
       throw new Error(`Cardano Shelley address ${text} fails its bech32 checksum`);
     }
-    return { type: "ADA Shelley", core: m[2].toLowerCase(), alphabet: BECH32, prefix: m[1], suffix: m[3].toLowerCase() };
+    // v16: the HRP is identity — `addr1` mainnet vs `addr_test1` testnet over
+    // one payload were byte-identical entvizes before the fold, and a payment vs
+    // a stake address differ the same way. Bound by prefix-fold; the checksum is
+    // already the suffix on this path.
+    return {
+      type: "ADA Shelley",
+      core: m[2].toLowerCase(),
+      alphabet: BECH32,
+      prefix: m[1],
+      suffix: m[3].toLowerCase(),
+      prefixSemantic: true,
+    };
   }
   return null;
 }
@@ -1270,7 +1311,19 @@ function parseBech32(text: string): Parsed | null {
   // encoding (which would render an address that fails its own checksum). Same
   // "no entviz from an invalid checksum" rule the bc1/ltc1 parsers now follow.
   if (!bech32ChecksumValid(hrp, data)) throw new Error(`bech32 address ${text} fails its bech32 checksum`);
-  return { type: "bech32", core: data.slice(0, -6), alphabet: BECH32, prefix: `${hrp}1`, suffix: data.slice(-6) };
+  // v16: `<hrp>1` is an IDENTITY-BEARING prefix bound by prefix-fold. The same
+  // data payload under a different HRP denotes a different value — a different
+  // chain, a different network, or a nostr `npub` vs `nsec` — and the HRP is not
+  // in the bech32 alphabet (which excludes b/i/o/1), so it cannot ride in the
+  // core. See this.i:xtra4lph, this.i:s3mpr3fx, this.i:hrpb1nd.
+  return {
+    type: "bech32",
+    core: data.slice(0, -6),
+    alphabet: BECH32,
+    prefix: `${hrp}1`,
+    suffix: data.slice(-6),
+    prefixSemantic: true,
+  };
 }
 
 function parseIpfsCid(text: string): Parsed | null {
