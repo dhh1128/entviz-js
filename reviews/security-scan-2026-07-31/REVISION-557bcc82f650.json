@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-07-31T19:55:17+00:00",
+  "scan_root": "/home/daniel/code/me/entviz-js",
+  "products_dir": "CLAUDE-SECURITY-20260731-170021",
+  "mode": "scan",
+  "scope": [
+    "packages/core",
+    "packages/react",
+    "apps/playground"
+  ],
+  "revision": {
+    "versioned": true,
+    "commit": "557bcc82f6504bf1bcfbdaf15c770cf92111bd6b",
+    "branch": "main",
+    "dirty": false
+  },
+  "revision_source": "self-reported",
+  "model": null,
+  "effort": "medium",
+  "run_shape": {
+    "requested_effort": "medium",
+    "collapsed": null,
+    "source": "coverage.json",
+    "diff_files": null,
+    "diff_lines": null,
+    "scope_files": 116,
+    "empty_diff": false,
+    "empty_scope": false,
+    "researchers_dispatched": 28,
+    "skipped_components": [
+      {
+        "name": "core-react-tests-and-fixtures",
+        "paths": [
+          "packages/core/test",
+          "packages/react/test",
+          "packages/react/e2e"
+        ],
+        "reason": "Unit/integration/e2e test suites and golden fixtures \u2014 not shipped attacker-reachable code"
+      },
+      {
+        "name": "react-node-modules",
+        "paths": [
+          "packages/react/node_modules"
+        ],
+        "reason": "Vendored third-party dependency tree (vitest and friends); not first-party code, reviewed via dependency/SCA process rather than manual source review"
+      },
+      {
+        "name": "playground-build-output",
+        "paths": [
+          "apps/playground/dist"
+        ],
+        "reason": "Generated build artifact (bundled/minified JS), not source; reviewing the source in apps/playground/src covers the same logic"
+      },
+      {
+        "name": "docs-and-license",
+        "paths": [
+          "packages/core/README.md",
+          "packages/core/LICENSE",
+          "packages/core/NOTICE",
+          "packages/react/README.md",
+          "packages/react/LICENSE",
+          "packages/react/NOTICE",
+          "packages/react/docs",
+          "apps/playground/README.md"
+        ],
+        "reason": "Documentation and license text, no executable code or attacker-reachable logic"
+      }
+    ],
+    "completeness_check_outcome": "not-applicable",
+    "unaccounted_top_level_dirs": [],
+    "inventory_fallback": null,
+    "top_level_dir_count": null
+  },
+  "findings": {
+    "total": 10,
+    "high": 2,
+    "medium": 7,
+    "low": 1
+  },
+  "verification": {
+    "status": "verified",
+    "candidates": 44,
+    "candidates_deduped": 34,
+    "panel_votes": 102,
+    "panel_reviewed_findings": 10,
+    "panel_quorum_findings": 10,
+    "unreviewed_candidate_sites": 0,
+    "attested_findings": 0,
+    "reason": null,
+    "researchers_dispatched": 28,
+    "researchers_returned": 28
+  }
+}
