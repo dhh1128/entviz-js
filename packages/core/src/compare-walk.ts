@@ -288,12 +288,26 @@ export function buildCheckPlan(
     };
   }
 
-  // complete: read every cell. Gestalt is REDUNDANT at ≤512 bits — the text is
-  // lossless there, so verifying all filled cells already determines the whole
-  // value (blanks and every gestalt dimension follow by construction). It only
-  // adds coverage for a >512-bit value, whose displayed text is not lossless. The
-  // transparent probe still guards the long read (large or huge).
-  const includeGestalt = d.truncated;
+  // complete: read every cell, AND every gestalt dimension.
+  //
+  // This used to be `includeGestalt = d.truncated`, on the reasoning that the
+  // text is lossless at ≤512 bits, so verifying all filled cells already
+  // determines the whole value. That premise is false whenever the parser folds
+  // an identity prefix: the cells carry the core alone, so `did:good:X` and
+  // `did:evil:X` — or, after the v16 HRP fold, `cosmos1<payload>` and
+  // `osmo1<payload>` — have identical cell text, and the gestalt is the ONLY
+  // channel that binds `prefix ‖ core`. A Complete walk over such a pair
+  // therefore read six matching cells and ended with "No difference found — you
+  // read every cell, a full visual check", contradicting a correct machine
+  // verdict while the scrim hid the background, colour bar and ellipse that
+  // actually differed.
+  //
+  // Unconditional rather than "when the value has a folded prefix", because the
+  // asymmetric case defeats that test: if the user's value is a bare key and the
+  // reference is `did:key:<same body>`, the user's own classification carries no
+  // folded prefix and the gestalt steps would be dropped exactly when needed.
+  // It also matches what the mode already claims to be — a full visual check.
+  const includeGestalt = true;
   const hasProbe = sizeClass !== "small" && allText.length > PROBE_MIN_CELLS;
   const body = shuffle(
     [...allText.map(textStep), ...(includeGestalt ? gestalt.map(gestaltStep) : [])],

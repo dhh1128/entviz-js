@@ -10,14 +10,51 @@ const LEI = "5493001KJTIIGC8Y1R12"; // LEI → non-null suffix (the check digits
 
 // --- comparisonText -------------------------------------------------------
 
+// The readout after the bracketed label, which several assertions below are
+// about on its own.
+const cellsOf = (text: string): string => text.slice(text.indexOf("] ") + 2);
+
 test("comparisonText: UUID cells in reading order, space-separated, case-exact", () => {
   // 2x3 grid fully packed (no blanks) → no separators.
-  assert.equal(comparisonText(UUID), "550e84 00e29b 41d4a7 164466 554400 00");
+  assert.equal(comparisonText(UUID), "[UUID] 550e84 00e29b 41d4a7 164466 554400 00");
+});
+
+test("comparisonText: leads with the entviz's own top label", () => {
+  // The cells carry the core alone, so a folded prefix — did:/urn:/swh:/gitoid:
+  // and, after v16, a bech32 HRP — never reaches them. The label is the only
+  // part of the text that carries it, which is why it is mandatory rather than
+  // decorative: without it `did:good:X` and `did:evil:X` read out identically.
+  assert.equal(
+    comparisonText("did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"),
+    "[did:key] z6Mk haXg BZDv otDk L525 7fai ztiG iC2Q tKLG pbnn EGta 2doK",
+  );
+  assert.ok(comparisonText(HEX_FULL).startsWith("[hex, "));
+  assert.ok(comparisonText(HEX_1024).startsWith("[+hash hex, 1024-bit] "));
+});
+
+test("comparisonText: two values differing only in a folded prefix read differently", () => {
+  const body = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
+  assert.notEqual(comparisonText(`did:key:${body}`), comparisonText(`did:web:${body}`));
+  // And the cells alone — the whole readout minus the label — really are the
+  // same, which is the defect the label closes rather than papers over.
+  assert.equal(cellsOf(comparisonText(`did:key:${body}`)), cellsOf(comparisonText(`did:web:${body}`)));
+});
+
+test("comparisonText: the label is not truncated by render geometry", () => {
+  // A comparison text must be a function of the value alone. The top label's
+  // prefix slot is elastic against the grid width when it is painted; the
+  // comparison text must not inherit that, or one value would produce different
+  // texts at different font sizes.
+  const ssh =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtJVH9hM+2DyhmgRZBfeIDoVqCTbXY+0nKlS5pTkkXY user@example.com";
+  const wide = comparisonText(ssh, { targetAr: 4.0 });
+  const narrow = comparisonText(ssh, { targetAr: 0.25 });
+  assert.equal(wide.slice(0, wide.indexOf("]")), narrow.slice(0, narrow.indexOf("]")));
+  assert.ok(!wide.slice(0, wide.indexOf("]")).includes("..."));
 });
 
 test("comparisonText: blank cells are preserved as a · separator", () => {
-  const text = comparisonText(HEX_BLANKS);
-  const parts = text.split(" ");
+  const parts = cellsOf(comparisonText(HEX_BLANKS)).split(" ");
   assert.equal(parts.length, 4); // 2x2 grid → 4 cells
   assert.equal(parts.filter((p) => p === "·").length, 3); // 3 blanks
   assert.equal(parts.filter((p) => p === "012345").length, 1); // 1 token
@@ -28,11 +65,11 @@ test("comparisonText: a fully-packed grid has no separators", () => {
 });
 
 test("comparisonText: a >512-bit input keeps head, Crockford middle, tail with · gaps", () => {
-  const text = comparisonText(HEX_1024);
-  assert.ok(text.includes("·"), "blank separators preserved");
-  assert.ok(text.startsWith("·") || text.includes("012345"), "head tokens present");
+  const cells = cellsOf(comparisonText(HEX_1024));
+  assert.ok(cells.includes("·"), "blank separators preserved");
+  assert.ok(cells.startsWith("·") || cells.includes("012345"), "head tokens present");
   // 4x6 grid → 24 cells → 24 space-separated slots.
-  assert.equal(text.split(" ").length, 24);
+  assert.equal(cells.split(" ").length, 24);
 });
 
 test("comparisonText: deterministic", () => {

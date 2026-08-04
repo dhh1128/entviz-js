@@ -143,6 +143,23 @@ Normalize both sides (case/punctuation per the spec's per-alphabet rules) and co
 cores (or normalized comparison-texts). Distinguish **reference entropy** (compare values) from
 **reference comparison-text** (compare the text channel). Definitive `IDENTICAL`/`DIFFERENT`.
 
+**The comparison text carries the label, and this is load-bearing.** Its canonical form is the
+entviz's top label in square brackets, then the cell readout:
+`[did:key] z6Mk haXg BZDv …`, `[hex, 256-bit] 9f86d0 81884c …`. The cells are built from the
+*core* alone, so anything the parser folds into the fingerprint instead of the cells — a
+`did:<method>:`, a `urn:<nid>:`, a SWHID/gitoid object-type, a bech32 HRP — appears in no cell,
+and two values differing only in a folded prefix produce byte-identical readouts. A
+comparison-text engine that affirms `IDENTICAL` from the readout alone therefore affirms
+sameness between values the value engine itself calls `DIFFERENT` (`did:good:X` vs
+`did:evil:X`). Including the label also recovers the encoding, the size, and any presentation
+prefix (`0x`, a multihash header) that the cells drop. The label is rendered without a line
+budget, so it is never elastically truncated: a comparison text must be a function of the value
+alone, not of the grid width it happened to be painted at.
+
+A reference readout that carries **no** label cannot identify a value. When its cells match
+ours it is `UNKNOWN` (route to the walk), never `IDENTICAL` — and never `DIFFERENT` either,
+since no difference was observed.
+
 ### 6.2 SVG → recompute, re-render, self-consistency (the hardened path)
 A pasted SVG is **attacker-authorable** and the feature has **no golden raster**, so the
 conformance checker's "trust the declared `<text>`/`data-*`" stance is unsafe here: Tier-B

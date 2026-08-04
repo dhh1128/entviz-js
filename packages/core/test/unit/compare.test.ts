@@ -94,7 +94,29 @@ test("compareComparisonText: a matching ≤512-bit readout is `identical`", () =
 });
 
 test("compareComparisonText: a mismatch is `different`", () => {
-  assert.deepEqual(compareComparisonText("000000 111111", UUID), { state: "different" });
+  assert.deepEqual(compareComparisonText("[UUID] 000000 111111", UUID), { state: "different" });
+});
+
+test("compareComparisonText: a readout with no label cannot affirm and is `unknown`", () => {
+  // Not `different` — we did not observe a difference, we observed a reference
+  // that is missing the one channel a folded prefix travels in. Saying
+  // `different` would assert something we did not check.
+  const v = compareComparisonText("550e84 00e29b 41d4a7 164466 554400 00", UUID);
+  assert.equal(v.state, "unknown");
+});
+
+test("compareComparisonText: two values differing only in a folded prefix are `different`", () => {
+  // The regression this format change exists to prevent. Both DIDs tokenize to
+  // the same 12 cells in a full 3x4 grid, so before the label was included this
+  // returned `identical` — the library's strongest affirmative claim — for a
+  // DID whose method, and therefore whose resolved key material, is attacker
+  // controlled. `compareValues` always got this right; the readout did not.
+  const body = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
+  const mine = `did:key:${body}`;
+  const theirs = `did:web:${body}`;
+  assert.deepEqual(compareValues(mine, theirs), { state: "different" });
+  assert.deepEqual(compareComparisonText(comparisonText(theirs), mine), { state: "different" });
+  assert.deepEqual(compareComparisonText(comparisonText(mine), mine), { state: "identical" });
 });
 
 test("compareComparisonText: a matching >512-bit readout is `unknown` (not a full proof)", () => {

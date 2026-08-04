@@ -49,6 +49,7 @@ import {
   MIDDLE_TOKENS,
   BAND_LETTER,
 } from "./entviz.ts";
+import { characterize, renderLabel } from "./characterize.ts";
 
 // A blank cell carries no input text; it shows as this separator in the
 // comparison string so blank *position* (a fingerprint-driven, CRC-like signal —
@@ -373,13 +374,37 @@ function computeLayoutGeometry(
 }
 
 /**
- * The canonical comparison text: the cells' text in grid reading order
- * (left→right, top→bottom), space-separated, with each blank cell preserved as a
- * `·`. Case-exact — this is the read-aloud verification surface, never localized.
+ * The canonical comparison text: the entviz's top label in square brackets,
+ * then the cells' text in grid reading order (left→right, top→bottom),
+ * space-separated, with each blank cell preserved as a `·`. Case-exact — this
+ * is the read-aloud verification surface, never localized.
+ *
+ *     [did:key] z6Mk haXg BZDv otDk L525 7fai ztiG iC2Q tKLG pbnn EGta 2doK
+ *     [hex, 256-bit] 9f86d0 81884c 7d659a ...
+ *
+ * The label is REQUIRED, not decoration. The cells carry the *core* alone, so
+ * anything the parser folds into the fingerprint instead of the cells — a
+ * `did:<method>:`, a `urn:<nid>:`, a SWHID/gitoid object-type, a bech32 HRP —
+ * is invisible here, and two values differing only in a folded prefix produce
+ * byte-identical cell text. Affirming `identical` from cell text alone was
+ * therefore affirming sameness between values the engine itself calls
+ * different: `did:good:X` versus `did:evil:X` read out the same. The spec
+ * requires any read-aloud or comparison-text procedure to include the label
+ * strip's prefix (spec.md, the text channel's folded-prefix exception); the
+ * whole label is used because it is what the picture actually shows, and it
+ * additionally carries the encoding, the size, and any presentation prefix
+ * (`0x`, a multihash header) that the cells also drop.
+ *
+ * The label is rendered WITHOUT a line budget, so it is never elastically
+ * truncated. A comparison text must be a function of the value alone; folding
+ * in the grid width would make the same value produce different text at
+ * different font sizes or aspect ratios.
  */
 export function comparisonText(value: string, opts: RenderOptions = {}): string {
-  const { cells } = buildModel(value, opts);
-  return cells.map((c) => (c.blank ? BLANK_SEP : (c.text as string))).join(" ");
+  const { cells, truncated } = buildModel(value, opts);
+  const { top } = renderLabel(characterize(value.trim()), truncated, null, null, null);
+  const readout = cells.map((c) => (c.blank ? BLANK_SEP : (c.text as string))).join(" ");
+  return `[${top}] ${readout}`;
 }
 
 /** Structured, color-independent channel data for an accessible description. */

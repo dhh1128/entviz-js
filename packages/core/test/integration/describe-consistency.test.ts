@@ -82,9 +82,23 @@ for (const [name, value, opts] of CASES) {
     );
     for (const b of d.colorBarBands) assert.ok(b.count > 0, `band ${b.color} count > 0`);
 
-    // comparisonText = filled text in order, blanks as ·
+    // comparisonText = the bracketed top label, then filled text in order with
+    // blanks as ·. The label is mandatory: the cells carry the core alone, so a
+    // folded prefix reaches no cell and the readout alone cannot identify the
+    // value.
     const expectedCmp = cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");
-    assert.equal(comparisonText(value, opts), expectedCmp);
+    const cmp = comparisonText(value, opts);
+    assert.ok(cmp.startsWith("["), "comparison text leads with the label");
+    const label = cmp.slice(1, cmp.indexOf("]"));
+    assert.ok(label.length > 0, "label is not empty");
+    assert.equal(cmp.slice(cmp.indexOf("] ") + 2), expectedCmp);
+    // The label the SVG paints may be elastically truncated to the grid width;
+    // the comparison text's may not. When the painted one did not truncate, the
+    // two must agree — otherwise the text is not describing this picture.
+    const painted = svg.match(/<g data-channel="label-top"><text[^>]*>([^<]*)</)?.[1];
+    if (painted && !painted.includes("...")) {
+      assert.equal(label, painted.replace(/^\+hash /, "+hash "), "label matches the painted strip");
+    }
 
     // color-bar band letters (top→bottom), lowercased to the rendered glyph
     const bands = [...svg.matchAll(/data-color-bar-band="([WGRBK])"/g)].map((m) =>

@@ -65,23 +65,45 @@ test("buildCheckPlan: spot-check favours discriminatory gestalt early (ellipse b
   assert.ok(ellipseSum / n < bgSum / n, `ellipse avg ${ellipseSum / n} vs background ${bgSum / n}`);
 });
 
-test("buildCheckPlan: complete on a small value reads all text, no gestalt, no probe", () => {
+test("buildCheckPlan: complete on a small value reads all text AND the gestalt, no probe", () => {
   const p = buildCheckPlan(UUID, {}, "complete", rngFrom(3));
   assert.equal(p.mode, "complete");
   assert.equal(p.sizeClass, "small");
   assert.equal(p.hasProbe, false);
-  assert.ok(p.steps.every((s) => s.kind === "text"));
-  assert.equal(p.steps.length, 6); // every filled cell
+  assert.equal(kinds(p).filter((k) => k === "text").length, 6); // every filled cell
+  // The gestalt is NOT redundant at <=512 bits, whatever the old comment said:
+  // the cells carry the core alone, so a folded prefix (did:/urn:/swh:/gitoid:,
+  // and a bech32 HRP after v16) shows up in no cell. Reading six matching cells
+  // and announcing "no difference found" was contradicting a correct machine
+  // verdict for exactly those pairs.
+  assert.ok(kinds(p).includes("gestalt"));
 });
 
-test("buildCheckPlan: complete on a large ≤512 value reads all cells + probe, NO redundant gestalt", () => {
+test("buildCheckPlan: a complete walk can distinguish values that differ only in a folded prefix", () => {
+  // The two DIDs below have byte-identical cell text. If a Complete plan
+  // contains only text steps, every step matches and the walk affirms sameness.
+  const body = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
+  const a = describeChannels(`did:key:${body}`);
+  const b = describeChannels(`did:web:${body}`);
+  assert.deepEqual(
+    a.cells.map((c) => c.text),
+    b.cells.map((c) => c.text),
+    "premise: the cells really are identical",
+  );
+  assert.notDeepEqual(a.colorBarLetters, b.colorBarLetters, "premise: the gestalt differs");
+  const p = buildCheckPlan(`did:key:${body}`, {}, "complete", rngFrom(3));
+  assert.ok(kinds(p).includes("gestalt"));
+});
+
+test("buildCheckPlan: complete on a large ≤512 value reads all cells + probe + gestalt", () => {
   const p = buildCheckPlan(HEX512, {}, "complete", rngFrom(4));
   assert.equal(p.sizeClass, "large");
   assert.equal(p.hasProbe, true);
   assert.equal(kinds(p).filter((k) => k === "probe").length, 1);
-  // text is lossless at ≤512 bits, so gestalt is redundant in a full read
-  assert.ok(!kinds(p).includes("gestalt"));
-  assert.ok(p.steps.every((s) => s.kind === "text" || s.kind === "probe"));
+  // The gestalt rides along at every size: it is the only channel that binds
+  // prefix || core, so dropping it made a "full visual check" not one.
+  assert.ok(kinds(p).includes("gestalt"));
+  assert.ok(p.steps.every((s) => s.kind === "text" || s.kind === "probe" || s.kind === "gestalt"));
 });
 
 test("buildCheckPlan: a >512-bit value is huge; spot-check text anchors on the fingerprint-middle cells", () => {

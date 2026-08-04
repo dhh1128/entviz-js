@@ -14,7 +14,7 @@
  * certainty.
  */
 import { classifyInput, type RenderOptions } from "./entviz.ts";
-import { describeChannels } from "./describe.ts";
+import { comparisonText, describeChannels } from "./describe.ts";
 
 export type Verdict =
   | { state: "identical" }
@@ -78,20 +78,46 @@ export function compareValues(a: string, b: string): Verdict {
 const normalizeText = (s: string): string => s.trim().replace(/\s+/g, " ");
 
 /**
- * Compare a reference *comparison-text* (the read-aloud cell readout) against the
+ * Compare a reference *comparison-text* (the read-aloud readout) against the
  * value's own comparison text. A match on a ≤512-bit input is lossless ⇒
  * `identical`; on a >512-bit (truncated) input the text is head + fingerprint
  * middle + tail, so a match is strong but not a full identity proof ⇒ `unknown`
  * (route to the human walk), never `identical`. Any mismatch ⇒ `different`.
+ *
+ * This compares the FULL comparison text — the bracketed label and the cell
+ * readout — by calling {@link comparisonText} rather than re-deriving the cells
+ * here. It used to compare the cells alone, which was the same defect from two
+ * directions: the cells carry the core, while the engine's own identity
+ * definition (`identityKey`) also includes the folded prefix. So
+ * `did:good:AbCd…` and `did:evil:AbCd…` — different values by `compareValues`,
+ * resolving to different documents and different keys — produced byte-identical
+ * readouts and reached the strongest affirmative verdict the library has.
  */
 export function compareComparisonText(
   referenceText: string,
   value: string,
   opts: Parameters<typeof describeChannels>[1] = {},
 ): Verdict {
+  const ref = normalizeText(referenceText);
   const ch = describeChannels(value, opts);
-  const mine = ch.cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");
-  if (normalizeText(referenceText) !== normalizeText(mine)) return { state: "different" };
+  const mine = normalizeText(comparisonText(value, opts));
+  if (ref !== mine) {
+    // A label-less reference whose CELLS match ours is the one case worth
+    // separating: a hand-typed or pre-label readout of what may well be the same
+    // value. It cannot prove identity — it is missing exactly the channel a
+    // folded prefix travels in — so `unknown` routes it to the human walk.
+    // Saying `different` there would assert a difference we did not observe.
+    // Any other mismatch is a plain mismatch, which keeps the caller's
+    // value-then-comparison-text fallback intact for a pasted differing value.
+    const cellsOnly = ch.cells.map((c) => (c.blank ? "·" : (c.text as string))).join(" ");
+    if (!ref.startsWith("[") && ref === normalizeText(cellsOnly)) {
+      return {
+        state: "unknown",
+        reason: "the reference readout has no label, so it cannot identify the value",
+      };
+    }
+    return { state: "different" };
+  }
   return ch.truncated
     ? { state: "unknown", reason: "comparison-text match on a >512-bit input is not a full identity proof" }
     : { state: "identical" };
