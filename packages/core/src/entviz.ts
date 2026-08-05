@@ -26,7 +26,7 @@ import {
 import { characterize, compactJson, renderLabel, TRUNC_MARKER } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v16";
+export const SPEC_VERSION = "v17";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;
@@ -924,7 +924,18 @@ const LITECOIN_RE = new RegExp(`^(ltc1)(${BECH32E}{38,68})$`, "i");
 const BITCOIN_CASH_RE = new RegExp(`^((?:bitcoincash|bchtest):)?([pq]${BECH32E}{41})$`, "i");
 const CARDANO_SHORT_BYRON_RE = new RegExp(`^(Ae2)(${B58C}{50})(${B58C}{6})$`);
 const CARDANO_LONG_BYRON_RE = new RegExp(`^(DdzFF)(${B58C}{65})(${B58C}{6})$`);
-const CARDANO_SHELLEY_RE = new RegExp(`^((?:addr|stake)(?:_test)?1)(${BECH32E}{50,100})(${BECH32E}{6})$`);
+// Cardano Shelley. v17: the body floor was 50, which silently excluded EVERY
+// 29-byte Shelley address — reward/stake (`stake1…`) and enterprise — since 29
+// bytes is 47 bech32 characters ahead of the 6-char checksum. Those fell through
+// to the generic bech32 parser and typed as `bech32` rather than `ada`; worse,
+// their testnet forms did not parse as bech32 at all, because `stake_test`
+// contains `_`, which is outside the generic parser's `[a-z]` HRP charset, so
+// they landed on the base64url disproof fallback with no scheme and no checksum
+// verification. The floor is now 45: a 57-byte base address is 91 characters and
+// a 29-byte one is 47, so both fit with margin. Widening is safe because the
+// prefix alternation is anchored and this parser still runs before the generic
+// bech32 one. See this.i:sh3lley29.
+const CARDANO_SHELLEY_RE = new RegExp(`^((?:addr|stake)(?:_test)?1)(${BECH32E}{45,100})(${BECH32E}{6})$`);
 const STELLAR_RE = new RegExp(`^(G|g)(${BASE32E}{55})$`);
 const STELLAR_MUXED_RE = new RegExp(`^(M|m)(${BASE32E}{68})$`);
 const BECH32_GENERIC_RE = new RegExp(`^([a-z]{1,83})1([${BECH32_ALPHABET}]{8,})$`, "i");

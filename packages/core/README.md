@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 TypeScript implementation of [**entviz**](https://github.com/dhh1128/entviz)
-(spec **v16**) — turn a high-entropy value (cryptographic key, hash, signature,
+(spec **v17**) — turn a high-entropy value (cryptographic key, hash, signature,
 UUID, blockchain address, post-quantum key, …) into a comparable SVG diagram so
 a human can decide *at a glance* whether two values are the same or different.
 

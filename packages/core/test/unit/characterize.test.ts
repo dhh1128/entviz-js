@@ -144,9 +144,14 @@ test("ADA Byron and Shelley variants — address role", () => {
   assert.equal(byron.scheme, "ada");
   assert.equal(byron.role, "address");
   assert.equal(byron.qualifiers.variant, "byron");
+  // v17: Byron carries NO network — its magic is inside the CBOR payload this
+  // parser does not decode, so there is nothing to derive it from.
+  assert.deepEqual(byron.qualifiers, { variant: "byron" });
   const shelley = characterize("addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x");
   assert.equal(shelley.scheme, "ada");
   assert.equal(shelley.qualifiers.variant, "shelley");
+  // v17: Shelley states its network in the prefix. See v17-network.test.ts.
+  assert.equal(shelley.qualifiers.network, "mainnet");
 });
 
 test("ETH checksummed — address role, eth scheme, no variant", () => {
