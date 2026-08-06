@@ -177,6 +177,64 @@ not a demonstrated bug). The engine MUST:
    (gestalt = SHA-512 of its own cells; glyphs = `<text>`);
 4. reject any inconsistency → route to the human walk, never IDENTICAL.
 
+#### 6.2.1 As shipped
+
+The first cut of the engine did item 1 as a flat **tag whitelist** plus a few substring checks,
+and never did item 3's re-render at all. Security findings **F1/F2** (2026-07-31) showed that to
+be forgeable with no hash work: every element of an opaque `<rect>` cover, a duplicated cell, a
+cell group hidden inside `<defs>`, a second `<text>` in a cell, or an `opacity="0"` on the honest
+glyphs is *inside* the vocabulary, so all of them reached `identical`. The engine now reads:
+
+1. **A cheap raw prescan** (`compare.ts` `rawPrescan`) still rejects the markup-level repaints a
+   substring scan can see: foreign tags, `on*=`, `style=`, `@font-face`/`@import`, non-fragment
+   `href`/`url()`, comments/CDATA/DOCTYPE, and the presentation attributes entviz never
+   emits anywhere — `opacity`, `display`, `visibility`, `mask`, `filter`.
+2. **A strict parse and the entviz grammar** (`svg-profile.ts`). The parser accepts only the
+   serialization the renderer emits — no comments, CDATA, DOCTYPE (hence no internal entity
+   subset), no character references, no duplicate attributes, no second root — and keeps a run of
+   character data in its position among sibling elements, so two orderings cannot collapse into
+   one tree. The grammar then pins **element sequence, nesting, per-position attribute
+   allow-lists, child counts and cell-index uniqueness** to the exact shape `render()` produces.
+   `transform`, `clip-path`, `fill-opacity` and `stroke-opacity` are *not* rejected outright —
+   the ellipse overlay legitimately carries them — they are pinned to that one position.
+3. **The declared text channel** decides `different`, exactly as before.
+4. **The recomputed gestalt** (surround bits + colour-bar letters, recomputed from the value,
+   never read from `data-*`) must agree; the colour-bar scan is scoped to the colour-bar group
+   rather than the whole document.
+5. **The recompute gate.** No affirmative verdict is returned until the value has been
+   **re-rendered through this library's own renderer**, at the geometry the reference itself
+   declares (grid from `data-cols`/`data-rows`, point size inverted from the root `width`, note
+   recovered from the bottom strip), and the two documents compare equal as trees. A reference
+   that passes *is* our drawing of the value, so declared and painted coincide by construction.
+   This gates the >512-bit `similar` chip too, which F2 also reached.
+
+**Tree equality is deliberately narrow.** Numeric attribute values are compared to within
+0.05px, the conformance checker's own cross-implementation tolerance (the reference renderers
+agree byte-for-byte except where a coordinate lands on a half at the third decimal). Exactly two
+attributes are ignored, under one rule — *an attribute is ignorable only if two raw inputs of the
+same identity can differ in it while drawing the same picture*: `data-entviz-lib` (the library
+build) and `data-input-bytes` (the raw input's byte count, which is how `{550e…}` and
+`550e8400e29b…` differ, and the only way they differ). Everything else, including the spec
+version and the entropy characterization, must match exactly.
+
+**What this costs, honestly.** The gate is a *sufficient* test for the affirmative, not a
+necessary one, so some references that are genuinely of the user's value now land on `unknown`
+and route to the walk:
+
+- a reference drawn by a build whose ink differs from ours (a different spec version, or a
+  future renderer change) — correctly, since we cannot say the picture is what we would draw;
+- a >512-bit reference produced by the **Python** reference implementation, which writes the
+  projected label of a truncated input as character data after the `+hash` tspan where
+  entviz-js wraps it in a second tspan. Same line, same raster, different DOM — so the grammar
+  accepts it (it is conformant) but the recompute gate cannot match it, and it lands on plain
+  `unknown` instead of the `≈` chip. Worth reconciling in the renderers;
+- a reference whose **top label** differs while the identity does not — `0x`-prefixed hex against
+  bare hex is one identity to the text engine but two different pictures. `unknown`, never
+  `different`.
+
+Per the verdict discipline in §3, every one of those is `unknown`, never `different`: a
+degraded or attacker-authored reference must not be spun into a false "they differ" either.
+
 ### 6.3 Raster → structural predict-and-sample (disprove-only, geometry-anchored)
 
 > **This supersedes an earlier whole-image pixel-diff sketch** that rasterized our own SVG,

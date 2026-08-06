@@ -36,6 +36,10 @@ A reader should calibrate on one point above all: this report says nothing about
 
 ### F1 — Closed-profile validation of a pasted entviz SVG does not bind declared cell data to what the SVG actually paints (HIGH, confidence high)
 
+> **FIXED** (2026-08-06). `validateClosedProfile` is now a cheap raw prescan plus a strict parse and a real grammar: `packages/core/src/svg-profile.ts` (new — `parseXml`, `validateEntvizProfile`, `extractEntvizChannels`, `recoverGeometry`, `treeEqual`) driven from `packages/core/src/compare.ts` (`rawPrescan`, `parseEntviz`, `referenceIsOurRendering`, `compareSvg`). Element sequence, nesting, per-position attribute allow-lists, child counts and cell-index uniqueness are pinned to the shape `render()` emits; the colour-bar scan is scoped to the colour-bar group; DOCTYPE and internal entity subsets are rejected; and no affirmative verdict is returned until the value is re-rendered through this library's own renderer and matches the reference tree. The forgeries are locked in `packages/core/test/unit/compare-svg-attacks.test.ts` (16 tests, every one of which reached `identical`/`similar` before the fix) with the grammar's rejection table in `packages/core/test/unit/svg-profile.test.ts`. Shipped behaviour and its residual limits are written up in `packages/react/docs/comparison-design.md` §6.2.1.
+>
+> Note on the fix as suggested: rejecting `transform`, `clip-path`, `fill-opacity` and `stroke-opacity` "anywhere in the document" would reject honest entvizes — the renderer emits all four on the ellipse overlay. They are pinned to that one position by the grammar instead. `opacity`, `display`, `visibility`, `mask` and `filter` appear nowhere in a conformant entviz and are rejected outright.
+
 **Impact.** The machine `identical` verdict — the primary asset of the whole component, and the thing `comparison-design.md` §6.2 adjudication S3 explicitly names ("an SVG whose `<text>` says X while its ink shows Y could otherwise reach IDENTICAL with no preimage") — is forgeable with no hash work at all. A victim who recognizes the picture *and* gets a green `= Identical` chip is holding a value that is not the one the artifact depicts. That is precisely the substitution the tool exists to prevent.
 
 **Where.** `packages/core/src/compare.ts:167` in `validateClosedProfile`
@@ -54,6 +58,8 @@ A reader should calibrate on one point above all: this report says nothing about
 **Verification.** 3/3 lens verifiers confirmed.
 
 ### F2 — compareSvg blesses an attacker-authored SVG as `identical` (HIGH, confidence medium)
+
+> **FIXED** (2026-08-06), by the same change as F1. The sink at `compare.ts:274` no longer derives an affirmative verdict from the reference's declarations: `compareSvg` reaches `identical` (≤512-bit) or `unknown`+`similar` (>512-bit, the green `≈` chip this finding also names) only after `referenceIsOurRendering` re-renders the user's value at the geometry the reference declares and finds the two documents to be the same drawing. Everything short of that is `unknown` — never a manufactured `different`. The >512-bit `≈` variant is covered by two dedicated tests in `packages/core/test/unit/compare-svg-attacks.test.ts`.
 
 **Impact.** The tool's single security-bearing output can be forged. A reference SVG whose visible glyphs render value Y while its declared cells declare value X yields a green "= Identical" chip against X — or, for inputs over 512 bits, the green "≈" `unknownSvgSimilar` chip via `chipFor`. Because `EntvizCompare` deliberately never embeds the pasted markup ("The reference is ALWAYS re-rendered through our own `<Entviz>`", `EntvizCompare.ts:495-498`), the victim never sees the discrepancy inside the tool: they saw the attacker's picture elsewhere — mail, web page, PDF — and the tool certifies it as their value.
 
