@@ -260,3 +260,81 @@ Entviz-JS Port = goal:
         same line, same raster, different DOM — so such a reference is accepted as conformant
         but cannot pass the recompute gate, and lands on `unknown` instead of `≈`.
       status: drafted
+
+    The anti-DoS cap belongs to every entry point, and the decode stays exact = decision:
+      id: pzxcxqtd
+      why: >
+        Settled 2026-08-06, closing security findings F3/F9 (reviews/security-scan-2026-07-31).
+        Two defects, and the order they were fixed in matters.
+
+        (1) THE CAP WAS IN THE WRONG PLACE. MAX_INPUT_CHARS was checked inside render() and
+        inside classifyInput's UTF-8 FALLBACK arm only. <EntvizPill> calls characterize()
+        BEFORE render(), and every parseable value skipped classifyInput's guard entirely, so
+        the cap the code called an "Anti-DoS cap" never ran on the path that needed it. The
+        rule now: a guard downstream of a sibling entry point protects nothing. The cap is
+        enforced at the top of characterize() and at the top of classifyInput BEFORE parse(),
+        covering both arms — which is every public route to the positional decode
+        (describeChannels, comparisonText, gridShapes, classifyValue, compare's identityKey).
+        render() keeps its own check; a redundant guard at a public boundary is not a smell.
+
+        (2) THE DECODE WAS QUADRATIC. sizeBits for base58/base36/decimal decodes the core to
+        an integer, and the fold was `n = n * base + digit` per character — O(n²), because the
+        accumulator grows without bound and every step multiplies all of it. Measured at the
+        64 KiB cap: 740 ms of pure BigInt work; the ~10 MB string the missing cap admitted
+        froze the tab for minutes.
+
+        REJECTED: the estimate `ceil(len * log2(base) / 8)`, which finding F3 proposed. It is
+        O(1) and it is WRONG for the most ordinary inputs there are — it disagrees with the
+        exact value whenever leading digits are zero, i.e. every base58check address with a
+        leading zero byte. A Bitcoin P2PKH address measures 192 bits exactly and 200 by the
+        estimate; a core of all base58 '1's measures 8 and estimates 160. sizeBits is
+        spec-normative (docs/spec.md *Resolution A*) and feeds the SIZE label, so the estimate
+        is a spec change wearing a performance costume: it would move rendered output and
+        break conformance. Verified before rejecting, not assumed.
+
+        ADOPTED: the reference's fix (entviz 77d35cc, this.i:f4std3c0) — same integer,
+        computed better. Split the digit string in half, convert each half, combine as
+        `hi * base**len(lo) + lo`. Balanced operands let V8's subquadratic multiplication do
+        the work instead of a long tail of lopsided multiplies: ~O(n^1.58), 740 ms -> 17.5 ms
+        at the cap, and characterize() end-to-end at the cap is ~30 ms. JS-only addition the
+        Python port does not need: the combine exponents are memoized (17.5 ms with the memo,
+        25.4 ms without), and the minimal byte length is read off toString(16) rather than
+        toString(2) — same exact answer, a quarter of the materialized string.
+
+        Output-neutral by construction, and proven so: conformance stayed 104/104 and no
+        golden moved. tests/unit/decode-speed-and-exactness.test.ts pins both properties —
+        the balanced fold equals the naive one across the leaf boundary and with leading
+        zeros, and the cheap estimate is asserted NOT equivalent so nobody swaps it in later.
+      status: drafted
+
+    Fetched provenance names the origin the BYTES came from = decision:
+      id: kwt1faw7
+      why: >
+        Settled 2026-08-06, closing security finding F10 (reviews/security-scan-2026-07-31).
+        <EntvizCompare> parsed the origin out of the URL the user pasted and used it twice —
+        as the pre-fetch consent hint ("Will fetch from X") and as the LOCKED provenance label
+        ("From X", a VERDICT_LOCKED_KEY, deliberately not host-overridable because it carries
+        judgment). fetch() defaults to `redirect: "follow"` and nothing re-derived the origin,
+        so an open redirect on a trusted host served attacker bytes that the tool then
+        attributed to the trusted host, in copy it treats as too load-bearing to translate.
+
+        REJECTED: `redirect: "manual"`. In a browser it yields an opaque-redirect response
+        with an empty `url` and no readable Location, so the one fact re-consent needs — the
+        new origin — is exactly what it hides. `redirect: "error"` fails closed but breaks
+        benign http→https and trailing-slash redirects and still cannot name a target.
+
+        ADOPTED: follow, then re-derive `new URL(res.url).origin`, and split the two consents.
+        EGRESS was consented at the Fetch click and cannot be un-sent. ADOPTION — installing
+        those bytes as the reference every verdict is computed against, under a locked
+        provenance label — is a separate act, so a cross-origin redirect holds the bytes out
+        of the reference and asks again, naming BOTH origins ("trusted.example redirected this
+        to evil.example… use it anyway?"). Accepting relabels the reference with the origin
+        that actually served it; discarding, editing the field, or dropping something else
+        throws it away. The three new strings are VERDICT_LOCKED_KEYS for the same reason the
+        provenance labels are. A same-origin redirect is adopted silently — there is nothing
+        to disclose. `fetch.success` now always carries the TRUE origin, plus `requestedOrigin`
+        when they differ, so a host's event log records the discrepancy rather than the
+        pre-redirect fiction. A host-injected `fetchReference` is unchanged: it is handed the
+        origin up front and returns bytes, so there is no response URL to re-derive from and
+        the host owns its own redirect policy.
+      status: drafted
