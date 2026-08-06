@@ -33,7 +33,10 @@
  *  - parts       — ordered [{text, bind}] with bind in {none, fold, core}.
  *  - entropyType — derived convenience = scheme ?? encoding.
  */
-import { parse, BASE64URL, type Alphabet, type Parsed } from "./entviz.ts";
+import {
+  parse, BASE64URL, MAX_INPUT_CHARS, inputTooLargeMessage,
+  type Alphabet, type Parsed,
+} from "./entviz.ts";
 import { utf8ByteLength, bytesToBase64url, utf8Bytes } from "./bytes.ts";
 
 // Closed role enum. Nothing outside this set may appear.
@@ -89,24 +92,94 @@ export interface Characterization {
 // decimal=4 vs ~3.32).
 const INTEGER_DECODE_ALPHABETS = new Set(["base58", "base36", "decimal"]);
 
+// Chunk size for the divide-and-conquer fold below. Small enough that a leaf
+// fold is cheap small-BigInt arithmetic, large enough that the recursion stays
+// shallow. The exact value is not load-bearing.
+/** @internal */
+export const DIGIT_LEAF = 32;
+
+// Memoized base**exp. The recursion halves a contiguous range, so at any depth
+// the combine exponent takes at most two distinct values — a few dozen distinct
+// exponents against ~2000 internal nodes at the input cap. Measured on this box
+// at the cap: 17.5 ms with the memo, 25.4 ms without.
+function basePow(base: bigint, exp: number, powers: Map<number, bigint>): bigint {
+  const hit = powers.get(exp);
+  if (hit !== undefined) return hit;
+  const p = base ** BigInt(exp);
+  powers.set(exp, p);
+  return p;
+}
+
+// Positional value of digits[lo, hi) in `base`, balanced divide-and-conquer.
+function foldDigits(
+  digits: number[], base: bigint, lo: number, hi: number, powers: Map<number, bigint>,
+): bigint {
+  const len = hi - lo;
+  if (len <= DIGIT_LEAF) {
+    let n = 0n;
+    for (let i = lo; i < hi; i++) n = n * base + BigInt(digits[i]);
+    return n;
+  }
+  const mid = lo + (len >> 1);
+  const high = foldDigits(digits, base, lo, mid, powers);
+  const low = foldDigits(digits, base, mid, hi, powers);
+  return high * basePow(base, hi - mid, powers) + low;
+}
+
+/**
+ * Positional value of `digits` in `base`, computed in ~O(n^1.58).
+ *
+ * The obvious fold — `n = n * base + digit` per character — is O(n²), because
+ * the accumulator grows without bound and every step multiplies the whole of
+ * it. That is invisible on an address and expensive on a large paste: measured
+ * at the 64 KiB input cap, a base58 core cost 740 ms against this fold's
+ * 17.5 ms (node 24, author's box — an order of magnitude, not a guarantee).
+ *
+ * Splitting the digit string in half, converting each half, and combining as
+ * `hi * base**len(lo) + lo` keeps the operands balanced, so the engine's
+ * subquadratic multiplication does the work instead of a long tail of lopsided
+ * multiplies.
+ *
+ * This returns the SAME integer as the naive fold — it must. `sizeBits` is
+ * spec-normative (docs/spec.md *Resolution A*: decode the core to its integer
+ * value and take its minimal byte length), so the cheap upper-bound estimate
+ * `ceil(len × log2(base) / 8)` is NOT a substitute: it disagrees with the exact
+ * value whenever leading digits are zero, which is every base58check address
+ * with a leading zero byte — a Bitcoin P2PKH address measures 192 bits exactly
+ * and 200 by the estimate. Using the estimate would change rendered labels and
+ * every affected golden. See the reference's `this.i:f4std3c0`.
+ *
+ * @internal
+ */
+export function digitsToInt(digits: number[], base: bigint): bigint {
+  return foldDigits(digits, base, 0, digits.length, new Map());
+}
+
 // Minimal byte length of `core` decoded as a big integer in its base. Used for
 // the non-power-of-2 alphabets (base58/base36/decimal): decode the positional
 // value and return ceil(bit_length / 8). Character lookup mirrors the
 // tokenizer's case tolerance. An empty core (or a value of zero) is one byte,
 // matching a single zero digit.
-function decodedBytesInteger(core: string, alphabet: Alphabet): number {
+/** @internal */
+export function decodedBytesInteger(core: string, alphabet: Alphabet): number {
   const chars = alphabet.chars;
   const lower = chars.toLowerCase();
   const base = BigInt(chars.length);
-  let n = 0n;
+  const digits: number[] = [];
   for (const c of core) {
     let v = chars.indexOf(c);
     if (v < 0) v = lower.indexOf(c.toLowerCase());
     if (v < 0) v = 0;
-    n = n * base + BigInt(v);
+    digits.push(v);
   }
+  const n = digitsToInt(digits, base);
   if (n === 0n) return 1;
-  return Math.floor((n.toString(2).length + 7) / 8);
+  // Hex rather than binary: same exact bit length, a quarter of the string. At
+  // the input cap the value runs to ~384 kbit, so the materialized digits are
+  // not free.
+  const hex = n.toString(16);
+  const bits = (hex.length - 1) * 4 + (32 - Math.clz32(Number.parseInt(hex[0], 16)));
+  return Math.floor((bits + 7) / 8);
 }
 
 // Value size in bits from the CORE only (Resolution A).
@@ -602,9 +675,18 @@ export function renderLabel(
  * sizeBasis, sizeBits, parts, entropyType. Never throws for an in-range input:
  * an unrecognized input falls back to the UTF-8 -> base64url path (scheme=null,
  * role=null, sizeBasis="utf8", size measured over the ORIGINAL input bytes).
+ *
+ * Throws for an input past `MAX_INPUT_CHARS`, with render()'s own message.
+ * SEC-F3/F9: this function is a public entry point in its own right — the React
+ * pill calls it BEFORE render() — so it enforces the anti-DoS cap itself rather
+ * than borrowing render()'s. A sibling entry point that runs first is not
+ * protected by a guard downstream of it.
  */
 export function characterize(entropy: string): Characterization {
   const raw = entropy.trim();
+  if (raw.length > MAX_INPUT_CHARS) {
+    throw new Error(inputTooLargeMessage(raw.length));
+  }
   const parsed = parse(raw);
 
   if (parsed === null) {

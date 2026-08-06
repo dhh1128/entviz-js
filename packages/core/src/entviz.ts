@@ -1598,15 +1598,19 @@ export function bareEntropyType(typeName: string): string {
 // via the ported parsers, falling back to UTF-8 → base64url for anything no
 // parser claims.
 export function classifyInput(rawInput: string): ClassifiedInput {
+  // SEC-F3/F9: the cap guards BOTH branches, and it is checked BEFORE parse(),
+  // on the cheap code-unit length. The >512-bit path IS supported (large-input
+  // handling); only inputs past the anti-DoS cap are rejected. Cheapest work
+  // first means a multi-megabyte input never materializes the ~1.33x base64url
+  // encoding of the fallback branch (a DoS amplifier), and never reaches the
+  // positional decode behind sizeBits on the parsed branch. This guard used to
+  // sit inside the `parsed === null` arm, so every caller that classified a
+  // parseable value — describe.ts, live-ceremony.ts, gridShapes — ran uncapped.
+  if (rawInput.length > MAX_INPUT_CHARS) {
+    throw new Error(inputTooLargeMessage(rawInput.length));
+  }
   const parsed = parse(rawInput);
   if (parsed === null) {
-    // SEC-F1: the >512-bit path IS supported (large-input handling); only
-    // inputs past the anti-DoS cap are rejected. Cap on the cheap code-unit
-    // length before allocating the base64url encoding, so a multi-megabyte
-    // input can't materialize a ~1.33x base64 string first (a DoS amplifier).
-    if (rawInput.length > MAX_INPUT_CHARS) {
-      throw new Error(inputTooLargeMessage(rawInput.length));
-    }
     const typeName = `txt(${rawInput.length})->b64url`;
     return {
       core: bytesToBase64url(utf8Bytes(rawInput)),
