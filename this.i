@@ -254,11 +254,12 @@ Entviz-JS Port = goal:
         all four, so the grammar pins them to that one position instead. Accepted tradeoff:
         tree equality ignores exactly two attributes, under the rule that an attribute is
         ignorable only when two raw inputs of one identity can differ in it while drawing the
-        same picture — `data-entviz-lib` (build) and `data-input-bytes` (raw spelling). Known
-        gap, worth reconciling: the Python reference writes a >512-bit input's projected label
-        as character data after the `+hash` tspan where entviz-js wraps it in a second tspan —
-        same line, same raster, different DOM — so such a reference is accepted as conformant
-        but cannot pass the recompute gate, and lands on `unknown` instead of `≈`.
+        same picture — `data-entviz-lib` (build) and `data-input-bytes` (raw spelling). The
+        known gap this entry raised — the Python reference writing a >512-bit input's projected
+        label as character data after the `+hash` tspan where entviz-js wrapped it in a second
+        tspan, so a conformant reference could not pass the recompute gate and landed on
+        `unknown` instead of `≈` — is CLOSED by [[gwhtl8r1]]: the bare form is normative and
+        this port emits it.
       status: drafted
 
     The anti-DoS cap belongs to every entry point, and the decode stays exact = decision:
@@ -337,4 +338,48 @@ Entviz-JS Port = goal:
         pre-redirect fiction. A host-injected `fetchReference` is unchanged: it is handed the
         origin up front and returns bytes, so there is no response URL to re-derive from and
         the host owns its own redirect policy.
+      status: drafted
+
+    v17 corrections: the label DOM is normative, and generic bech32 claims less = decision:
+      id: gwhtl8r1
+      why: >
+        Port of entviz eee025d (2026-08-06), a CORRECTION to v17 rather than a new spec
+        version: nothing rendered changes, so SPEC_VERSION stays `v17` and the libraries go
+        to 0.17.1.
+
+        THE LABEL DOM. entviz-js was the sole divergent implementation and the one that
+        changed. For a >512-bit input the top strip is the bold-red `+hash ` marker in a
+        `<tspan>` followed by the projected label; four ports wrote that remainder as BARE
+        CHARACTER DATA after the tspan and this one wrapped it in a second tspan. Same pixels,
+        same text, different DOM — invisible to Tier A (which compares recovered values) and
+        Tier B (which strips text before rasterizing), so the "required SVG profile" was
+        asserted in prose and policed nowhere, and five implementations certified at 104/104
+        while disagreeing about the bytes they emit. It stopped being harmless when this
+        port's F1/F2 fix ([[thruvvsu]]) made an affirmative SVG verdict conditional on
+        re-rendering and comparing trees: a python-rendered large reference then degraded from
+        the green `≈` to plain `unknown`. Real interop loss between two conformant
+        implementations. Tier A's model now carries labels.top_nodes / labels.bottom_nodes —
+        an ordered list of "tspan"/"chars" extracted by the RUNNER from whatever SVG a port
+        emits — so the divergence fails conformance instead of hiding. Implemented by giving
+        `El` a `tail` (lxml's, and the only mixed content an entviz emits), and by ENUMERATING
+        the legal node shapes per channel in svg-profile's grammar (top: `chars` |
+        `tspan,chars`; bottom: `chars` | `tspan` | `tspan,tspan`) rather than the old "at most
+        two runs of either kind", which would have accepted both shapes and defeated the
+        point. See entviz `this.i:l4b3ld0m` and docs/spec.md.
+
+        THE GENERIC BECH32 PATH. Two changes, one principle: do not claim a scheme you cannot
+        substantiate. The data floor (group 2 of BECH32_GENERIC_RE — the data part INCLUDING
+        its 6-character checksum) rose from 8 to 32, and a failing polymod now RETURNS NULL
+        instead of throwing. v14 rejected on the reasoning that "a `<hrp>1<data>` string with
+        8+ bech32 chars is a clear bech32 structural match"; the premise was false and refused
+        roughly 1.1% of random short hex strings — ordinary values entviz would not render at
+        all. Rejection stays for the NAMED schemes (bc1/tb1, ltc1, addr1/stake1,
+        bitcoincash:/bchtest:), where the prefix is a genuine signal. A corrupted address still
+        never renders AS an address: its label reports the encoding actually recognized
+        (`base58`, `hex`), not `bech32, cosmos1`. See entviz `this.i:b3ch32fl`.
+
+        The `err-cosmos-bad-checksum` error vector became the
+        `cosmos-bad-checksum-falls-through` render vector, and `hex-bech32-shaped` locks a real
+        value the old floor swallowed; the corpus is 86 render + 11 error vectors. Conformance
+        against entviz at the corrections: 105/105, Tiers A and B, full corpus.
       status: drafted

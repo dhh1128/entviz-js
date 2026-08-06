@@ -122,18 +122,42 @@ test("validateEntvizProfile: accepts every shape the renderer emits", () => {
   }
 });
 
-test("validateEntvizProfile: accepts the reference implementation's truncated label", () => {
-  // entviz-js writes the projected label of a >512-bit input as a second tspan;
-  // the Python reference writes it as character data after the marker tspan.
-  // Both paint the same line, both certify against the corpus, so the grammar
-  // has to accept both.
-  const js = parsed(render("0123456789abcdef".repeat(16)));
-  const label = js.children[4].children[0];
-  assert.equal(label.children.length, 2);
-  const pyStyle = clone(js);
-  const pyLabel = pyStyle.children[4].children[0];
-  pyLabel.children[1] = txt(glyphText(label.children[1]));
-  assert.equal(validateEntvizProfile(pyStyle), true);
+test("validateEntvizProfile: the truncated top label is one marker tspan + bare characters", () => {
+  // v17 correction: this SERIALIZATION is normative, and there is exactly one of
+  // it. The `+hash ` marker is a tspan; the projected label that follows is BARE
+  // CHARACTER DATA. entviz-js used to wrap that remainder in a second tspan —
+  // same line, same raster, different DOM — and the grammar accepted both, so a
+  // python-rendered >512-bit reference could never pass the recompute gate and
+  // degraded from the `≈` chip to plain `unknown`. See this.i:gwhtl8r1.
+  const doc = parsed(render("0123456789abcdef".repeat(16)));
+  const label = doc.children[4].children[0];
+  assert.deepEqual(label.children.map((c) => c.tag), ["tspan", TEXT_NODE]);
+  assert.equal(glyphText(label.children[0]), "+hash ");
+  assert.equal(label.children[1].text, "hex, 1024-bit");
+  assert.equal(validateEntvizProfile(doc), true);
+
+  // ...and the divergent form is now rejected rather than tolerated.
+  const wrapped = clone(doc);
+  const wLabel = wrapped.children[4].children[0];
+  wLabel.children[1] = el("tspan", {}, [txt(label.children[1].text)]);
+  assert.equal(validateEntvizProfile(wrapped), false);
+});
+
+test("validateEntvizProfile: the bottom strip keeps its two-tspan form", () => {
+  // The suffix+note bottom strip is `tspan,tspan` in BOTH implementations, and a
+  // note alone is a lone tspan (it is quiet gray and carries data-user-note), so
+  // the per-channel shapes differ from the top strip's on purpose.
+  // A bech32 address carries its verified 6-character checksum as the suffix, so
+  // with a note the strip is "...<suffix> (<note>)" — the two-tspan case.
+  const noted = parsed(render("cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e", { note: "hi" }));
+  const bottom = noted.children.find((c) => c.attrs.get("data-channel") === "label-bottom");
+  assert.deepEqual(bottom!.children[0].children.map((c) => c.tag), ["tspan", "tspan"]);
+  assert.equal(validateEntvizProfile(noted), true);
+  // Bare characters ahead of the note tspan is not a shape this channel emits.
+  const mixed = clone(noted);
+  const mLabel = mixed.children.find((c) => c.attrs.get("data-channel") === "label-bottom")!.children[0];
+  mLabel.children[0] = txt("...abcd ");
+  assert.equal(validateEntvizProfile(mixed), false);
 });
 
 test("parseXml: a text run keeps its position among the elements around it", () => {

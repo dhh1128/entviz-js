@@ -195,6 +195,11 @@ glyphs is *inside* the vocabulary, so all of them reached `identical`. The engin
    character data in its position among sibling elements, so two orderings cannot collapse into
    one tree. The grammar then pins **element sequence, nesting, per-position attribute
    allow-lists, child counts and cell-index uniqueness** to the exact shape `render()` produces.
+   The label strips are the only mixed content an entviz emits, and since the v17 correction
+   their **node shapes are enumerated per channel** — top: `chars` or `tspan,chars` (the
+   `+hash ` marker followed by the projected label as bare character data); bottom: `chars`,
+   `tspan`, or `tspan,tspan` — rather than "at most two runs of either kind", which accepted
+   two spellings of one label.
    `transform`, `clip-path`, `fill-opacity` and `stroke-opacity` are *not* rejected outright —
    the ellipse overlay legitimately carries them — they are pinned to that one position.
 3. **The declared text channel** decides `different`, exactly as before.
@@ -223,11 +228,12 @@ and route to the walk:
 
 - a reference drawn by a build whose ink differs from ours (a different spec version, or a
   future renderer change) — correctly, since we cannot say the picture is what we would draw;
-- a >512-bit reference produced by the **Python** reference implementation, which writes the
+- ~~a >512-bit reference produced by the **Python** reference implementation, which writes the
   projected label of a truncated input as character data after the `+hash` tspan where
-  entviz-js wraps it in a second tspan. Same line, same raster, different DOM — so the grammar
-  accepts it (it is conformant) but the recompute gate cannot match it, and it lands on plain
-  `unknown` instead of the `≈` chip. Worth reconciling in the renderers;
+  entviz-js wraps it in a second tspan.~~ **Fixed** (v17 correction, 2026-08-06): the bare
+  character-data form is normative, entviz-js emits it, and the grammar now enumerates the
+  legal node shapes per label channel rather than accepting either. A >512-bit reference from
+  any conformant implementation reaches the `≈` chip;
 - a reference whose **top label** differs while the identity does not — `0x`-prefixed hex against
   bare hex is one identity to the text engine but two different pictures. `unknown`, never
   `different`.

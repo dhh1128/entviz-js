@@ -91,10 +91,16 @@ test("drawLabels: top strip renders the projected label verbatim", () => {
   assert.match(top("did:key"), />did:key</);
   assert.match(top("ETH, 0x"), />ETH, 0x</); // v15 trailing prefix slot
   assert.match(top(""), /<text[^>]*><\/text>/); // empty label still emitted
-  // Truncated: bold dark-red "+hash " marker + the projected label.
+  // Truncated: bold dark-red "+hash " marker + the projected label. v17
+  // correction — the marker is a tspan and the label that follows is BARE
+  // CHARACTER DATA, not a second tspan. The serialization is normative
+  // (this.i:gwhtl8r1); pin the exact bytes, since the two forms paint the same
+  // line and only a byte-level assertion tells them apart.
   const tr = top("+hash hex, 1024-bit", true);
-  assert.match(tr, /fill="#a00000"[^>]*font-weight="bold"[^>]*>\+hash </);
-  assert.match(tr, />hex, 1024-bit</);
+  assert.match(
+    tr,
+    /<tspan fill="#a00000" font-weight="bold">\+hash <\/tspan>hex, 1024-bit<\/text>/,
+  );
 });
 
 test("drawLabels: bottom strip variants (suffix, suffix+note, note only)", () => {

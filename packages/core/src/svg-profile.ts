@@ -354,18 +354,34 @@ function barOk(b: XmlNode): boolean {
   return true;
 }
 
-function labelOk(g: XmlNode | undefined, channel: string): boolean {
+// The label strips' NODE SHAPE, per channel: the ordered runs a conformant
+// renderer writes inside the strip's single `<text>`, where `chars` is bare
+// character data and `tspan` a styled run.
+//
+// v17 correction: this is normative and enumerated rather than "at most two runs
+// of either kind". A truncated top strip is the `+hash ` marker in a tspan
+// followed by the projected label as BARE CHARACTER DATA — one shape, not two.
+// This port used to wrap that remainder in a second tspan, which painted the
+// same pixels from a different DOM and broke tree equality against a
+// python-rendered reference. Mixed content is legal HERE and only here, and the
+// parse keeps its order, so two orderings cannot collapse into one tree.
+// See this.i:l4b3ld0m and docs/spec.md "The label strips' serialization".
+const LABEL_SHAPES = {
+  // Plain label; or truncated: marker tspan + the projected label's characters.
+  "label-top": new Set(["chars", "tspan,chars"]),
+  // Suffix alone; the user note alone (its own tspan, since it is quiet gray and
+  // carries data-user-note); or suffix tspan + note tspan.
+  "label-bottom": new Set(["chars", "tspan", "tspan,tspan"]),
+} as const;
+
+function labelOk(g: XmlNode | undefined, channel: keyof typeof LABEL_SHAPES): boolean {
   if (!g || g.tag !== "g" || chan(g) !== channel || !noText(g) || !attrsWithin(g, A_CHANNEL)) return false;
   if (g.children.length !== 1) return false;
   const t = g.children[0];
-  // A label is one `<text>` holding at most two runs: plain characters, styled
-  // tspans, or (as the reference implementation writes a truncated label) one
-  // tspan followed by plain characters. Mixed content is allowed HERE and only
-  // here, and the parse keeps its order, so two orderings cannot collapse into
-  // one tree.
   if (t.tag !== "text" || !attrsWithin(t, A_LABEL_TEXT)) return false;
-  if (!t.children.length || t.children.length > 2) return false;
-  return t.children.every((c) => c.tag === TEXT_NODE || glyph(c, "tspan", A_TSPAN));
+  if (!t.children.every((c) => c.tag === TEXT_NODE || glyph(c, "tspan", A_TSPAN))) return false;
+  const shape = t.children.map((c) => (c.tag === TEXT_NODE ? "chars" : "tspan")).join(",");
+  return LABEL_SHAPES[channel].has(shape);
 }
 
 /**

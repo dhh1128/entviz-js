@@ -1,6 +1,7 @@
 # Conformance certification — @entviz/core
 
-**Spec:** entviz v17 · **Corpus:** entviz `compliance/` (pinned `v0.17.0`) ·
+**Spec:** entviz v17 (with the 2026-08-06 corrections) ·
+**Corpus:** entviz `compliance/` (pinned `v0.17.1`) ·
 **Tiers:** A (render model) + B (canonical raster, cairosvg) · **Result:**
 **full conformance — every corpus vector passes**, with no skip list and no
 subset.
@@ -10,16 +11,16 @@ Run from the entviz repo against the whole corpus:
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers A
-# -> 104/104 vectors passed   (render + error + invariant pairs + spec-version match)
+# -> 105/105 vectors passed   (render + error + invariant pairs + spec-version match)
 
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers B
-# -> 97/97 vectors passed   (raster via cairosvg)
+# -> 98/98 vectors passed   (raster via cairosvg)
 ```
 
 CI runs both tiers on every push as hard gates (`.github/workflows/ci.yml`:
 `conformance` + `conformance-tier-b`), cross-checking out the reference corpus
-at the pinned tag `v0.17.0`.
+at the pinned tag `v0.17.1`.
 
 ## Coverage
 
@@ -56,8 +57,13 @@ Crockford resolves to ULID, not hex) match by construction:
 - **CESR** (KERI AID/SAID derivation codes), **SSH** public keys (ed25519/rsa/
   dss/ecdsa), **SWHID**, **gitoid**, **EOS**, **Cardano**, and the alphabet-
   **disproof** path (e.g. `b64-large`)
-- **12 error vectors** — note length/charset, font-size range, EIP-55 bad
-  checksum, and the bech32/CashAddr/base58check/LEI bad-checksum rejections
+- **11 error vectors** — note length/charset, font-size range, EIP-55 bad
+  checksum, and the named-scheme bech32 (`bc1`/`ltc1`/`addr1`)/CashAddr/
+  base58check/LEI bad-checksum rejections. The GENERIC `<hrp>1<data>` path is
+  deliberately not among them: the v17 correction makes a failing polymod there
+  fall through to the alphabet ladder rather than reject, since the shape alone
+  is not a claim the parser can substantiate (`cosmos-bad-checksum-falls-through`
+  and `hex-bech32-shaped` are render vectors)
 - **7 invariant pairs** — case/format-folding equivalences (UUID dashed≡undashed,
   ULID canonical≡lowercase, DID/URN normalization, …) all render-model-identical
 

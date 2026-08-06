@@ -938,7 +938,15 @@ const CARDANO_LONG_BYRON_RE = new RegExp(`^(DdzFF)(${B58C}{65})(${B58C}{6})$`);
 const CARDANO_SHELLEY_RE = new RegExp(`^((?:addr|stake)(?:_test)?1)(${BECH32E}{45,100})(${BECH32E}{6})$`);
 const STELLAR_RE = new RegExp(`^(G|g)(${BASE32E}{55})$`);
 const STELLAR_MUXED_RE = new RegExp(`^(M|m)(${BASE32E}{68})$`);
-const BECH32_GENERIC_RE = new RegExp(`^([a-z]{1,83})1([${BECH32_ALPHABET}]{8,})$`, "i");
+// Generic bech32. Group 2 is the data part INCLUDING its 6-character checksum.
+// v17 correction: the floor was 8, which made the structural match a claim this
+// parser could not support. Measured before the change, 34 of 3000 random short
+// hex strings (~1.1%) matched `<letters>1<8+ bech32 chars>` by accident and were
+// REJECTED outright on the failing polymod — ordinary values entviz simply would
+// not render. A real bech32 payload is 20+ bytes, so its data part (payload plus
+// the 6-character checksum) is comfortably over 32 characters; the corpus Cosmos
+// vector has 38. See this.i:b3ch32fl.
+const BECH32_GENERIC_RE = new RegExp(`^([a-z]{1,83})1([${BECH32_ALPHABET}]{32,})$`, "i");
 const IPFS_CIDV0_RE = new RegExp(`^(Qm)(${B58C}{44})$`);
 const IPFS_CIDV1_RE = new RegExp(`^(b)(${BASE32E}{58,112})$`);
 const EOS_RE = /(^[a-z1-5.]{1,11}[a-z1-5]$)|(^[a-z1-5.]{12}[a-j1-5]$)/;
@@ -1316,12 +1324,24 @@ function parseBech32(text: string): Parsed | null {
   if (!m) return null;
   const hrp = m[1].toLowerCase();
   const data = m[2].toLowerCase();
-  // v14: a `<hrp>1<data>` string with 8+ bech32 chars is a clear bech32
-  // structural match, and the 6-char checksum is surfaced as the bound suffix —
-  // so an invalid polymod REJECTS rather than falling through to a bare bech32
-  // encoding (which would render an address that fails its own checksum). Same
-  // "no entviz from an invalid checksum" rule the bc1/ltc1 parsers now follow.
-  if (!bech32ChecksumValid(hrp, data)) throw new Error(`bech32 address ${text} fails its bech32 checksum`);
+  // v17 correction: FALL THROUGH, do not reject.
+  //
+  // v14 rejected here, reasoning that "a `<hrp>1<data>` string with 8+ bech32
+  // chars is a clear bech32 structural match", so a failing polymod meant a
+  // corrupted address and rendering one would mislead. The premise was false:
+  // the shape is not distinctive, and the rejection refused ordinary values
+  // outright (~1.1% of random short hex strings, measured).
+  //
+  // Rejection is only sound when the match is unambiguous. It stays for the
+  // NAMED schemes — bc1/tb1, ltc1, addr1/stake1, bitcoincash:/bchtest: — where
+  // the prefix really is a strong signal and v14's reasoning holds. Here there
+  // is no registry of valid HRPs by design, so a failing checksum means only
+  // "this is not bech32 after all": return null and let the input continue to
+  // the next parser and the alphabet ladder. It still never renders AS an
+  // address — the label reads `hex`/`base58`, not `bech32, cosmos1`, so a
+  // reader sees that recognition did not happen. See this.i:b3ch32fl and
+  // docs/spec.md "Checksum verification".
+  if (!bech32ChecksumValid(hrp, data)) return null;
   // v16: `<hrp>1` is an IDENTITY-BEARING prefix bound by prefix-fold. The same
   // data payload under a different HRP denotes a different value — a different
   // chain, a different network, or a nostr `npub` vs `nsec` — and the HRP is not
@@ -1517,6 +1537,12 @@ export class El {
   attrs: [string, string][] = [];
   children: El[] = [];
   text: string | null = null;
+  /** Character data that follows this element inside its parent, in document
+   *  order — lxml's `tail`. The label strips are the only mixed content an
+   *  entviz emits: the truncation marker is a `<tspan>` and the rest of the top
+   *  strip is bare character data after it, which is normative (v17 correction,
+   *  this.i:l4b3ld0m). Without a tail there is no way to write that shape. */
+  tail: string | null = null;
   constructor(tag: string) {
     this.tag = tag;
   }
@@ -1538,7 +1564,7 @@ export class El {
     if (this.text === null && !this.children.length) return `<${this.tag}${a}/>`;
     const inner =
       (this.text !== null ? esc(this.text) : "") +
-      this.children.map((c) => c.render()).join("");
+      this.children.map((c) => c.render() + (c.tail !== null ? esc(c.tail) : "")).join("");
     return `<${this.tag}${a}>${inner}</${this.tag}>`;
   }
 }
@@ -2366,9 +2392,18 @@ export function drawLabels(svg: El, gridLeft: number, gridBottom: number, gridTo
   if (truncated && topText.startsWith(TRUNC_MARKER)) {
     // A >512-bit input's text channel is no longer lossless: a loud bold
     // dark-red "fingerprint of" marker precedes the standard #666 label.
+    // v17 correction: the SERIALIZATION here is normative. The marker is a
+    // `<tspan>`; the rest of the strip is BARE CHARACTER DATA following it, not
+    // a second `<tspan>`. Through v17 this port wrapped the remainder, which
+    // painted the same pixels from a different DOM — invisible to both
+    // conformance tiers, but it cost real interop once an affirmative SVG
+    // verdict became conditional on re-rendering and comparing trees. Tier A's
+    // model now carries labels.top_nodes/bottom_nodes. See this.i:l4b3ld0m.
     const rest = topText.slice(TRUNC_MARKER.length);
-    el.child("tspan").set("fill", "#a00000").set("font-weight", "bold").text = TRUNC_MARKER;
-    el.child("tspan").text = rest;
+    const marker = el.child("tspan").set("fill", "#a00000").set("font-weight", "bold");
+    marker.text = TRUNC_MARKER;
+    marker.tail = rest; // flows right after the marker, in the #666 inherited from <text>
+
   } else {
     el.text = topText;
   }

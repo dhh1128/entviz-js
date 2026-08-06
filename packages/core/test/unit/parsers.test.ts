@@ -402,11 +402,37 @@ test("parse (v16): the HRP folds on every bech32 path, but NOT on CashAddr", () 
   assert.equal(bch.core.slice(-8), "y22gdx6a"); // the 8-char checksum, in-core
 });
 
-test("parse: <letters>1<chars> with bad checksum -> rejected (v14)", () => {
-  // v14: an <hrp>1<8+ bech32 chars> shape is a clear bech32 match and the 6-char
-  // checksum is the bound suffix, so an invalid polymod REJECTS (rather than
-  // falling through to a bare encoding that renders a bad-checksum address).
-  assert.throws(() => parse("abcdef1qqqqqqqqqqqqqq"), /bech32/);
+test("parse (v17 correction): generic bech32 with a bad checksum FALLS THROUGH", () => {
+  // Reverses the v14 rule ON THIS PATH ONLY. v14 rejected an `<hrp>1<data>`
+  // match with a bad polymod, reasoning that the shape was "a clear bech32
+  // structural match". It is not: measured, ~1.1% of random short hex strings
+  // matched the old 8-character-data form by accident and were refused outright.
+  // With no registry of valid HRPs, a failing checksum here means only "not
+  // bech32 after all", so the parser declines and the input continues down the
+  // chain. The NAMED schemes (bc1/tb1, ltc1, addr1, bitcoincash:) still reject —
+  // see the tests above. From the corpus cosmos-bad-checksum-falls-through
+  // render vector. See this.i:b3ch32fl.
+  const bad = "cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363f";
+  const p = parse(bad)!;
+  // It never renders AS an address: the label reports the encoding actually
+  // recognized, so a reader comparing against a known-good address sees a
+  // different type name and a different picture.
+  assert.equal(p.type, "base58");
+  assert.equal(p.prefix, null);
+  assert.equal(p.suffix, null);
+});
+
+test("parse (v17 correction): the generic bech32 data floor is 32 characters", () => {
+  // The floor covers the data part INCLUDING its 6-character checksum. A real
+  // payload is 20+ bytes, so a genuine address clears it with margin (the corpus
+  // Cosmos vector's data part is 38); an accidental match does not.
+  // `dee1ad37cf96` is one of the real hex values the old floor of 8 swallowed —
+  // it is the corpus hex-bech32-shaped render vector.
+  assert.equal(parse("dee1ad37cf96")!.type, "hex");
+  assert.notEqual(parse("abcdef1qqqqqqqqqqqqqq")!.type, "bech32");
+  // ...while the checksum-valid corpus address, whose data part is 38, still
+  // parses as bech32 (pinned above).
+  assert.equal(parse("cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e")!.type, "bech32");
 });
 
 test("parse: IPFS CIDv0 (Qm..) -> base58", () => {
