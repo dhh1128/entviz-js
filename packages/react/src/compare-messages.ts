@@ -25,6 +25,9 @@ export interface CompareMessages {
   fetchHint: string; // "Will fetch from {origin}"
   fetchError: string; // "…({error})" — a URL-fetch failure (interpolates the browser error)
   readError: string; // a file-read failure — distinct operation from fetchError, no interpolation
+  redirectWarning: string; // "{requested} redirected to {actual}…" — a cross-origin redirect, bytes NOT yet adopted
+  redirectAccept: string; // the button that adopts redirected bytes under their TRUE origin
+  redirectDiscard: string; // the button that throws them away
   walkSpotCheck: string;
   walkSpotCheckHint: string;
   walkComplete: string;
@@ -66,6 +69,10 @@ export const defaultCompareMessages: CompareMessages = {
   fetchHint: "Will fetch from {origin}",
   fetchError: "Couldn’t fetch that URL ({error})",
   readError: "Couldn’t read that file — it may be unreadable or blocked. Try another file.",
+  redirectWarning:
+    "{requested} redirected this to {actual}, so the reply came from {actual} — not from the site you approved. Use it as the reference anyway?",
+  redirectAccept: "Use it, from {actual}",
+  redirectDiscard: "Discard",
   pending: "Paste, pick, drop, or link another value to compare",
   identical: "Identical — the same value",
   different: "Different — not the same value",

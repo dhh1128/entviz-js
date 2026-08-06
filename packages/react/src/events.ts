@@ -67,7 +67,11 @@ export type EntvizEventPayload =
   | { type: "secret.detected"; where: "value" | "reference" | "both" }
   // ---- fetch (Compare, network) ----
   | { type: "fetch.start"; origin: string; url?: string; preventDefault: () => void }
-  | { type: "fetch.success"; origin: string; status: number; byteLength: number; durationMs: number }
+  // `origin` is the origin the BYTES CAME FROM (re-derived from the response
+  // URL), not the origin of the URL the user pasted. When a redirect moved them,
+  // `requestedOrigin` carries the one the user approved, so a host log records
+  // both halves of the discrepancy rather than the pre-redirect fiction. (SEC-F10)
+  | { type: "fetch.success"; origin: string; status: number; byteLength: number; durationMs: number; requestedOrigin?: string }
   | { type: "fetch.error"; origin: string; message: string }
   // ---- outcome (Compare) — load-bearing, notify-only ----
   | { type: "verdict.change"; verdict: VerdictState; medium: string | null; provenance: Provenance | null; coverageBits?: number; complete?: boolean }

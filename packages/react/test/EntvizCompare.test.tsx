@@ -1113,6 +1113,133 @@ describe("EntvizCompare config props (allow / includeContent / fetchReference)",
   });
 });
 
+// --- SEC-F10: provenance follows the BYTES, not the request -----------------
+//
+// fetch() follows redirects by default. The pre-fetch hint and the locked
+// provenance label both used to name the origin of the URL the user pasted, so
+// bytes served by an open redirect's target were attributed to the trusted host
+// that redirected them. The origin is now re-derived from the response, and a
+// cross-origin redirect holds the bytes out of the reference until the user
+// confirms them under the origin that actually served them.
+
+describe("EntvizCompare: a redirected fetch cannot borrow the approved origin", () => {
+  const of = (spy: ReturnType<typeof vi.fn>, type: string) =>
+    spy.mock.calls.map((c) => c[0]).filter((e) => e.type === type);
+  const last = (spy: ReturnType<typeof vi.fn>, type: string) => {
+    const es = of(spy, type);
+    return es[es.length - 1];
+  };
+  const box = () => screen.getByRole("textbox", { name: /paste/i });
+  // A response whose final URL differs from the requested one — what a browser
+  // hands back after following a 302.
+  const redirectingFetch = (finalUrl: string) =>
+    vi.fn(async () => ({ status: 200, url: finalUrl, text: async () => SVG }));
+
+  const pasteAndFetch = (url = "https://trusted.example/r?u=evil") => {
+    fireEvent.change(box(), { target: { value: url } });
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+  };
+
+  test("a cross-origin redirect does NOT install the reference and names both origins", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    rtlRender(<EntvizCompare value={HEX} />);
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/redirected/i));
+    const alert = screen.getByRole("alert").textContent ?? "";
+    expect(alert).toContain("https://trusted.example");
+    expect(alert).toContain("https://evil.example");
+    // The bytes are held: no reference was adopted, so no verdict and — the
+    // whole point — no "From https://trusted.example" provenance label.
+    expect(screen.queryByText(/From https:\/\/trusted.example/)).toBeNull();
+    expect(status()).not.toContain("Identical");
+  });
+
+  test("accepting the redirect labels the reference with the origin that served it", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    rtlRender(<EntvizCompare value={HEX} />);
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Use it/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Use it/ }));
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(screen.getByText(/From https:\/\/evil.example/)).toBeTruthy();
+    expect(screen.queryByText(/From https:\/\/trusted.example/)).toBeNull();
+  });
+
+  test("discarding the redirect keeps the reference empty", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    rtlRender(<EntvizCompare value={HEX} />);
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discard" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(status()).not.toContain("Identical");
+  });
+
+  test("editing the field or dropping a value abandons a held redirect", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    const { container } = rtlRender(<EntvizCompare value={HEX} />);
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/redirected/i));
+    fireEvent.change(box(), { target: { value: HEX } });
+    expect(screen.queryByText(/redirected/i)).toBeNull();
+    expect(status()).toContain("Identical");
+
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/redirected/i));
+    const root = container.firstElementChild as HTMLElement;
+    fireEvent.drop(root, { dataTransfer: { files: [], getData: () => HEX } });
+    expect(screen.queryByText(/redirected/i)).toBeNull();
+  });
+
+  test("fetch.success reports the origin the bytes came from, plus the one requested", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    pasteAndFetch();
+    await waitFor(() => expect(of(onEvent, "fetch.success").length).toBe(1));
+    expect(last(onEvent, "fetch.success")).toMatchObject({
+      origin: "https://evil.example",
+      requestedOrigin: "https://trusted.example",
+    });
+  });
+
+  test("a same-origin redirect is adopted silently and carries no requestedOrigin", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://trusted.example/final/key.svg"));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} onEvent={onEvent} />);
+    pasteAndFetch();
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(screen.getByText(/From https:\/\/trusted.example/)).toBeTruthy();
+    expect(last(onEvent, "fetch.success").requestedOrigin).toBeUndefined();
+  });
+
+  test("a host fetchReference keeps the requested origin — it, not us, followed anything", async () => {
+    // The injected fetcher is handed the origin up front and returns bytes; we
+    // have no response URL to re-derive from, so the approved origin stands.
+    const fetchReference = vi.fn(async () => ({ text: SVG }));
+    const onEvent = vi.fn();
+    rtlRender(<EntvizCompare value={HEX} fetchReference={fetchReference} onEvent={onEvent} />);
+    pasteAndFetch();
+    await waitFor(() => expect(status()).toContain("Identical"));
+    expect(last(onEvent, "fetch.success").origin).toBe("https://trusted.example");
+    expect(last(onEvent, "fetch.success").requestedOrigin).toBeUndefined();
+  });
+
+  test("the redirect copy is locked — a host `messages` override cannot soften it", async () => {
+    vi.stubGlobal("fetch", redirectingFetch("https://evil.example/key.svg"));
+    rtlRender(
+      <EntvizCompare
+        value={HEX}
+        messages={{ redirectWarning: "all good", redirectAccept: "ok", redirectDiscard: "no" }}
+      />,
+    );
+    pasteAndFetch();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/redirected/i));
+    expect(screen.queryByText("all good")).toBeNull();
+    expect(screen.getByRole("button", { name: /Use it/ })).toBeTruthy();
+  });
+});
+
 // --- rng threaded down to the launched Walk / Voice, prod-gated (§5.4) ------
 
 describe("EntvizCompare rng thread-down + prod-gate", () => {

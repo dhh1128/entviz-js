@@ -263,6 +263,7 @@ const VERDICT_LOCKED_KEYS: (keyof CompareMessages)[] = [
   "identical", "different", "unknownAmbiguous", "unknownRaster", "unknownRasterSimilar", "unknownRasterSimilarText", "unknownSvgSimilar",
   "unknownReason", "pending", "machineCheck", "recognitionNote",
   "provenancePasted", "provenanceFile", "provenanceUrl", "provenanceDropped", "provenanceProvided",
+  "redirectWarning", "redirectAccept", "redirectDiscard",
 ];
 
 /** Map the internal machine result to the firehose's coarse `VerdictState`
@@ -310,6 +311,13 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   // names what actually failed: a URL fetch (carries the browser error) vs. a file
   // read (a distinct, self-contained message — never the URL-fetch template). (ERR-F2)
   const [refError, setRefError] = useState<{ kind: "fetch"; detail: string } | { kind: "read" } | null>(null);
+  // SEC-F10: bytes that arrived from an origin OTHER than the one the user
+  // approved, held OUT of the reference until the user confirms them under their
+  // true origin. Provenance is judgment-bearing locked copy here, so a
+  // redirected reference is never adopted under the label the user consented to.
+  const [redirected, setRedirected] = useState<
+    { content: string; requested: string; actual: string } | null
+  >(null);
   // null = not walking (show the two entry buttons); otherwise the chosen mode.
   const [walkMode, setWalkMode] = useState<"spot-check" | "complete" | null>(null);
   const walking = walkMode !== null;
@@ -507,6 +515,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
   const onPick = (file: File | undefined, provenance: Provenance) => {
     if (!file) return;
     setRefError(null);
+    setRedirected(null);
     readFileAsReference(file).then(
       (content) => setRef({ content, provenance, origin: "" }),
       () => {
@@ -518,6 +527,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
 
   const onFetch = async () => {
     setRefError(null);
+    setRedirected(null);
     // fetch.start is the one advisory-cancelable event: a host handler may call
     // preventDefault() to block egress (fail-closed — blocking can only deny). If
     // blocked, neither the built-in fetch NOR a host `fetchReference` runs.
@@ -541,6 +551,9 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
       let content: string;
       let byteLength: number;
       let status = 0;
+      // The origin the BYTES actually came from. Starts as the origin the user
+      // approved and is overwritten from the response for the built-in fetch.
+      let actualOrigin = refOrigin;
       if (fetchReference) {
         // Origin is already shown before the user clicks Fetch (unchanged). Provide
         // an AbortSignal so a host fetcher can be cancelled on unmount/host policy.
@@ -558,16 +571,44 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
         content = await res.text();
         byteLength = new TextEncoder().encode(content).length;
         status = (res as { status?: number }).status ?? 0;
+        // SEC-F10: `redirect` defaults to "follow", so these bytes may have come
+        // from anywhere. Re-derive the origin from the RESPONSE rather than from
+        // the URL the user pasted; `res.url` is the final URL after redirects.
+        //
+        // `redirect: "manual"` was considered and rejected: in a browser it
+        // yields an opaque-redirect response with an empty `url` and no readable
+        // Location, so the one thing re-consent needs — the new origin — is
+        // exactly what it hides. "error" would fail closed but also break benign
+        // http→https and trailing-slash redirects, again without naming a target.
+        // Following and then re-deriving is what makes the true origin knowable;
+        // the gate below is what makes it consented.
+        //
+        // A response readable by `res.text()` always carries its final URL, so
+        // the `|| refOrigin` fallback is for non-conforming fetch stand-ins
+        // (host polyfills, test doubles), not for anything a browser produces.
+        actualOrigin = originOf((res as { url?: string }).url ?? "") || refOrigin;
       }
+      const redirectedAway = actualOrigin !== refOrigin;
       emit({
         type: "fetch.success",
-        origin: refOrigin,
+        // The truth, not the request: a host logging the firehose must not be
+        // told the bytes came from an origin they did not come from.
+        origin: actualOrigin,
+        ...(redirectedAway ? { requestedOrigin: refOrigin } : {}),
         status,
         byteLength,
         durationMs: Date.now() - startedAt,
         sensitivity: "network",
       });
-      setRef({ content, provenance: "url", origin: refOrigin });
+      if (redirectedAway) {
+        // Hold the bytes. The egress already happened and cannot be un-sent, but
+        // ADOPTING them as the reference — the artifact every verdict is computed
+        // against, labelled with a locked provenance string — is a separate act,
+        // and it gets its own consent naming the origin that actually served them.
+        setRedirected({ content, requested: refOrigin, actual: actualOrigin });
+        return;
+      }
+      setRef({ content, provenance: "url", origin: actualOrigin });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       emit({ type: "fetch.error", origin: refOrigin, message, sensitivity: "network" });
@@ -648,6 +689,8 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             // Editing over the marker drops it, so typing replaces the image with text.
             onChange: (e: { target: { value: string } }) => {
               if (!allowPaste) return;
+              // Editing the field abandons any held redirected reply (SEC-F10).
+              setRedirected(null);
               setRef({ content: e.target.value.replace(m.imagePasted, ""), provenance: "pasted", origin: "" });
             },
             // A pasted raster image (screenshot) becomes the reference — read it as
@@ -679,6 +722,32 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
               "span",
               { role: "alert", style: { ...hint, color: TONE.bad } },
               refError.kind === "read" ? m.readError : fmt(m.fetchError, { error: refError.detail }),
+            )
+          : null,
+        // SEC-F10 re-consent. The bytes are held, both origins are named, and
+        // adopting them relabels the reference with the origin that served them.
+        redirected
+          ? h(
+              "span",
+              { role: "alert", style: { ...hint, color: TONE.warn } },
+              fmt(m.redirectWarning, { requested: redirected.requested, actual: redirected.actual }),
+              h(
+                "button",
+                {
+                  type: "button",
+                  style: fetchBtn,
+                  onClick: () => {
+                    setRef({ content: redirected.content, provenance: "url", origin: redirected.actual });
+                    setRedirected(null);
+                  },
+                },
+                fmt(m.redirectAccept, { actual: redirected.actual }),
+              ),
+              h(
+                "button",
+                { type: "button", style: fetchBtn, onClick: () => setRedirected(null) },
+                m.redirectDiscard,
+              ),
             )
           : null,
       );
@@ -867,7 +936,7 @@ export function EntvizCompare(props: EntvizCompareProps): ReactNode {
             if (file) onPick(file, "dropped");
             else {
               const text = e.dataTransfer.getData("text");
-              if (text) setRef({ content: text, provenance: "dropped", origin: "" });
+              if (text) { setRedirected(null); setRef({ content: text, provenance: "dropped", origin: "" }); }
             }
           },
       style: { display: "inline-flex", flexDirection: "column", gap: 10, font: "inherit", ...style },
