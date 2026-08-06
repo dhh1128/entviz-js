@@ -223,3 +223,40 @@ Entviz-JS Port = goal:
         than clip. Interacts with autoColor (tgowi7go): a very tight pill WITH a color
         wash starts to read like a highlighter marker.
       status: drafted
+
+    SVG affirmative verdicts are gated on re-rendering, not on declarations = decision:
+      id: thruvvsu
+      why: >
+        Settled 2026-08-06, closing security findings F1/F2 (reviews/security-scan-2026-07-31)
+        and the comparison red team's S3, which specified this engine and was then not built.
+        A pasted reference SVG is attacker-authored, so its declared channels — the `<text>`
+        glyph strings and the `data-*` annotations compareSvg read — are a CLAIM about the
+        picture, not the picture. The shipped engine validated them with a flat tag whitelist,
+        which every documented forgery satisfies: an opaque `<rect>` cover plus the attacker's
+        own glyphs, the honest cells moved into `<defs>` (parsed, never painted), a second
+        `<text>` in a cell (the parser took the first), a duplicate cell group, `opacity="0"`
+        on the honest glyphs. All eleven reached the green `= Identical` chip; two more reached
+        the `≈` chip on a >512-bit value. The governing principle now: A DECLARED CHANNEL IS
+        WORTHLESS UNLESS IT IS PROVABLY THE ONE PAINTED. Two layers enforce it. (1) A strict
+        parse plus a real GRAMMAR (packages/core/src/svg-profile.ts) — element sequence,
+        nesting, per-position attribute allow-lists, child counts, unique cell indices — so
+        extra, hidden or duplicated ink has nowhere legal to live; character data is a
+        positioned child, not a field, so two orderings cannot collapse into one tree. (2) The
+        recompute gate: no affirmative verdict until the value is RE-RENDERED through our own
+        renderer at the geometry the reference declares, and the trees match. A reference that
+        passes IS our drawing of the value, which makes declared and painted the same thing by
+        construction. Deliberately a SUFFICIENT test, not a necessary one: a conformant
+        reference our renderer cannot reproduce degrades to `unknown` and routes to the human
+        walk — a correct `unknown` is a good outcome here, a plausible `identical` is the bug
+        (§3 verdict discipline; and it must never become `different` either). Rejected: a
+        blanket ban on `transform`/`clip-path`/`fill-opacity`/`stroke-opacity`, which the
+        finding suggested but which would reject honest entvizes — the ellipse overlay carries
+        all four, so the grammar pins them to that one position instead. Accepted tradeoff:
+        tree equality ignores exactly two attributes, under the rule that an attribute is
+        ignorable only when two raw inputs of one identity can differ in it while drawing the
+        same picture — `data-entviz-lib` (build) and `data-input-bytes` (raw spelling). Known
+        gap, worth reconciling: the Python reference writes a >512-bit input's projected label
+        as character data after the `+hash` tspan where entviz-js wraps it in a second tspan —
+        same line, same raster, different DOM — so such a reference is accepted as conformant
+        but cannot pass the recompute gate, and lands on `unknown` instead of `≈`.
+      status: drafted

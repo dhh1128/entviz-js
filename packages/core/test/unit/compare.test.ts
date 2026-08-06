@@ -184,6 +184,28 @@ test("compareSvg: identity is geometry-independent (different ar/font still iden
   assert.deepEqual(compareSvg(ref, UUID, {}), { state: "identical" });
 });
 
+test("compareSvg: a reference of a normalization-equivalent spelling is still `identical`", () => {
+  // The same identity written differently draws the SAME picture — only the raw
+  // input's byte count differs — so the engine must still affirm it. (The
+  // recompute check compares our own re-render against the reference, and
+  // `data-input-bytes` is the one annotation two equivalent spellings differ in.)
+  assert.deepEqual(compareSvg(render("{" + UUID + "}"), UUID), { state: "identical" });
+  assert.deepEqual(compareSvg(render(UUID.replace(/-/g, "")), UUID), { state: "identical" });
+  assert.deepEqual(compareSvg(render("URN:ISBN:0451450523"), "urn:isbn:0451450523"), {
+    state: "identical",
+  });
+});
+
+test("compareSvg: a reference that draws a different LABEL for the same value is `unknown`", () => {
+  // "0x…" and a bare hex string are one identity to the text engine (the 0x is
+  // presentation, not entropy), but they draw different top labels — so the SVG
+  // engine cannot say the picture in front of the user is our drawing of their
+  // value. `unknown` routes it to the walk; it must not claim `different`.
+  const hex = "0123456789abcdef0123456789abcdef";
+  assert.equal(compareValues(hex, "0x" + hex).state, "identical");
+  assert.equal(compareSvg(render("0x" + hex), hex).state, "unknown");
+});
+
 test("compareSvg: an entviz of a different value is `different`", () => {
   assert.deepEqual(compareSvg(render(UUID), "0123456789abcdef"), { state: "different" });
 });
