@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+// Regenerate the committed golden SVG fixtures from the current renderer.
+//
+//   scripts/regen-golden            rewrite every fixture that changed
+//   scripts/regen-golden --check    report differences, write nothing (exit 1
+//                                   if any fixture is stale)
+//
+// The fixtures under packages/core/test/fixtures/golden/ are the port's own
+// byte-level rendering gate — independent of the cross-repo conformance corpus,
+// which compares recovered models and rasters rather than SVG bytes. Run this
+// ONLY when a rendering change is intended, and read the diff before committing
+// it: an unexplained fixture change is a regression, not a refresh.
+//
+// The inputs come from packages/core/test/fixtures/golden/inputs.ts, the same
+// map test/integration/determinism.test.ts asserts against, so this script
+// cannot fall behind the test.
+//
+// data-entviz-lib is DELIBERATELY preserved from the existing fixture. That
+// attribute is the library version, which changes on every release while the
+// pixels do not; the determinism test strips it before comparing (and pins it
+// separately against package.json). Rewriting it here would churn all four
+// fixtures on every version bump and bury real rendering changes in the noise.
+// A fixture that does not exist yet is written with the current LIB_VERSION.
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { render, LIB_VERSION } from "../packages/core/src/entviz.ts";
+import { GOLDEN_INPUTS } from "../packages/core/test/fixtures/golden/inputs.ts";
+
+const LIB_ATTR = /(?<= data-entviz-lib=")[^"]*(?=")/;
+
+const check = process.argv.includes("--check");
+if (process.argv.slice(2).some((a) => a !== "--check")) {
+  console.error(`usage: regen-golden [--check]`);
+  process.exit(2);
+}
+
+let changed = 0;
+for (const [name, input] of Object.entries(GOLDEN_INPUTS)) {
+  const url = new URL(`../packages/core/test/fixtures/golden/${name}.svg`, import.meta.url);
+  const path = fileURLToPath(url);
+  const existed = existsSync(path);
+  const before = existed ? readFileSync(path, "utf8") : null;
+
+  // Carry the existing fixture's version stamp forward (see the note above).
+  const stamp = before?.match(LIB_ATTR)?.[0] ?? LIB_VERSION;
+  const after = render(input).replace(LIB_ATTR, stamp);
+
+  if (before === after) {
+    console.log(`  ok       ${name}.svg`);
+    continue;
+  }
+  changed++;
+  const verb = !existed ? "new" : check ? "STALE" : "rewrote";
+  console.log(`  ${verb.padEnd(8)} ${name}.svg`);
+  if (!check) writeFileSync(path, after, "utf8");
+}
+
+const total = Object.keys(GOLDEN_INPUTS).length;
+if (check) {
+  console.log(
+    changed === 0
+      ? `${total}/${total} golden fixtures reproduce byte-for-byte`
+      : `${changed} of ${total} golden fixtures differ from the current renderer`,
+  );
+  process.exit(changed === 0 ? 0 : 1);
+}
+console.log(`${changed} of ${total} golden fixtures rewritten`);

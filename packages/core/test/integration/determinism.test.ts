@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { render, LIB_VERSION } from "../../src/entviz.ts";
+import { GOLDEN_INPUTS } from "../fixtures/golden/inputs.ts";
 import pkg from "../../package.json" with { type: "json" };
 
 // data-entviz-lib changes legitimately on every release; strip it so the golden
@@ -9,17 +10,14 @@ import pkg from "../../package.json" with { type: "json" };
 // drift-guard test below).
 const stripLib = (svg: string) => svg.replace(/ data-entviz-lib="[^"]*"/, "");
 
-const GOLDEN: Record<string, string> = {
-  hex32: "0123456789abcdef0123456789abcdef",
-  uuid: "550e8400-e29b-41d4-a716-446655440000",
-  txt: "The quick brown fox jumps over the lazy dog",
-  // >512-bit large-input path: head + 4 Crockford fingerprint-middle cells + tail.
-  hex1024: "0123456789abcdef".repeat(16),
-};
+// The fixture inputs live beside the fixtures themselves so that this test and
+// scripts/regen-golden read the same map and cannot drift apart.
+const GOLDEN = GOLDEN_INPUTS;
 
 // TST-F2: committed golden SVGs catch ANY byte-level rendering regression
 // independently of the cross-repo conformance corpus. Regenerate the fixtures
-// (scripts/regen-golden, or by hand) only when a rendering change is intended.
+// with `scripts/regen-golden` (`--check` to diff without writing) only when a
+// rendering change is intended.
 for (const [name, input] of Object.entries(GOLDEN)) {
   test(`golden: ${name} renders byte-identically to the committed fixture`, () => {
     const golden = readFileSync(new URL(`../fixtures/golden/${name}.svg`, import.meta.url), "utf8");

@@ -144,6 +144,19 @@ test("parse: BTC legacy P2PKH -> base58, 4-char checksum suffix", () => {
   assert.equal(p.suffix!.length, 4);
 });
 
+test("parse (v17 correction 2): BTC legacy bad checksum FALLS THROUGH", () => {
+  // The only signal is ONE leading character from [123mn] plus a length band.
+  // Measured across 8100 random values, this path (with Litecoin legacy) was the
+  // dominant source of the ~2% that the weak-signal rejections refused outright.
+  // From the corpus btc-legacy-bad-checksum-falls-through render vector, which
+  // characterizes as base58 / 192-bit. See this.i:w3aksig.
+  const p = parse("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb")!;
+  assert.notEqual(p.type, "BTC legacy");
+  assert.equal(p.type, "base58");
+  assert.equal(p.prefix, null);
+  assert.equal(p.suffix, null);
+});
+
 test("parse: BTC SegWit bech32 lowercased", () => {
   const p = parse("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")!;
   assert.equal(p.type, "BTC SegWit");
@@ -184,9 +197,15 @@ test("parse: Litecoin legacy (L..) -> base58", () => {
   assert.equal(p.prefix, "L");
 });
 
-test("parse: Litecoin legacy bad checksum -> rejected (v14)", () => {
+test("parse (v17 correction 2): Litecoin legacy bad checksum FALLS THROUGH", () => {
   // Structural L-prefix + right length, corrupted last char -> base58check fails.
-  assert.throws(() => parse("LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc2"), /base58check/);
+  // `L` plus a fixed length is a weak signal, so the parser declines rather than
+  // rejecting, and the input continues to the alphabet ladder. See this.i:w3aksig.
+  const p = parse("LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc2")!;
+  assert.notEqual(p.type, "LTC legacy");
+  assert.equal(p.type, "base58");
+  assert.equal(p.prefix, null);
+  assert.equal(p.suffix, null);
 });
 
 test("parse: Litecoin bech32 bad checksum -> rejected (v14)", () => {
@@ -207,10 +226,25 @@ test("parse: Bitcoin Cash CashAddr without prefix", () => {
   assert.equal(p.prefix, null);
 });
 
-test("parse: Bitcoin Cash CashAddr bad checksum -> rejected (v14)", () => {
-  // v14: the 40-bit CashAddr BCH checksum is verified; a structural match with a
-  // corrupted checksum (last char q vs a) REJECTS. From err-bch-bad-checksum.
+test("parse: Bitcoin Cash CashAddr with a TYPED prefix and a bad checksum -> rejected", () => {
+  // The 40-bit CashAddr BCH checksum is verified; a typed `bitcoincash:` is an
+  // explicit multi-character marker, so a corrupted checksum (last char q vs a)
+  // means "this IS a CashAddr, and it is corrupt" and REJECTS. From the corpus
+  // err-bch-bad-checksum vector.
   assert.throws(() => parse("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6q"), /CashAddr/);
+});
+
+test("parse (v17 correction 2): a BARE CashAddr body with a bad checksum FALLS THROUGH", () => {
+  // The same recognizer, the same payload, the opposite verdict — because the
+  // split is by INPUT, not by parser. Without the typed prefix the only signal
+  // is a leading `q` plus a length, which is too weak to claim the scheme, so
+  // the parser declines and the input continues. From the corpus
+  // cashaddr-bare-bad-checksum-falls-through render vector. See this.i:w3aksig.
+  const p = parse("qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6q")!;
+  assert.notEqual(p.type, "BCH");
+  assert.equal(p.type, "bech32");
+  assert.equal(p.prefix, null);
+  assert.equal(p.suffix, null);
 });
 
 test("parse: Cardano short Byron (Ae2) -> whole body is the core, no suffix (v14)", () => {
@@ -318,11 +352,17 @@ test("parse: 20-char alnum failing the reserved-'00' rule -> not LEI", () => {
   assert.notEqual(p.type, "LEI");
 });
 
-test("parse: 20-char alnum with bad checksum -> rejected (v14)", () => {
-  // v14: valid LEI shape + reserved '00' but wrong MOD 97-10 check digits is an
-  // unambiguous LEI match, so a bad checksum REJECTS (the bound suffix is shown,
-  // so it must verify) rather than falling through to a generic base36 encoding.
-  assert.throws(() => parse("5493001KJTIIGC8Y1R99"), /MOD 97-10/);
+test("parse (v17 correction 2): 20-char alnum with a bad LEI checksum FALLS THROUGH", () => {
+  // v14 called "20 base36 chars WITH the reserved 00" an unambiguous LEI match
+  // and rejected a bad MOD 97-10. It is not unambiguous: the reserved pair lands
+  // by chance in 1 of 1296 random 20-char base36 strings, so the signal is a
+  // length plus two characters, not an explicit scheme marker. See this.i:w3aksig.
+  const p = parse("5493001KJTIIGC8Y1R99")!;
+  assert.notEqual(p.type, "LEI");
+  assert.equal(p.suffix, null);
+  // The corpus lei-bad-checksum-falls-through vector uses ...R13 and lands on
+  // base64 via the alphabet ladder; ...R99 takes the same path.
+  assert.equal(p.type, "base64");
 });
 
 // --- SWHID / gitoid (prefix-semantic) ------------------------------------
@@ -434,6 +474,71 @@ test("parse (v17 correction): the generic bech32 data floor is 32 characters", (
   // parses as bech32 (pinned above).
   assert.equal(parse("cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e")!.type, "bech32");
 });
+
+// --- v17 correction 2: reject only on an explicit marker (this.i:w3aksig) ---
+//
+// The general rule, in one place so it stops being re-derived per parser: a
+// failing checksum REJECTS only when the input carries an explicit,
+// MULTI-CHARACTER scheme marker. Otherwise the parser DECLINES and the input
+// continues to the next recognizer and the alphabet ladder.
+//
+// These two tables are the anti-drift pair. The first exists so the correction
+// cannot slide into "never reject anything" — a rejection nobody exercises is a
+// rejection that quietly disappears. The second is the correction itself:
+// measured across 8100 random values in three alphabets and nine lengths, the
+// weak-signal paths refused ~2% outright, and now refuse none.
+
+// EXPLICIT marker -> a failing checksum is a corrupt address, and still throws.
+const EXPLICIT_MARKER_REJECTS: [string, string, RegExp][] = [
+  ["bc1 (BTC segwit)", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5", /bech32/],
+  ["ltc1 (Litecoin bech32)", "ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n8", /bech32/],
+  [
+    "addr1 (Cardano Shelley)",
+    // The cardano-shelley corpus address with its last checksum char r -> q.
+    "addr1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xmyv4nxw6rfdf4kcmtwdac8zunnw36hvamc09a8klra0elsr0jfpq",
+    /bech32/,
+  ],
+  [
+    "typed bitcoincash: (CashAddr)",
+    "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6q",
+    /CashAddr/,
+  ],
+  ["0x + 40 hex (EIP-55)", "0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed", /EIP-55/],
+];
+for (const [name, bad, pattern] of EXPLICIT_MARKER_REJECTS) {
+  test(`parse (v17 correction 2): ${name} still REJECTS a bad checksum`, () => {
+    assert.throws(() => parse(bad), pattern);
+  });
+}
+
+// WEAK signal -> a failing checksum proves only "not that scheme": decline.
+// Each input is a real corpus render vector or a one-character corruption of
+// one, and each `expected` is the encoding the ladder actually lands on — the
+// label reports that, never the scheme the input resembles.
+const WEAK_SIGNAL_DECLINES: [string, string, string, string][] = [
+  ["BTC legacy (leading [123mn])", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb", "BTC legacy", "base58"],
+  ["Litecoin legacy (L + length)", "LM2WMpR1Rp6j3Sa59cMXMs1SPzj9eXpGc2", "LTC legacy", "base58"],
+  [
+    "bare CashAddr (leading q/p)",
+    "qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6q",
+    "BCH",
+    "bech32",
+  ],
+  ["LEI (reserved '00')", "5493001KJTIIGC8Y1R13", "LEI", "base64"],
+  [
+    "generic <hrp>1 (no HRP registry)",
+    "cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363f",
+    "bech32",
+    "base58",
+  ],
+];
+for (const [name, bad, claimed, expected] of WEAK_SIGNAL_DECLINES) {
+  test(`parse (v17 correction 2): ${name} DECLINES a bad checksum`, () => {
+    const p = parse(bad)!;
+    assert.notEqual(p.type, claimed);
+    assert.equal(p.type, expected);
+  });
+}
 
 test("parse: IPFS CIDv0 (Qm..) -> base58", () => {
   const p = parse("QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG")!;

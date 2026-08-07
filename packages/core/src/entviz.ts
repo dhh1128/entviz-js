@@ -1045,9 +1045,14 @@ function bech32ChecksumValid(hrp: string, data: string): boolean {
 function parseBitcoin(text: string): Parsed | null {
   let m = text.match(BITCOIN_LEGACY_RE);
   if (m) {
-    // v14: the 4-byte double-SHA256 checksum is surfaced as the suffix, so it
-    // MUST verify. A structural match with a bad checksum rejects.
-    if (!base58checkOk(m[0])) throw new Error(`Bitcoin legacy address ${text} fails its base58check (double-SHA256) checksum`);
+    // v17 correction 2 (this.i:w3aksig): FALL THROUGH, do not reject. The only
+    // signal here is ONE leading character from [123mn] plus a length band —
+    // far too weak to claim the scheme. Measured, this path refused ~2% of
+    // random short values outright. Rejection is reserved for inputs carrying
+    // an explicit multi-character scheme marker (bc1, ltc1, addr1, a typed
+    // bitcoincash:, 0x+EIP-55), where a failed check really does mean "this IS
+    // that scheme, and it is corrupt".
+    if (!base58checkOk(m[0])) return null;
     return { type: "BTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: m[3] };
   }
   m = text.match(BITCOIN_SEGWIT_RE);
@@ -1087,9 +1092,9 @@ function parseRipple(text: string): Parsed | null {
 function parseLitecoin(text: string): Parsed | null {
   let m = text.match(LITECOIN_LEGACY_RE);
   if (m) {
-    // v14: Litecoin legacy is base58check; verify the double-SHA256 checksum —
-    // a bad checksum rejects.
-    if (!base58checkOk(m[0])) throw new Error(`Litecoin legacy address ${text} fails its base58check (double-SHA256) checksum`);
+    // v17 correction 2 (this.i:w3aksig): fall through. `L`/`tL` plus a fixed
+    // length is a weak signal, same as Bitcoin legacy above.
+    if (!base58checkOk(m[0])) return null;
     return { type: "LTC legacy", core: m[2], alphabet: BASE58, prefix: m[1], suffix: null };
   }
   m = text.match(LITECOIN_RE);
@@ -1124,8 +1129,18 @@ function parseBitcoinCash(text: string): Parsed | null {
   // the ':') or undefined; the checksum HRP is the prefix WITHOUT the colon,
   // defaulting to "bitcoincash" for a bare q…/p… address. The payload (group 2,
   // INCLUDING its 8 trailing checksum chars) is what the BCH code covers.
+  //
+  // v17 correction 2 (this.i:w3aksig): the verdict on a bad checksum depends on
+  // whether the INPUT carried the prefix. An explicit `bitcoincash:`/`bchtest:`
+  // is an unambiguous marker, so a failure there is a corrupt address and still
+  // REJECTS. A bare `q…`/`p…` body is a single leading character plus a length —
+  // too weak to claim, so it falls through like the other weak-signal paths.
+  // The split is by input, not by parser: the marker either is present or it is
+  // not, and the verdict follows the evidence.
+  const explicit = m[1] !== undefined;
   const prefix = (m[1] ?? "bitcoincash:").replace(/:$/, "").toLowerCase();
   if (!cashaddrVerify(prefix, m[2])) {
+    if (!explicit) return null;
     throw new Error(`Bitcoin Cash address ${text} fails its CashAddr checksum`);
   }
   // v16 EXCEPTION — CashAddr is deliberately NOT folded, and keeps its 8-char
@@ -1251,10 +1266,12 @@ function parseLei(text: string): Parsed | null {
   // Missing the reserved "00" -> not a clear LEI; fall through so a bare 20-char
   // base36 string can still be recognized as an encoding.
   if (upper.slice(4, 6) !== "00") return null;
-  // v14: 20 base36 chars WITH the reserved "00" is an unambiguous LEI match, and
-  // the MOD 97-10 check digits are the bound suffix — so a bad checksum REJECTS
-  // rather than falling through to a generic base36 encoding.
-  if (!leiChecksumOk(upper)) throw new Error(`LEI ${upper} fails its MOD 97-10 checksum`);
+  // v17 correction 2 (this.i:w3aksig): fall through. v14 called "20 base36 chars
+  // WITH the reserved 00" an unambiguous LEI match. It is not — the reserved
+  // pair lands by chance in 1 of 1296 random 20-char base36 strings, and this
+  // path was refusing real values. The signal is a length plus two characters,
+  // not an explicit scheme marker.
+  if (!leiChecksumOk(upper)) return null;
   return { type: "LEI", core: upper.slice(0, 18), alphabet: BASE36, prefix: null, suffix: upper.slice(18) };
 }
 
