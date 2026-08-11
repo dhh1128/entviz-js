@@ -383,3 +383,30 @@ Entviz-JS Port = goal:
         value the old floor swallowed; the corpus is 86 render + 11 error vectors. Conformance
         against entviz at the corrections: 105/105, Tiers A and B, full corpus.
       status: drafted
+
+    Three recognizer branches nobody had ever certified = decision:
+      id: jky2p1mz
+      why: >
+        Pin to entviz 0.17.3 (upstream 8a7be6f, 2026-08-11). Corpus-only: no reference code
+        changed, no spec text changed, no existing golden moved, and SPEC_VERSION stays `v17`.
+        The corpus goes from 89 to 92 render vectors (error vectors and invariant pairs
+        unchanged at 9 and 7), so this port's libraries go to 0.17.3 and the CI corpus pin
+        moves in both conformance jobs.
+
+        What the three vectors are for is the part worth recording. `eos-system`
+        (`eosio.token`), `multihash-sha256-hex` and `ltc-legacy` cover recognizer paths that
+        existed in all five implementations and were exercised by NONE of them, so every port
+        was free to disagree about them while certifying green — the failure mode v16's first
+        Cardano vectors exposed, when two ports turned out to have no Cardano parser at all.
+        Litecoin legacy is the subtle one: `parseLitecoin` looked covered because the `ltc1`
+        bech32 arm is exercised by the `litecoin` vector, while the base58check arm beside it
+        had never run.
+
+        The outcome here is negative, and that is the point of writing it down: all three
+        passed unchanged on the first run. `parseEos`, `parseHexMultihash` and the
+        `LITECOIN_LEGACY_RE` arm of `parseLitecoin` were already correct, and were correct by
+        construction rather than by test — they were ported in the reference's dispatch order
+        and had unit coverage in `packages/core/test`, but nothing had ever compared their
+        output to the reference. They now are compared. Conformance against entviz v0.17.3:
+        109/109 Tier A, 102/102 Tier B, full corpus, no skip list.
+      status: drafted

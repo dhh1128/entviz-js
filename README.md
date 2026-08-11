@@ -31,7 +31,7 @@ entviz is defined by a language-independent [specification](https://github.com/d
 ## Status
 
 The core is **fully certified** against the shared entviz conformance corpus —
-**104/104 Tier A** (render model) and **97/97 Tier B** (canonical raster) vectors
+**109/109 Tier A** (render model) and **102/102 Tier B** (canonical raster) vectors
 pass, with no skip list and no subset. The **complete parser dispatch** is
 ported, in the reference's exact order: hex/multihash, UUID (dashed/undashed/nil/max),
 Ethereum (EIP-55), CESR, SSH keys, Bitcoin / Litecoin / Bitcoin Cash / Ripple /

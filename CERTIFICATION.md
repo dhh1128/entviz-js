@@ -1,7 +1,7 @@
 # Conformance certification — @entviz/core
 
 **Spec:** entviz v17 (with the 2026-08-06 corrections) ·
-**Corpus:** entviz `compliance/` (pinned `v0.17.1`) ·
+**Corpus:** entviz `compliance/` (pinned `v0.17.3`) ·
 **Tiers:** A (render model) + B (canonical raster, cairosvg) · **Result:**
 **full conformance — every corpus vector passes**, with no skip list and no
 subset.
@@ -11,16 +11,16 @@ Run from the entviz repo against the whole corpus:
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers A
-# -> 105/105 vectors passed   (render + error + invariant pairs + spec-version match)
+# -> 109/109 vectors passed   (render + error + invariant pairs + spec-version match)
 
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers B
-# -> 98/98 vectors passed   (raster via cairosvg)
+# -> 102/102 vectors passed   (raster via cairosvg)
 ```
 
 CI runs both tiers on every push as hard gates (`.github/workflows/ci.yml`:
 `conformance` + `conformance-tier-b`), cross-checking out the reference corpus
-at the pinned tag `v0.17.1`.
+at the pinned tag `v0.17.3`.
 
 ## Coverage
 
@@ -37,8 +37,9 @@ Crockford resolves to ULID, not hex) match by construction:
   [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) `keccak_256`
 - **DID** (W3C DID Core) and **URN** (RFC 8141) — v11 prefix-fold; includes the
   large `did-jwk-large` / `did-peer-2` on the large-input path
-- **base58** — Bitcoin legacy (mainnet + testnet), Ripple, IPFS CIDv0
-  (multihash-labeled), Cardano Byron (both `Ae2`/`DdzFF` forms)
+- **base58** — Bitcoin legacy (mainnet + testnet), **Litecoin legacy**
+  (base58check version `0x30`, distinct from the bech32 `ltc1` form), Ripple,
+  IPFS CIDv0 (multihash-labeled), Cardano Byron (both `Ae2`/`DdzFF` forms)
 - **bech32** — Bitcoin SegWit (incl. P2WSH and testnet), Litecoin, Bitcoin Cash,
   Cardano Shelley (mainnet + testnet, base **and** 29-byte stake forms), nostr
   `npub`/`nsec`, and generic Cosmos-SDK chains (BIP-173/350 checksum-validated).
@@ -56,8 +57,12 @@ Crockford resolves to ULID, not hex) match by construction:
   **decimal** — Snowflake (clock-free sign-bit gate)
 - **CESR** (KERI AID/SAID derivation codes), **SSH** public keys (ed25519/rsa/
   dss/ecdsa), **SWHID**, **gitoid**, **EOS**, **Cardano**, and the alphabet-
-  **disproof** path (e.g. `b64-large`)
-- **11 error vectors** — note length/charset, font-size range, EIP-55 bad
+  **disproof** path (e.g. `b64-large`). Corpus `v0.17.3` added the first vectors
+  for three recognizer branches that no implementation had ever certified —
+  `eos-system` (bare EOS name), `multihash-sha256-hex` (hex-encoded multihash)
+  and `ltc-legacy` (the base58check arm of the Litecoin parser); all three
+  passed here unchanged
+- **9 error vectors** — note length/charset, font-size range, EIP-55 bad
   checksum, and the named-scheme bech32 (`bc1`/`ltc1`/`addr1`)/CashAddr/
   base58check/LEI bad-checksum rejections. The GENERIC `<hrp>1<data>` path is
   deliberately not among them: the v17 correction makes a failing polymod there
