@@ -26,7 +26,7 @@ import {
 import { characterize, compactJson, renderLabel, TRUNC_MARKER } from "./characterize.ts";
 import pkg from "../package.json" with { type: "json" };
 
-export const SPEC_VERSION = "v17";
+export const SPEC_VERSION = "v18";
 // Read the published version straight from package.json (via a JSON import, so
 // the renderer stays browser-bundleable — no node:fs) so the data-entviz-lib
 // stamp can never drift from the release. release.py bumps only package.json;

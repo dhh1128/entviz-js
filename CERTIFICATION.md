@@ -1,7 +1,7 @@
 # Conformance certification — @entviz/core
 
-**Spec:** entviz v17 (with the 2026-08-06 corrections) ·
-**Corpus:** entviz `compliance/` (pinned `v0.17.3`) ·
+**Spec:** entviz v18 ·
+**Corpus:** entviz `compliance/` (pinned `v0.18.0`, 96 render + 9 error vectors) ·
 **Tiers:** A (render model) + B (canonical raster, cairosvg) · **Result:**
 **full conformance — every corpus vector passes**, with no skip list and no
 subset.
@@ -11,16 +11,16 @@ Run from the entviz repo against the whole corpus:
 ```sh
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers A
-# -> 109/109 vectors passed   (render + error + invariant pairs + spec-version match)
+# -> 113/113 vectors passed   (render + error + invariant pairs + spec-version match)
 
 PYTHONPATH=src:. python -m compliance.runner \
   --impl-cmd 'node /home/daniel/code/entviz-js/packages/core/src/cli.ts' --tiers B
-# -> 102/102 vectors passed   (raster via cairosvg)
+# -> 106/106 vectors passed   (raster via cairosvg)
 ```
 
 CI runs both tiers on every push as hard gates (`.github/workflows/ci.yml`:
 `conformance` + `conformance-tier-b`), cross-checking out the reference corpus
-at the pinned tag `v0.17.3`.
+at the pinned tag `v0.18.0`.
 
 ## Coverage
 
@@ -53,6 +53,17 @@ Crockford resolves to ULID, not hex) match by construction:
   requires; Cardano Byron deliberately carries **no** network, since its magic
   lives inside a CBOR payload this parser does not decode
 - **base32** (RFC 4648) — Stellar, IPFS CIDv1 (multicodec-labeled via varint decode)
+- **v18:** the multihash **hash function** reaches `qualifiers.hash` and therefore
+  the label's MOD slot, which it never did through v17 — the recognizer parsed the
+  name and `characterize()` discarded it, so a sha3-256 multihash labeled exactly
+  like a sha2-256 one and the 48-entry hash table was certified by nothing. The
+  four v18 vectors (`multihash-sha3-256-hex`, `multihash-sha2-512-hex`,
+  `multihash-sha1-hex`, and `cid-v1-raw-sha3`, which departs on codec *and* hash)
+  each depart from a default, since the default is silent under the loud-departure
+  rule. This port's hash table (48 entries) and multicodec table (12) were already
+  complete and correct — verified entry by entry against the reference, and now
+  held there by `test/unit/v18-multihash-hash.test.ts`, which drives every entry
+  in both tables through a rendered label
 - **crockford32** — ULID · **base36** — GLEIF LEI (ISO 7064 MOD 97-10) ·
   **decimal** — Snowflake (clock-free sign-bit gate)
 - **CESR** (KERI AID/SAID derivation codes), **SSH** public keys (ed25519/rsa/

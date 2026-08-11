@@ -410,3 +410,40 @@ Entviz-JS Port = goal:
         output to the reference. They now are compared. Conformance against entviz v0.17.3:
         109/109 Tier A, 102/102 Tier B, full corpus, no skip list.
       status: drafted
+
+    v18: the multihash hash function, parsed and then discarded = decision:
+      id: ejvn0jt0
+      why: >
+        Port of entviz a07b62f (2026-08-11), spec v18. `characterize()` pulled the
+        hash-function name out of the recognizer's type string (`Parsed.type` reads
+        "hex multihash sha3-256") and threw it away, so `qualifiers.hash` was never set for a
+        multihash and the `labelMods` branch that renders it — present and correct since v14,
+        whose rule requires "a multihash hash on departure" — could never fire. A sha3-256
+        multihash labeled exactly like a sha2-256 one. Same shape as v17's network qualifier
+        ([[kwt1faw7]] and entviz `this.i:n3twrkq`): the rule existed, the rendering code
+        existed, the field feeding them was empty. A rendered label changes, so unlike the
+        0.17.x corrections this IS a version bump — SPEC_VERSION `v18`, libraries 0.18.0.
+
+        The fix is two lines. What is worth recording is what the discard did to the tables.
+        `MULTIHASH_HASH_FUNCS` (48 entries) and `MULTICODEC_CONTENT` (12) were UNOBSERVABLE
+        from outside: the lookup ran and its result reached nothing a conformance checker
+        could see, so this port could have had every entry wrong and still certified green.
+        Three sibling ports were caught in the 0.17.3 pass with roughly nine entries each,
+        each then "completing" its table to a different remembered size. See entviz
+        `this.i:mh4shnam` — a lookup table is only as certified as its most observable
+        consumer.
+
+        The outcome here is negative again, as in [[jky2p1mz]]: both tables were already
+        complete and correct, reconciled entry by entry against the reference, and all four
+        new corpus vectors (`multihash-sha3-256-hex`, `multihash-sha2-512-hex`,
+        `multihash-sha1-hex`, `cid-v1-raw-sha3` — the last departing on codec AND hash) passed
+        on the first run. Correct by construction is not the same as certified, so
+        `test/unit/v18-multihash-hash.test.ts` now transcribes both reference tables and drives
+        EVERY entry through a rendered label: the 45 single-byte hash codes through a hex
+        multihash header, the three varint-only codes (0xb201-0xb203) and all twelve codecs
+        through a synthesized CIDv1, plus the asymmetry that hid the bug — sha2-256 emits no
+        qualifier at all, because the recognizer does not append the default name. The corpus
+        goes 92 -> 96 render vectors; error vectors and invariant pairs are unchanged at 9 and
+        7. Conformance against entviz v0.18.0: 113/113 Tier A, 106/106 Tier B, full corpus, no
+        skip list.
+      status: drafted

@@ -299,8 +299,10 @@ test("renderLabel: multihash size + non-default hash MOD", () => {
   // echoes the stripped "1220" multihash header as the trailing prefix slot.
   assert.equal(topOf("1220" + "ab".repeat(32)), "multihash, 256-bit, 1220");
   // A multihash whose hash departs from sha2-256 surfaces the hash as a MOD.
-  // Constructed directly since the parser elides the hash into qualifiers only
-  // on departure paths; renderLabel is a pure function of the fields.
+  // Constructed directly because renderLabel is a pure function of the fields;
+  // the end-to-end path that now populates `qualifiers.hash` from the recognizer
+  // is covered in v18-multihash-hash.test.ts (through v17 it never did, so this
+  // synthetic record was the only thing exercising the MOD branch).
   const mh = {
     encoding: "base64", scheme: "multihash", role: "digest" as const,
     qualifiers: { hash: "sha3-256" }, sizeBasis: "decoded" as const,

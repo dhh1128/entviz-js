@@ -396,6 +396,20 @@ function describeFromParsed(parsed: Parsed): Described {
   if (typeName === "LEI") return { scheme: "lei", role: "identifier", qualifiers: q, sizeBasis: "decoded" };
   if (typeName === "snowflake") return { scheme: "snowflake", role: "identifier", qualifiers: q, sizeBasis: "decoded" };
   if (typeName.startsWith("multihash") || typeName.includes("multihash")) {
+    // v18: surface the hash function so the MOD slot can render it. The parser
+    // has always recovered the name — `Parsed.type` reads "hex multihash
+    // sha3-256" — and this function threw it away, so the `labelMods` branch
+    // that reads `q.hash` could never fire and a non-default multihash labeled
+    // identically to a sha2-256 one. The v14 rule has required "a multihash
+    // hash on departure" since v14; the reference simply never honored it
+    // (`this.i:mh4shnam`).
+    //
+    // It also made the 48-entry MULTIHASH_HASH_FUNCS table UNOBSERVABLE: a port
+    // could get every entry wrong and still pass Tier A, because the lookup's
+    // result never reached the model. sha2-256 is the silent default and the
+    // parser does not append it, so its qualifier stays absent.
+    const tail = typeName.split("multihash").slice(1).join("multihash").trim();
+    if (tail) q.hash = tail;
     return { scheme: "multihash", role: "digest", qualifiers: q, sizeBasis: "decoded" };
   }
 
