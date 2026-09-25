@@ -377,7 +377,7 @@ Entviz-JS Port = goal:
         the host owns its own redirect policy.
       status: drafted
 
-    v17 corrections: the label DOM is normative, and generic bech32 claims less = decision:
+    v17 corrections — the label DOM is normative, and generic bech32 claims less = decision:
       id: gwhtl8r1
       why: >
         Port of entviz eee025d (2026-08-06), a CORRECTION to v17 rather than a new spec
@@ -448,7 +448,7 @@ Entviz-JS Port = goal:
         109/109 Tier A, 102/102 Tier B, full corpus, no skip list.
       status: drafted
 
-    v18: the multihash hash function, parsed and then discarded = decision:
+    v18 — the multihash hash function, parsed and then discarded = decision:
       id: ejvn0jt0
       why: >
         Port of entviz a07b62f (2026-08-11), spec v18. `characterize()` pulled the
