@@ -131,7 +131,7 @@ value-derived visual (glance-equivalence) — both rejected.
 - **A long host label truncates with an ellipsis** (this.i `k7pq2mzv`). When it is measured as truncated, hover or keyboard focus scrolls it end to end and back, and it returns when the pointer or focus leaves. A label that fits never moves. The full label also joins the tooltip, above the value preview. Under `prefers-reduced-motion` nothing moves: the tooltip carries the label for pointer users, and focus wraps it in place for keyboard users. The accessible name always holds the full label. None of this reopens §14: a label is first-party host text, not value-derived.
 - **The mnemonic is fitted, never cut** (§13). It is value-derived, and a truncated mnemonic would show only its first cell, which is the short grindable teaser §3.3 forbids. So it never ellipsizes and never scrolls. It shows at full size if it fits, else at 85% font size, else it is dropped and the type text takes the slot.
 
-  *Changed 2026-09-25 (v0.19.0):* before this, `maxWidth` clipped the whole body. A long label was cut mid-character with no ellipsis, the trailing role icon was clipped first, and the rest of the label could not be read short of expanding.
+  *Changed 2026-09-25 (v0.18.1):* before this, `maxWidth` clipped the whole body. A long label was cut mid-character with no ellipsis, the trailing role icon was clipped first, and the rest of the label could not be read short of expanding.
 
 ### 3.5 Interaction
 
