@@ -246,6 +246,17 @@ Entviz-JS Port = goal:
         reduced-motion state must be measured as a single line, else it reads as fitting,
         unwraps, and oscillates; measure() forces nowrap inline for the read, so that rule
         must never carry !important.
+        AMENDED 2026-09-25 (v0.18.2). (1) The marquee is a Web Animations API animation with
+        LITERAL px keyframes, started/stopped from the wrap's hover and focus handlers. The
+        v0.18.1 CSS @keyframes ended at calc(-1 * var(--entviz-pill-label-overflow)); owner
+        saw it in Brave (Chromium) run DISCRETELY — no intermediate frames, one jump to the
+        end mid-sweep — while headless Chromium interpolated it, so the e2e suite passed.
+        Cause not pinned down beyond "var() in the keyframe"; removing var() removes the
+        dependency. The e2e test now samples rendered positions and requires in-between
+        values, but it could not have caught the Brave case and does not prove the fix
+        there. (2) New prop textOverflow: "ellipsis" (default) | "clip". Owner: in arcviz the
+        ellipsis makes things worse and a plain cut reads better; it applies to the label
+        and to type/role text.
       status: drafted
 
     Pill vertical density = decision:

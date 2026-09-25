@@ -12,7 +12,7 @@
  *
  * Query params: component (pill|entviz|compare|walk|voice), value, reference, mode,
  * fontSizePt, note, label, typeSignal, corner, locale, targetAr, posture, seed, maxWidth
- * (a CSS length for the pill), locate (flag: pass an onLocate hook).
+ * (a CSS length for the pill), textOverflow (ellipsis|clip), locate (flag: pass an onLocate hook).
  */
 import { createRoot } from "react-dom/client";
 import {
@@ -120,6 +120,7 @@ function Fixture() {
           locale={locale}
           trust={trust}
           maxWidth={has("maxWidth") ? str("maxWidth") : undefined}
+          textOverflow={has("textOverflow") ? (str("textOverflow") as "ellipsis" | "clip") : undefined}
           onLocate={has("locate") ? () => {} : undefined}
           onCompare={() => {}}
           onEvent={onEvent}

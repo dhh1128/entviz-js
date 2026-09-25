@@ -24,6 +24,7 @@ import {
   type RefObject,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type FocusEvent as ReactFocusEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -85,6 +86,10 @@ export interface EntvizPillProps {
    *  enables (e.g. `mnemonic`). NEVER expose changing this to the end user. */
   trust?: TrustAssumption;
   maxWidth?: number | string;
+  /** How cut text ends when the pill hits `maxWidth`: `ellipsis` (default) shows "…" where
+   *  the label (or type text) is cut; `clip` just cuts it. Either way a truncated label
+   *  scrolls on hover/focus and its full text is in the tooltip and accessible name. */
+  textOverflow?: "ellipsis" | "clip";
   locale?: string;
   /** Chrome writing direction. "auto" (default) follows the locale's script. */
   dir?: "ltr" | "rtl" | "auto";
@@ -282,7 +287,7 @@ function useFloating(anchorRef: RefObject<HTMLElement | null>, open: boolean, rt
 export function EntvizPill(props: EntvizPillProps): ReactNode {
   const {
     value, targetAr, fontSizePt, note,
-    label, typeSignal = "autoCombo", corner, highlight, trust, maxWidth, locale, dir,
+    label, typeSignal = "autoCombo", corner, highlight, trust, maxWidth, textOverflow = "ellipsis", locale, dir,
     messages: overrides, className, style, open, onOpenChange, onExpand, onCompare, showCompareAffordance,
     onLocate, showLocateAffordance, onCopy, onError, onEvent,
   } = props;
@@ -532,7 +537,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // --- label overflow (k7pq2mzv) ---
   // A host label longer than the room the pill gets truncates with an ellipsis; the cap,
   // kebab and role glyph never shrink. `labelOverflow` is how many px are hidden (0 when
-  // it fits). It drives the hover/focus marquee (PILL_CSS) and puts the full label in the
+  // it fits). It drives the hover/focus marquee (syncMarquee) and puts the full label in the
   // tooltip. The label is host text, not value-derived, so showing all of it reopens
   // nothing in §14. Measured, not guessed: scrollWidth (natural) against clientWidth.
   const labelRef = useRef<HTMLSpanElement>(null);
@@ -588,6 +593,41 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     return () => { window.removeEventListener("resize", onResize); ro?.disconnect(); };
   }, []);
   const labelTruncated = !labelIsMnemonic && labelOverflow > 0;
+
+  // The hover/focus marquee runs through the Web Animations API with LITERAL px
+  // keyframes. The first cut used a CSS @keyframes whose end value was
+  // calc(-1 * var(--overflow)); Brave (Chromium) animated that discretely — no
+  // intermediate frames, one jump to the end halfway through — while headless
+  // Chromium interpolated it. Literal lengths leave nothing for an engine to give up on.
+  const marquee = useRef<Animation | null>(null);
+  const engaged = useRef({ hover: false, focus: false });
+  const syncMarquee = () => {
+    const el = labelRef.current;
+    const want = (engaged.current.hover || engaged.current.focus) && labelTruncated && !!el;
+    const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!want || reduce || typeof el!.animate !== "function") { marquee.current?.cancel(); marquee.current = null; return; }
+    if (marquee.current) return;
+    const end = `${-labelOverflow}px`;
+    marquee.current = el!.animate(
+      [
+        { textIndent: "0px", offset: 0 },
+        { textIndent: "0px", offset: 0.15, easing: "ease-in-out" },
+        { textIndent: end, offset: 0.85 },
+        { textIndent: end, offset: 1 },
+      ],
+      { duration: marqueeSeconds(labelOverflow) * 1000, iterations: Infinity, direction: "alternate" },
+    );
+  };
+  const syncMarqueeRef = useRef(syncMarquee);
+  syncMarqueeRef.current = syncMarquee;
+  // A new distance (resize, new label) restarts a running marquee at the new length;
+  // unmount cancels it.
+  useEffect(() => {
+    marquee.current?.cancel();
+    marquee.current = null;
+    syncMarqueeRef.current();
+  }, [labelOverflow, labelTruncated]);
+  useEffect(() => () => { marquee.current?.cancel(); }, []);
 
   // Type is the trusted, derived channel — the BARE entropy type only. The
   // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
@@ -690,10 +730,10 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     "span",
     { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", alignItems: "baseline", minWidth: 0, overflow: "hidden" } },
     showTypeText && type
-      ? h("span", { key: "type", className: "entviz-pill__type", style: { opacity: 0.62, ...yieldFirstStyle } }, type)
+      ? h("span", { key: "type", className: "entviz-pill__type", style: { opacity: 0.62, ...yieldFirstStyle, textOverflow } }, type)
       : null,
     showTypeText && type && role
-      ? h("span", { key: "role", style: { ...pillRoleStyle, ...yieldFirstStyle } }, role)
+      ? h("span", { key: "role", style: { ...pillRoleStyle, ...yieldFirstStyle, textOverflow } }, role)
       : null,
     shownLabel
       ? h(
@@ -703,16 +743,11 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
             ref: labelRef,
             className: labelIsMnemonic ? "entviz-pill__label entviz-pill__label--mnemonic" : "entviz-pill__label",
             "data-truncated": labelTruncated ? "" : undefined,
+            "data-text-overflow": textOverflow,
             style: labelIsMnemonic
               ? { ...mnemonicStyle, flexShrink: 1, minWidth: 0, overflow: "hidden", fontSize: mnFit === 1 ? "85%" : undefined }
               : {
-                  flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-                  ...(labelTruncated
-                    ? {
-                        "--entviz-pill-label-overflow": `${labelOverflow}px`,
-                        "--entviz-pill-marquee-duration": `${marqueeSeconds(labelOverflow)}s`,
-                      } as CSSProperties
-                    : null),
+                  flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow,
                 },
           },
           shownLabel,
@@ -938,8 +973,20 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // maxWidth/minWidth let a percentage maxWidth on the body resolve against the
       // host's container, so the pill shrinks inside a narrow card instead of spilling.
       style: { position: "relative", display: "inline-flex", verticalAlign: "baseline", maxWidth: "100%", minWidth: 0, ...style },
-      onMouseEnter: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.add("entviz-pill--hover"),
-      onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.remove("entviz-pill--hover"),
+      onMouseEnter: (e: ReactMouseEvent<HTMLSpanElement>) => {
+        e.currentTarget.classList.add("entviz-pill--hover");
+        engaged.current.hover = true; syncMarquee();
+      },
+      onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => {
+        e.currentTarget.classList.remove("entviz-pill--hover");
+        engaged.current.hover = false; syncMarquee();
+      },
+      // Focus moving between the pill button and the kebab stays "focused" (no restart).
+      onFocus: () => { engaged.current.focus = true; syncMarquee(); },
+      onBlur: (e: ReactFocusEvent<HTMLSpanElement>) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        engaged.current.focus = false; syncMarquee();
+      },
     },
     pillBody,
     // Hidden but SELECTABLE copy of the raw value (D): a text selection sweeping the
@@ -973,18 +1020,11 @@ const PILL_CSS = `
 @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
 .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 50%); }
 @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
-@keyframes entviz-pill-marquee {
-  0%, 15% { text-indent: 0; }
-  85%, 100% { text-indent: calc(-1 * var(--entviz-pill-label-overflow, 0px)); }
-}
 .entviz-pill--hover .entviz-pill__label[data-truncated],
-.entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] {
-  text-overflow: clip !important;
-  animation: entviz-pill-marquee var(--entviz-pill-marquee-duration, 4s) ease-in-out infinite alternate;
-}
+.entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] { text-overflow: clip !important; }
 @media (prefers-reduced-motion: reduce) {
-  .entviz-pill--hover .entviz-pill__label[data-truncated],
-  .entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] { animation: none; text-overflow: ellipsis !important; }
+  .entviz-pill--hover .entviz-pill__label[data-truncated][data-text-overflow="ellipsis"],
+  .entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated][data-text-overflow="ellipsis"] { text-overflow: ellipsis !important; }
   .entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] { white-space: normal; overflow-wrap: anywhere; }
 }
 `;
@@ -1006,7 +1046,7 @@ function useInjectStyles(): void {
 // distinguished only by color (a lighter ink), never by size or baseline.
 // Type and role text give up their width before the label does (§3.4: the type is always
 // recoverable on expand), and show an ellipsis when cut.
-const yieldFirstStyle: CSSProperties = { flexShrink: 100, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" };
+const yieldFirstStyle: CSSProperties = { flexShrink: 100, minWidth: 0, overflow: "hidden" };
 
 const pillRoleStyle: CSSProperties = {
   opacity: 0.42,

@@ -11,6 +11,7 @@ const CESR = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx";
 const LONG = "rosa-iqbal-claims-adjuster-northgate-mutual";
 
 const label = (page: Page) => page.locator(".entviz-pill__label");
+const running = (page: Page) => label(page).evaluate((e) => e.getAnimations().length);
 const body = (page: Page) => page.locator(".entviz-pill__body");
 
 async function right(page: Page, sel: string): Promise<number> {
@@ -38,20 +39,50 @@ test.describe("pill label overflow", () => {
     await expect(page.getByRole("button", { name: /view visualization/i })).toHaveAttribute("title", `${LONG}\n${UUID}`);
   });
 
-  test("hover scrolls the truncated label, and leaving stops it", async ({ page }) => {
+  test("hover scrolls the truncated label THROUGH intermediate positions, and leaving stops it", async ({ page }) => {
+    await page.goto(`/e2e.html?component=pill&value=${UUID}&label=${LONG}&maxWidth=12em`);
+    const el = label(page);
+    const over = await el.evaluate((e) => e.scrollWidth - e.clientWidth);
+    await body(page).hover();
+    // A discrete animation (the Brave failure: a var()-based keyframe) jumps 0 → end with
+    // nothing between. Sample the rendered text position and require several in-between values.
+    const seen = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const x = await el.evaluate((e) => {
+        const r = document.createRange(); r.selectNodeContents(e);
+        return Math.round(r.getBoundingClientRect().left - e.getBoundingClientRect().left);
+      });
+      if (x < -1 && x > -over + 1) seen.add(x);
+      await page.waitForTimeout(100);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(5);
+    await page.mouse.move(0, 0);
+    await expect.poll(() => running(page)).toBe(0);
+    expect(await el.evaluate((e) => getComputedStyle(e).textIndent)).toBe("0px");
+  });
+
+  test("the scroll reaches the end: the last character is shown", async ({ page }) => {
     await page.goto(`/e2e.html?component=pill&value=${UUID}&label=${LONG}&maxWidth=12em`);
     const el = label(page);
     await body(page).hover();
-    await expect.poll(() => el.evaluate((e) => getComputedStyle(e).animationName)).toBe("entviz-pill-marquee");
-    await expect.poll(() => el.evaluate((e) => parseFloat(getComputedStyle(e).textIndent)), { timeout: 5000 }).toBeLessThan(-5);
-    await page.mouse.move(0, 0);
-    await expect.poll(() => el.evaluate((e) => getComputedStyle(e).animationName)).toBe("none");
+    await expect.poll(() => el.evaluate((e) => {
+      const r = document.createRange(); r.selectNodeContents(e);
+      return Math.abs(r.getBoundingClientRect().right - e.getBoundingClientRect().right);
+    }), { timeout: 10_000 }).toBeLessThan(1.5);
+  });
+
+  test("textOverflow=clip: no ellipsis, still scrolls", async ({ page }) => {
+    await page.goto(`/e2e.html?component=pill&value=${UUID}&label=${LONG}&maxWidth=12em&textOverflow=clip`);
+    const el = label(page);
+    expect(await el.evaluate((e) => getComputedStyle(e).textOverflow)).toBe("clip");
+    await body(page).hover();
+    await expect.poll(() => running(page)).toBe(1);
   });
 
   test("keyboard focus scrolls it too", async ({ page }) => {
     await page.goto(`/e2e.html?component=pill&value=${UUID}&label=${LONG}&maxWidth=12em`);
     await page.getByRole("button", { name: /view visualization/i }).focus();
-    await expect.poll(() => label(page).evaluate((e) => getComputedStyle(e).animationName)).toBe("entviz-pill-marquee");
+    await expect.poll(() => running(page)).toBe(1);
   });
 
   test("a label that fits does not scroll", async ({ page }) => {
@@ -59,7 +90,7 @@ test.describe("pill label overflow", () => {
     const el = label(page);
     await expect(el).not.toHaveAttribute("data-truncated", "");
     await body(page).hover();
-    expect(await el.evaluate((e) => getComputedStyle(e).animationName)).toBe("none");
+    expect(await running(page)).toBe(0);
   });
 
   test("reduced motion: no animation; focus wraps the label so all of it shows", async ({ page }) => {
@@ -68,7 +99,8 @@ test.describe("pill label overflow", () => {
     const el = label(page);
     const h0 = await el.evaluate((e) => e.getBoundingClientRect().height);
     await body(page).hover();
-    expect(await el.evaluate((e) => getComputedStyle(e).animationName)).toBe("none");
+    await page.waitForTimeout(300);
+    expect(await running(page)).toBe(0);
     await page.getByRole("button", { name: /view visualization/i }).focus();
     await expect.poll(() => el.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThan(h0 * 1.5);
     expect(await el.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);

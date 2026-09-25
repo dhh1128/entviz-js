@@ -74,12 +74,10 @@ describe("host label overflow", () => {
     expect(pillBtn().style.minWidth).toBe("0px");
   });
 
-  test("a truncated label is flagged, carries its scroll distance, and joins the tooltip", () => {
+  test("a truncated label is flagged and joins the tooltip", () => {
     const { container } = render(<EntvizPill value={UUID} label={LONG} />);
     const el = labelEl(container)!;
     expect(el.hasAttribute("data-truncated")).toBe(true);
-    expect(el.style.getPropertyValue("--entviz-pill-label-overflow")).toBe(`${LONG.length * CHAR_W - ROOM}px`);
-    expect(el.style.getPropertyValue("--entviz-pill-marquee-duration")).toBe(`${marqueeSeconds(LONG.length * CHAR_W - ROOM)}s`);
     // Reduced-motion users (and anyone who would rather hover) read the whole label here.
     expect(pillBtn().getAttribute("title")).toBe(`${LONG}\n${UUID}`);
   });
@@ -114,6 +112,22 @@ describe("host label overflow", () => {
     expect(observers.every((o) => o.disconnect.mock.calls.length === 1)).toBe(true);
   });
 
+  test("textOverflow=\"clip\" cuts the label and type text with no ellipsis", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} typeSignal="text" textOverflow="clip" />);
+    const el = labelEl(container)!;
+    expect(el.style.textOverflow).toBe("clip");
+    expect(el.getAttribute("data-text-overflow")).toBe("clip");
+    expect((container.querySelector(".entviz-pill__type") as HTMLElement).style.textOverflow).toBe("clip");
+    // still truncated, still scrolls, still readable in the tooltip
+    expect(el.hasAttribute("data-truncated")).toBe(true);
+    expect(pillBtn().getAttribute("title")).toBe(`${LONG}\n${UUID}`);
+    // the reduced-motion rule that restores the ellipsis only matches ellipsis pills
+    const css = document.getElementById("entviz-pill-styles")!.textContent!;
+    const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).not.toMatch(/\[data-truncated\],\s*\.entviz-pill__wrap:focus-within \.entviz-pill__label\[data-truncated\]\[data-text-overflow="ellipsis"\] \{ text-overflow: ellipsis/);
+    expect(reduced).toMatch(/\[data-truncated\]\[data-text-overflow="ellipsis"\],\s*\.entviz-pill__wrap/);
+  });
+
   test("type text (typeSignal=text) yields before the label", () => {
     const { container } = render(<EntvizPill value={UUID} label={LONG} typeSignal="text" />);
     const type = container.querySelector(".entviz-pill__type") as HTMLElement;
@@ -122,16 +136,114 @@ describe("host label overflow", () => {
     expect(type.style.textOverflow).toBe("ellipsis");
   });
 
-  test("the injected CSS scrolls only a truncated label, on hover or focus, and not under reduced motion", () => {
+  test("the injected CSS drops the ellipsis while scrolling, keeps it under reduced motion, and wraps on focus there", () => {
     render(<EntvizPill value={UUID} label={LONG} />);
     const css = document.getElementById("entviz-pill-styles")!.textContent!;
-    expect(css).toMatch(/\.entviz-pill--hover \.entviz-pill__label\[data-truncated\]/);
-    expect(css).toMatch(/\.entviz-pill__wrap:focus-within \.entviz-pill__label\[data-truncated\]/);
-    expect(css).toMatch(/@keyframes entviz-pill-marquee/);
-    // Reduced motion: no animation; keyboard focus wraps the label in place instead.
+    expect(css).toMatch(/\.entviz-pill--hover \.entviz-pill__label\[data-truncated\],\s*\.entviz-pill__wrap:focus-within \.entviz-pill__label\[data-truncated\] \{ text-overflow: clip/);
+    // No CSS keyframes: a var()-based keyframe animated discretely in Brave.
+    expect(css).not.toMatch(/@keyframes entviz-pill-marquee/);
     const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(reduced).toMatch(/animation: none/);
+    expect(reduced).toMatch(/text-overflow: ellipsis/);
     expect(reduced).toMatch(/white-space: normal/);
+  });
+});
+
+describe("the marquee (Web Animations API, literal px keyframes)", () => {
+  type Call = { keyframes: Keyframe[]; opts: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn> };
+  let calls: Call[] = [];
+  const realAnimate = (HTMLElement.prototype as { animate?: unknown }).animate;
+  beforeAll(() => {
+    (HTMLElement.prototype as unknown as { animate: unknown }).animate = function (keyframes: Keyframe[], opts: KeyframeAnimationOptions) {
+      const c = { keyframes, opts, cancel: vi.fn() };
+      calls.push(c);
+      return { cancel: c.cancel };
+    };
+  });
+  afterAll(() => { (HTMLElement.prototype as unknown as { animate: unknown }).animate = realAnimate; });
+  afterEach(() => { calls = []; });
+
+  const OVER = LONG.length * CHAR_W - ROOM;
+  const wrap = (c: HTMLElement) => c.querySelector(".entviz-pill__wrap") as HTMLElement;
+
+  test("hover animates text-indent from 0 to the literal overflow, and leaving cancels it", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    expect(calls).toHaveLength(1);
+    const ends = calls[0].keyframes.map((k) => k.textIndent);
+    expect(ends).toEqual(["0px", "0px", `${-OVER}px`, `${-OVER}px`]);
+    expect(JSON.stringify(calls[0].keyframes)).not.toContain("var(");
+    expect(calls[0].opts).toMatchObject({ duration: marqueeSeconds(OVER) * 1000, iterations: Infinity, direction: "alternate" });
+    fireEvent.mouseLeave(wrap(container));
+    expect(calls[0].cancel).toHaveBeenCalled();
+  });
+
+  test("keyboard focus animates too; focus moving within the pill does not restart it; leaving cancels", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    const kebab = container.querySelector(".entviz-pill__kebab") as HTMLElement;
+    fireEvent.focus(pillBtn());
+    expect(calls).toHaveLength(1);
+    fireEvent.blur(pillBtn(), { relatedTarget: kebab });
+    fireEvent.focus(kebab);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cancel).not.toHaveBeenCalled();
+    fireEvent.blur(kebab, { relatedTarget: document.body });
+    expect(calls[0].cancel).toHaveBeenCalled();
+  });
+
+  test("hover plus focus: leaving with the pointer keeps it running while focus remains", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    fireEvent.focus(pillBtn());
+    fireEvent.mouseLeave(wrap(container));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cancel).not.toHaveBeenCalled();
+  });
+
+  test("a label that fits never animates", () => {
+    const { container } = render(<EntvizPill value={UUID} label={SHORT} />);
+    fireEvent.mouseEnter(wrap(container));
+    expect(calls).toHaveLength(0);
+  });
+
+  test("under prefers-reduced-motion nothing animates", () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce") }));
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    expect(calls).toHaveLength(0);
+  });
+
+  test("with matchMedia present but motion allowed, it animates", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    expect(calls).toHaveLength(1);
+  });
+
+  test("a new distance while hovered restarts the animation at the new length", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    ROOM = 200;
+    act(() => { window.dispatchEvent(new Event("resize")); });
+    expect(calls[0].cancel).toHaveBeenCalled();
+    expect(calls.at(-1)!.keyframes[2].textIndent).toBe(`${-(LONG.length * CHAR_W - 200)}px`);
+  });
+
+  test("unmount cancels a running animation", () => {
+    const { container, unmount } = render(<EntvizPill value={UUID} label={LONG} />);
+    fireEvent.mouseEnter(wrap(container));
+    unmount();
+    expect(calls[0].cancel).toHaveBeenCalled();
+  });
+
+  test("an engine without element.animate just shows the ellipsis", () => {
+    const saved = HTMLElement.prototype.animate;
+    (HTMLElement.prototype as unknown as { animate: unknown }).animate = undefined;
+    try {
+      const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+      expect(() => fireEvent.mouseEnter(wrap(container))).not.toThrow();
+    } finally {
+      HTMLElement.prototype.animate = saved;
+    }
   });
 });
 
