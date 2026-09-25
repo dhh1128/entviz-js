@@ -129,6 +129,46 @@ function Fixture() {
   }
 }
 
+// `diag`: a hover diagnostic for the pill's label marquee. Counts animation starts and
+// hover enter/leave, then samples the label every ~50ms for 8s after the first hover and
+// writes it all to a textarea the tester can copy. Dev-only, like the rest of this page.
+if (has("diag")) {
+  const log: string[] = [];
+  let starts = 0, enters = 0, leaves = 0, t0 = 0;
+  const realAnimate = HTMLElement.prototype.animate;
+  HTMLElement.prototype.animate = function (...a: Parameters<typeof realAnimate>) {
+    starts++;
+    log.push(`${(performance.now() - t0).toFixed(0)}ms animate() #${starts} ${JSON.stringify(a[0])}`);
+    return realAnimate.apply(this, a);
+  };
+  const out = document.createElement("textarea");
+  out.style.cssText = "width:95vw;height:60vh;font:11px monospace;margin-top:16px";
+  document.body.appendChild(out);
+  document.addEventListener("mouseover", (e) => {
+    const wrap = (e.target as Element).closest?.(".entviz-pill__wrap");
+    if (!wrap || t0) return;
+    t0 = performance.now();
+    const el = document.querySelector<HTMLElement>(".entviz-pill__label")!;
+    wrap.addEventListener("mouseenter", () => { enters++; log.push(`${(performance.now() - t0).toFixed(0)}ms mouseenter`); });
+    wrap.addEventListener("mouseleave", () => { leaves++; log.push(`${(performance.now() - t0).toFixed(0)}ms mouseleave`); });
+    new ResizeObserver(() => log.push(`${(performance.now() - t0).toFixed(0)}ms resize sw=${el.scrollWidth} cw=${el.clientWidth}`)).observe(el);
+    const cs = getComputedStyle(el);
+    log.unshift(`UA ${navigator.userAgent}`, `dpr ${devicePixelRatio} reduce=${matchMedia("(prefers-reduced-motion: reduce)").matches} sw=${el.scrollWidth} cw=${el.clientWidth} ta=${cs.textAlign} dir=${cs.direction} disp=${cs.display}`);
+    const tick = () => {
+      const t = performance.now() - t0;
+      const r = document.createRange(); r.selectNodeContents(el);
+      const x = r.getBoundingClientRect().left - el.getBoundingClientRect().left;
+      const inner = el.querySelector<HTMLElement>(".entviz-pill__label-text");
+      const anims = el.getAnimations({ subtree: true });
+      const an = anims[0];
+      log.push(`${t.toFixed(0)}ms transform=${inner ? getComputedStyle(inner).transform : "-"} textX=${x.toFixed(1)} anims=${anims.length} ct=${an ? Number(an.currentTime).toFixed(0) : "-"} state=${an?.playState ?? "-"}`);
+      if (t < 8000) setTimeout(tick, 50);
+      else out.value = [`starts=${starts} enters=${enters} leaves=${leaves}`, ...log].join("\n");
+    };
+    tick();
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <div
     data-testid="evz-fixture"

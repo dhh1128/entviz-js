@@ -594,26 +594,37 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   }, []);
   const labelTruncated = !labelIsMnemonic && labelOverflow > 0;
 
-  // The hover/focus marquee runs through the Web Animations API with LITERAL px
-  // keyframes. The first cut used a CSS @keyframes whose end value was
-  // calc(-1 * var(--overflow)); Brave (Chromium) animated that discretely — no
-  // intermediate frames, one jump to the end halfway through — while headless
-  // Chromium interpolated it. Literal lengths leave nothing for an engine to give up on.
+  // The hover/focus marquee is a TRANSFORM on the label's inner text span, run through the
+  // Web Animations API with literal px keyframes. It used to animate the label's
+  // text-indent; Brave 147 (Chromium) moved the text in LAYOUT but did not repaint it —
+  // a 1px shimmer, then one jump when something else forced a repaint — while headless
+  // Chromium 149 painted every frame. A transform is composited, so every frame is drawn.
+  // The inner span is inline at rest (so the label's ellipsis still works) and becomes
+  // inline-block only while it moves, since a transform needs a box.
+  const labelTextRef = useRef<HTMLSpanElement>(null);
   const marquee = useRef<Animation | null>(null);
   const engaged = useRef({ hover: false, focus: false });
+  const stopMarquee = () => {
+    marquee.current?.cancel();
+    marquee.current = null;
+    if (labelTextRef.current) labelTextRef.current.style.display = "";
+  };
   const syncMarquee = () => {
-    const el = labelRef.current;
+    const el = labelTextRef.current;
     const want = (engaged.current.hover || engaged.current.focus) && labelTruncated && !!el;
     const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!want || reduce || typeof el!.animate !== "function") { marquee.current?.cancel(); marquee.current = null; return; }
+    if (!want || reduce || typeof el!.animate !== "function") { stopMarquee(); return; }
     if (marquee.current) return;
-    const end = `${-labelOverflow}px`;
+    // Start-to-end reading direction: leftward in LTR, rightward in RTL.
+    const rtlText = getComputedStyle(el!).direction === "rtl";
+    const end = `translateX(${rtlText ? labelOverflow : -labelOverflow}px)`;
+    el!.style.display = "inline-block";
     marquee.current = el!.animate(
       [
-        { textIndent: "0px", offset: 0 },
-        { textIndent: "0px", offset: 0.15, easing: "ease-in-out" },
-        { textIndent: end, offset: 0.85 },
-        { textIndent: end, offset: 1 },
+        { transform: "translateX(0px)", offset: 0 },
+        { transform: "translateX(0px)", offset: 0.15, easing: "ease-in-out" },
+        { transform: end, offset: 0.85 },
+        { transform: end, offset: 1 },
       ],
       { duration: marqueeSeconds(labelOverflow) * 1000, iterations: Infinity, direction: "alternate" },
     );
@@ -623,9 +634,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // A new distance (resize, new label) restarts a running marquee at the new length;
   // unmount cancels it.
   useEffect(() => {
-    marquee.current?.cancel();
-    marquee.current = null;
+    stopMarquee();
     syncMarqueeRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [labelOverflow, labelTruncated]);
   useEffect(() => () => { marquee.current?.cancel(); }, []);
 
@@ -748,9 +759,13 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
               ? { ...mnemonicStyle, flexShrink: 1, minWidth: 0, overflow: "hidden", fontSize: mnFit === 1 ? "85%" : undefined }
               : {
                   flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow,
+                  // The <button> ancestor centres text by default; a centred line that
+                  // overflows is aligned differently across engines, which fights the
+                  // text-indent marquee. The label always reads from its start edge.
+                  textAlign: "start",
                 },
           },
-          shownLabel,
+          labelIsMnemonic ? shownLabel : h("span", { ref: labelTextRef, className: "entviz-pill__label-text" }, shownLabel),
         )
       : null,
     // Zero-width-space baseline anchor when nothing else is shown (typeSignal icon/none

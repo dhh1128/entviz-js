@@ -136,6 +136,11 @@ describe("host label overflow", () => {
     expect(type.style.textOverflow).toBe("ellipsis");
   });
 
+  test("a host label's text sits in an inner span; the mnemonic has none", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} />);
+    expect(labelEl(container)!.querySelector(".entviz-pill__label-text")!.textContent).toBe(LONG);
+  });
+
   test("the injected CSS drops the ellipsis while scrolling, keeps it under reduced motion, and wraps on focus there", () => {
     render(<EntvizPill value={UUID} label={LONG} />);
     const css = document.getElementById("entviz-pill-styles")!.textContent!;
@@ -149,12 +154,12 @@ describe("host label overflow", () => {
 });
 
 describe("the marquee (Web Animations API, literal px keyframes)", () => {
-  type Call = { keyframes: Keyframe[]; opts: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn> };
+  type Call = { target: HTMLElement; keyframes: Keyframe[]; opts: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn> };
   let calls: Call[] = [];
   const realAnimate = (HTMLElement.prototype as { animate?: unknown }).animate;
   beforeAll(() => {
-    (HTMLElement.prototype as unknown as { animate: unknown }).animate = function (keyframes: Keyframe[], opts: KeyframeAnimationOptions) {
-      const c = { keyframes, opts, cancel: vi.fn() };
+    (HTMLElement.prototype as unknown as { animate: unknown }).animate = function (this: HTMLElement, keyframes: Keyframe[], opts: KeyframeAnimationOptions) {
+      const c = { target: this, keyframes, opts, cancel: vi.fn() };
       calls.push(c);
       return { cancel: c.cancel };
     };
@@ -169,12 +174,22 @@ describe("the marquee (Web Animations API, literal px keyframes)", () => {
     const { container } = render(<EntvizPill value={UUID} label={LONG} />);
     fireEvent.mouseEnter(wrap(container));
     expect(calls).toHaveLength(1);
-    const ends = calls[0].keyframes.map((k) => k.textIndent);
-    expect(ends).toEqual(["0px", "0px", `${-OVER}px`, `${-OVER}px`]);
+    const ends = calls[0].keyframes.map((k) => k.transform);
+    expect(ends).toEqual(["translateX(0px)", "translateX(0px)", `translateX(${-OVER}px)`, `translateX(${-OVER}px)`]);
+    // it moves the inner text span, made a box for the duration, not the clipping label
+    expect(calls[0].target.className).toBe("entviz-pill__label-text");
+    expect(calls[0].target.style.display).toBe("inline-block");
     expect(JSON.stringify(calls[0].keyframes)).not.toContain("var(");
     expect(calls[0].opts).toMatchObject({ duration: marqueeSeconds(OVER) * 1000, iterations: Infinity, direction: "alternate" });
     fireEvent.mouseLeave(wrap(container));
     expect(calls[0].cancel).toHaveBeenCalled();
+    expect(calls[0].target.style.display).toBe("");
+  });
+
+  test("in RTL it moves the other way", () => {
+    const { container } = render(<EntvizPill value={UUID} label={LONG} dir="rtl" />);
+    fireEvent.mouseEnter(wrap(container));
+    expect(calls[0].keyframes[2].transform).toBe(`translateX(${OVER}px)`);
   });
 
   test("keyboard focus animates too; focus moving within the pill does not restart it; leaving cancels", () => {
@@ -225,7 +240,7 @@ describe("the marquee (Web Animations API, literal px keyframes)", () => {
     ROOM = 200;
     act(() => { window.dispatchEvent(new Event("resize")); });
     expect(calls[0].cancel).toHaveBeenCalled();
-    expect(calls.at(-1)!.keyframes[2].textIndent).toBe(`${-(LONG.length * CHAR_W - 200)}px`);
+    expect(calls.at(-1)!.keyframes[2].transform).toBe(`translateX(${-(LONG.length * CHAR_W - 200)}px)`);
   });
 
   test("unmount cancels a running animation", () => {

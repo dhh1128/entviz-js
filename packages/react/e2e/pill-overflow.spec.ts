@@ -11,7 +11,7 @@ const CESR = "DKxy2sgzfplyr_tgwIxS19f2OchFHtLwPWD3v4oYimBx";
 const LONG = "rosa-iqbal-claims-adjuster-northgate-mutual";
 
 const label = (page: Page) => page.locator(".entviz-pill__label");
-const running = (page: Page) => label(page).evaluate((e) => e.getAnimations().length);
+const running = (page: Page) => label(page).evaluate((e) => e.getAnimations({ subtree: true }).length);
 const body = (page: Page) => page.locator(".entviz-pill__body");
 
 async function right(page: Page, sel: string): Promise<number> {
@@ -58,7 +58,7 @@ test.describe("pill label overflow", () => {
     expect(seen.size).toBeGreaterThanOrEqual(5);
     await page.mouse.move(0, 0);
     await expect.poll(() => running(page)).toBe(0);
-    expect(await el.evaluate((e) => getComputedStyle(e).textIndent)).toBe("0px");
+    expect(await el.evaluate((e) => getComputedStyle(e.querySelector(".entviz-pill__label-text")!).transform)).toBe("none");
   });
 
   test("the scroll reaches the end: the last character is shown", async ({ page }) => {

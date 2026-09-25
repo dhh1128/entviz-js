@@ -246,17 +246,21 @@ Entviz-JS Port = goal:
         reduced-motion state must be measured as a single line, else it reads as fitting,
         unwraps, and oscillates; measure() forces nowrap inline for the read, so that rule
         must never carry !important.
-        AMENDED 2026-09-25 (v0.18.2). (1) The marquee is a Web Animations API animation with
-        LITERAL px keyframes, started/stopped from the wrap's hover and focus handlers. The
-        v0.18.1 CSS @keyframes ended at calc(-1 * var(--entviz-pill-label-overflow)); owner
-        saw it in Brave (Chromium) run DISCRETELY — no intermediate frames, one jump to the
-        end mid-sweep — while headless Chromium interpolated it, so the e2e suite passed.
-        Cause not pinned down beyond "var() in the keyframe"; removing var() removes the
-        dependency. The e2e test now samples rendered positions and requires in-between
-        values, but it could not have caught the Brave case and does not prove the fix
-        there. (2) New prop textOverflow: "ellipsis" (default) | "clip". Owner: in arcviz the
-        ellipsis makes things worse and a plain cut reads better; it applies to the label
-        and to type/role text.
+        AMENDED 2026-09-25 (v0.18.2). (1) The marquee animates TRANSFORM (translateX) on an
+        inner text span via the Web Animations API, started/stopped from the wrap's hover and
+        focus handlers; the span is inline at rest (so the ellipsis works) and inline-block
+        only while moving. v0.18.1 animated the label's text-indent (CSS @keyframes with a
+        var() end value, then briefly WAAPI with literal px). In Brave 147 (Chromium) that
+        moved the text in LAYOUT without repainting it — a 1px shimmer, then one jump when
+        something else forced a repaint — while headless Chromium 149 painted every frame.
+        Established by a diagnostic log (e2e.html `diag`) from the owner's browser: layout
+        position moved smoothly 0 → -159px with one animation start, yet the screen did not.
+        The var() theory was tested and was WRONG. A composited transform fixed it (owner
+        confirmed in Brave). Lesson: the e2e suite's headless engine cannot catch paint
+        faults; screenshots force a full repaint and so hide them too. The label also sets
+        text-align: start (its <button> ancestor centres text). (2) New prop textOverflow:
+        "ellipsis" (default) | "clip". Owner: in arcviz the ellipsis makes things worse and
+        a plain cut reads better; it applies to the label and to type/role text.
       status: drafted
 
     Pill vertical density = decision:
