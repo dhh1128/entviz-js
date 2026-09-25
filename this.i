@@ -209,7 +209,44 @@ Entviz-JS Port = goal:
             Accepted tradeoff: the "Find other occurrences…" label ships English-only with a
             call-site fallback; translating it across the CATALOG locales is a follow-up
             (~74sc). React chrome only — the closed SVG artifact is untouched (SSOT boundary).
+            AMENDED 2026-09-25 (owner): locate is ALSO an item in the collapsed pill's ⋮ menu,
+            after "View visualization", when onLocate is set and showLocateAffordance is not
+            false. Same hook, same `locate` event, same collapse; the popover button stays.
+            Reason: reaching it took two clicks through a visualization it never needed. This
+            does not move locate across the seam — it asserts no equality, so it may sit beside
+            copy. It is NOT a precedent for Compare, which stays popover-only because it is the
+            verification path and must route through the expanded entviz.
           status: drafted
+
+    Long labels truncate, then scroll on hover; the mnemonic is fitted, never cut = decision:
+      id: k7pq2mzv
+      why: >
+        Driving consumer: arcviz puts host COIA aliases (e.g. "rosa-iqbal-claims-adjuster-
+        northgate-mutual") in the label slot, and on 2026-09-24 pills ran up to 206 px past
+        their card. Owner, 2026-09-24/25: declare a max size, let the text overflow, and
+        scroll it on hover so all of it can be read. So inside `maxWidth` ONLY the label
+        shrinks (min-width 0, text-overflow: ellipsis); the leading cap, kebab and role icon
+        are flex: 0 0 auto and survive any width, and type/role text yields before the
+        label (§3.4). The wrap defaults to max-width: 100%, so a percentage maxWidth resolves
+        against the host container. A label is truncated only when measured so
+        (scrollWidth > clientWidth, re-measured on window resize and by a ResizeObserver);
+        then hover or keyboard focus scrolls it end to end and back via an animated
+        text-indent (direction-agnostic, so RTL works unchanged), and the full label joins
+        the tooltip above the value preview. Under prefers-reduced-motion nothing moves: the
+        tooltip carries it for pointer users and focus wraps the label in place for keyboard
+        users. The accessible name always holds the full label. Showing all of a label
+        reopens nothing in §14: it is first-party host text, not value-derived. THE
+        MNEMONIC IS DIFFERENT: it is value-derived, and a cut mnemonic would show only its
+        first cell — the short, grindable head teaser §3.3 forbids. So it is never truncated
+        and never scrolled; it is FITTED: full size, else 85% font size (owner, 2026-09-25),
+        else dropped so the type text takes the slot. Nothing partial of it is ever shown.
+        Rejected: a JS scrollLeft animation (needs a timer per pill, and a scroll position
+        survives the pointer leaving); ellipsizing the mnemonic (the §3.3 teaser); scrolling
+        the mnemonic (the same teaser, shown in motion). Measurement caveat: the wrapped
+        reduced-motion state must be measured as a single line, else it reads as fitting,
+        unwraps, and oscillates; measure() forces nowrap inline for the read, so that rule
+        must never carry !important.
+      status: drafted
 
     Pill vertical density = decision:
       id: yja5x6pf

@@ -32,12 +32,8 @@ controls (font-size / aspect-ratio); it only reserves the architecture for them.
    - **The pill affords *locate / expand / copy*. No equality decision can be
      made from it.** Verification physically routes through expansion to the full
      entviz, where the discrete channels live.
-   - *Locate* is realized by the optional `onLocate` hook plus the in-popover
-     **"Find other occurrences…"** action: a host-implemented, in-corpus
-     recognition move ("where else does this value appear *here*?"), never an
-     equality claim. Its verification sibling is `onCompare` (the
-     reference-requiring compare flow); locate stays firmly on the recognition
-     side of the seam.
+   - *Locate* is realized by the optional `onLocate` hook plus a **"Find other occurrences…"** action, offered both in the popover and in the collapsed pill's ⋮ menu: a host-implemented, in-corpus recognition move ("where else does this value appear *here*?"), never an equality claim. Its verification sibling is `onCompare` (the reference-requiring compare flow); locate stays firmly on the recognition side of the seam.
+   - *Why locate may sit in the ⋮ menu and compare may not.* Locate needs no visualization and asserts no equality, so it belongs beside copy in the collapsed pill. Compare is the verification path: it must route through the expanded entviz, where the discrete channels are, so it stays popover-only. The menu entry is **not** a precedent for putting comparison in the menu.
 
 2. **The entviz is a closed, unmodified artifact** (spec *Closed profile*). The
    profile forbids *any* overlaid content — no logo, caption, watermark, or
@@ -90,8 +86,7 @@ expands on demand.
 - **Role icon** (trailing): a monochrome `currentColor` Lucide glyph. It shows the *type*
   the pill already discloses, never the value — **zero value-identity bits** — and is
   clickable (expands, like the body).
-- **Copy menu** (kebab `⋮`): appears on hover/focus for pointer+keyboard users; the same
-  actions are *always* present in the expanded view, so touch/AT users reach them there (§6).
+- **Menu** (kebab `⋮`): appears on hover/focus for pointer+keyboard users. It offers "View visualization", then "Find other occurrences…" when the host passes `onLocate` (§2.1), then the copy actions. The same actions are *always* present in the expanded view, so touch/AT users reach them there (§6).
 - **Hover** previews the value (§14); **hover** and **focus** draw a configurable outline
   (`--entviz-pill-{hover,focus}-outline`). A host can also set a persistent `highlight` ring.
 - **No note on the pill; no *short* value-char teaser** (§3.2, §3.3).
@@ -132,8 +127,11 @@ value-derived visual (glance-equivalence) — both rejected.
   internally; the line may break before/after it.
 - The chrome text uses `font: inherit` and `currentColor`, so it matches the
   surrounding type and adapts to light/dark.
-- **`maxWidth`** clips overflow; the **type yields/truncates first** (it is
-  always recoverable on expand and in the tooltip).
+- **`maxWidth`** (default `24em`) is the declared maximum. Inside it, only the text shrinks: the leading cap, the ⋮ and the role icon never do, so the type signal survives any width. The **type yields/truncates first** (it is always recoverable on expand and in the tooltip). The wrapper defaults to `max-width: 100%`, so a percentage `maxWidth` resolves against the host's container.
+- **A long host label truncates with an ellipsis** (this.i `k7pq2mzv`). When it is measured as truncated, hover or keyboard focus scrolls it end to end and back, and it returns when the pointer or focus leaves. A label that fits never moves. The full label also joins the tooltip, above the value preview. Under `prefers-reduced-motion` nothing moves: the tooltip carries the label for pointer users, and focus wraps it in place for keyboard users. The accessible name always holds the full label. None of this reopens §14: a label is first-party host text, not value-derived.
+- **The mnemonic is fitted, never cut** (§13). It is value-derived, and a truncated mnemonic would show only its first cell, which is the short grindable teaser §3.3 forbids. So it never ellipsizes and never scrolls. It shows at full size if it fits, else at 85% font size, else it is dropped and the type text takes the slot.
+
+  *Changed 2026-09-25 (v0.19.0):* before this, `maxWidth` clipped the whole body. A long label was cut mid-character with no ellipsis, the trailing role icon was clipped first, and the rest of the label could not be read short of expanding.
 
 ### 3.5 Interaction
 
@@ -322,6 +320,8 @@ open), and consider `vi`. English is the fallback for any unmatched tag.
 | Decision | Grounding |
 |---|---|
 | Wild pill affords locate/expand/copy only; no equality decision | recognition ≠ verification (paper §2.3, §5.1) |
+| Locate in the ⋮ menu; compare popover-only | locate asserts no equality; compare must route through the expanded entviz (§2.1) |
+| Mnemonic fitted (85%, else dropped), never truncated or scrolled | a cut mnemonic is the short grindable teaser (§3.3, §3.4) |
 | No SHORT truncated value-char teaser inline | prefix/suffix grinding (threat-model T1/T6) — a full-value hover preview is not grindable (§14) |
 | No value-derived visual in the WILD posture; leading cap empty | glance-equivalence; zero identity bits. The corpus posture opts in, gated (§13) |
 | No note on the pill | bound false-reassurance vector (threat-model *User note*) |
@@ -376,6 +376,7 @@ set into **value-derived recognition channels** that make recurrence scannable.
   `DKxy…19f2…imBx`), where a >512-bit input's middle is a genuine fingerprint-middle cell.
   The `…` is honest — the omitted middle cells are all present on expand. It fills the pill's
   label slot (in monospace) when enabled and no explicit `label` is set; explicit `label` wins.
+  When space is short it is fitted rather than truncated: 85% font size, else dropped for the type text (§3.4).
 - **Channel 2 — the auto-color tint (`tgowi7go`).** `autoColorIndex(value)` (core) hashes
   the value's fingerprint (its *last* byte — a different slice from the mnemonic's, so the
   channels are semi-independent) into a 16-hue `AUTO_COLOR_PALETTE`. The pill paints it as a

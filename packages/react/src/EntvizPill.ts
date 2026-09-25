@@ -139,6 +139,13 @@ export interface EntvizPillProps {
 // cap the character count rather than measure the viewport.
 const VALUE_PREVIEW_CHARS = 100;
 
+/** How long one sweep of a truncated label's hover marquee takes, in seconds. The label
+ *  moves during the middle 70% of each sweep (the ends hold so the reader can settle), at
+ *  about 40 px/s — slow enough to read. A 2 s floor keeps a short scroll from twitching. */
+export function marqueeSeconds(overflowPx: number): number {
+  return Math.max(2, Math.round((overflowPx / 40 / 0.7) * 10) / 10);
+}
+
 /** The unit word in the "Copied value · N <unit>" confirmation. The pill's type is
  *  the bare entropy category (e.g. "hex"), so hex is an exact match. */
 export function copyUnit(type: string | null): string {
@@ -461,7 +468,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // ITS corpus, emit the notify-only firehose event, then hand control back by collapsing
   // (the host now owns the reveal — highlight/scroll — in its own document). Recognition,
   // not a verdict; un-gated by the trust posture, like copy/compare.
-  const doLocate = () => { onLocate?.(); emit({ type: "locate" }); collapse(); };
+  const doLocate = () => { setMenuOpen(false); onLocate?.(); emit({ type: "locate" }); collapse(); };
 
   const doCopy = async (kind: CopyKind) => {
     setMenuOpen(false);
@@ -496,10 +503,16 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
     () => (gate.mnemonic && channels ? mnemonic(channels.cells, sizeBits) : null),
     [gate.mnemonic, channels, sizeBits],
   );
+  // The mnemonic is never truncated and never scrolled (k7pq2mzv): a cut mnemonic would
+  // show only its first cell, which is the short grindable teaser §3.3 forbids. So it is
+  // fitted instead — full size (0), else 85% (1), else dropped (2) so the type text takes
+  // the slot. The layout effect below steps the level; a resize starts it over.
+  const [mnFit, setMnFit] = useState<0 | 1 | 2>(0);
   // The label slot shows explicit host text when given, else the mnemonic when the
-  // corpus posture enabled it — explicit `label` wins (host text is more meaningful).
-  const shownLabel = label ?? autoMnemonic;
-  const labelIsMnemonic = !label && !!autoMnemonic;
+  // corpus posture enabled it and it fits — explicit `label` wins (host text is more
+  // meaningful).
+  const labelIsMnemonic = !label && !!autoMnemonic && mnFit < 2;
+  const shownLabel = label ?? (labelIsMnemonic ? autoMnemonic : null);
   // autoCombo shows the type text ONLY when there's no label/mnemonic in the slot — so a
   // pill is never fully empty (it falls back to "cesr key"), but never doubles up either.
   const showTypeText = typeSignal === "text" || (typeSignal === "autoCombo" && !shownLabel);
@@ -516,6 +529,66 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // visualization" hint is dropped — the pointer cursor already signals clickability.
   const valuePreview = value.length > VALUE_PREVIEW_CHARS ? value.slice(0, VALUE_PREVIEW_CHARS) + "…" : value;
 
+  // --- label overflow (k7pq2mzv) ---
+  // A host label longer than the room the pill gets truncates with an ellipsis; the cap,
+  // kebab and role glyph never shrink. `labelOverflow` is how many px are hidden (0 when
+  // it fits). It drives the hover/focus marquee (PILL_CSS) and puts the full label in the
+  // tooltip. The label is host text, not value-derived, so showing all of it reopens
+  // nothing in §14. Measured, not guessed: scrollWidth (natural) against clientWidth.
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const bodyRef = useRef<HTMLSpanElement>(null);
+  const [labelOverflow, setLabelOverflow] = useState(0);
+  // Parent width when the mnemonic last stepped down; only more room than that resets it.
+  const stepWidth = useRef(0);
+  // Only called while mounted (layout effect, listeners removed on unmount), so the wrap
+  // and its parent exist.
+  const parentWidth = () => wrapRef.current!.parentElement!.getBoundingClientRect().width;
+  const measure = () => {
+    const el = labelRef.current;
+    // Measure the single-line width even while the reduced-motion focus rule has wrapped
+    // the label; otherwise a wrapped label reads as fitting, loses data-truncated, and
+    // unwraps, and the two states alternate.
+    let over = 0;
+    if (el) {
+      const ws = el.style.whiteSpace;
+      el.style.whiteSpace = "nowrap";
+      over = el.scrollWidth - el.clientWidth;
+      el.style.whiteSpace = ws;
+    }
+    if (labelIsMnemonic) {
+      setLabelOverflow(0);
+      if (over > 0.5) {
+        stepWidth.current = parentWidth();
+        setMnFit((f) => (f === 0 ? 1 : 2));
+      }
+    } else setLabelOverflow(over > 0.5 ? over : 0);
+  };
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+  // A new mnemonic or a new maxWidth starts the fit over.
+  useLayoutEffect(() => { setMnFit(0); }, [autoMnemonic, maxWidth]);
+  useLayoutEffect(() => { measureRef.current(); }, [shownLabel, labelIsMnemonic, mnFit, maxWidth, typeSignal]);
+  useEffect(() => {
+    // A window resize can grant more room, so the mnemonic's fit starts over (the layout
+    // effect re-steps before paint). A ResizeObserver catches a container that changes
+    // without the window (a resizable pane); to avoid a feedback loop with a parent that
+    // shrink-wraps the pill, it resets the fit only when the parent grew past the width
+    // at which the mnemonic last stepped down.
+    const onResize = () => { setMnFit(0); measureRef.current(); };
+    window.addEventListener("resize", onResize);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        if (parentWidth() > stepWidth.current + 1) setMnFit(0);
+        measureRef.current();
+      });
+      ro.observe(bodyRef.current!);
+      ro.observe(wrapRef.current!.parentElement!);
+    }
+    return () => { window.removeEventListener("resize", onResize); ro?.disconnect(); };
+  }, []);
+  const labelTruncated = !labelIsMnemonic && labelOverflow > 0;
+
   // Type is the trusted, derived channel — the BARE entropy type only. The
   // "+hash" caveat (>512-bit inputs) is a VISUALIZATION note, not a pill
   // concern, so it never appears here. `label` is first-party host text (or the
@@ -524,8 +597,14 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const ariaText = shownParts.length ? shownParts.join(", ") : (type ?? "unrenderable");
   const ariaLabel = fmt(m.ariaView, { type: ariaText });
 
-  const ACTIONS: [CopyKind | "view", string, () => void][] = [
+  // Locate (lc4ktz6n) is also offered straight from the ⋮ menu: it is a recognition act
+  // that needs no visualization, so it may sit beside copy. Compare never does — it is the
+  // verification path and must route through the expanded entviz (§2.1).
+  const locateAvailable = !!onLocate && (showLocateAffordance ?? true);
+  const locateLabel = m.locateAction ?? "Find other occurrences…";
+  const ACTIONS: [CopyKind | "view" | "locate", string, () => void][] = [
     ["view", m.view, openExpand],
+    ...(locateAvailable ? [["locate", locateLabel, doLocate] as ["locate", string, () => void]] : []),
     ["value", m.copyValue, () => doCopy("value")],
     ["comparison", m.copyComparison, () => doCopy("comparison")],
     ["image", m.copyImage, () => doCopy("image")],
@@ -547,7 +626,6 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // Locate is a lateral RECOGNITION action ("where else is this in the corpus?"), not a
   // step in the Cite·Visualize·Compare progression — so it's a footer action in the
   // Visualize popover, not a rail step. Offered only when the host opts in via onLocate.
-  const locateAvailable = !!onLocate && (showLocateAffordance ?? true);
   const activeStep = comparing ? "compare" : "visualize";
   const railSteps: [string, string][] = compareAvailable
     ? [["cite", m.stepCite], ["visualize", m.stepVisualize], ["compare", m.stepCompare]]
@@ -605,17 +683,40 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   //  - `label` = first-party host text (or the gated mnemonic).
   // Always rendered — even with no visible text — so the pill always has a text
   // baseline to sit on the surrounding line.
+  // Every text item may shrink (minWidth 0) so the pill honours maxWidth; the type and
+  // role yield first (§3.4), the host label truncates with an ellipsis, and the mnemonic
+  // is clipped only for as long as it takes the fit effect to step it down.
   const textBlock = h(
     "span",
-    { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", alignItems: "baseline" } },
+    { style: { display: "inline-flex", gap: "0.4em", whiteSpace: "nowrap", alignItems: "baseline", minWidth: 0, overflow: "hidden" } },
     showTypeText && type
-      ? h("span", { key: "type", style: { opacity: 0.62 } }, type)
+      ? h("span", { key: "type", className: "entviz-pill__type", style: { opacity: 0.62, ...yieldFirstStyle } }, type)
       : null,
     showTypeText && type && role
-      ? h("span", { key: "role", style: pillRoleStyle }, role)
+      ? h("span", { key: "role", style: { ...pillRoleStyle, ...yieldFirstStyle } }, role)
       : null,
     shownLabel
-      ? h("span", { key: "label", style: labelIsMnemonic ? mnemonicStyle : undefined }, shownLabel)
+      ? h(
+          "span",
+          {
+            key: "label",
+            ref: labelRef,
+            className: labelIsMnemonic ? "entviz-pill__label entviz-pill__label--mnemonic" : "entviz-pill__label",
+            "data-truncated": labelTruncated ? "" : undefined,
+            style: labelIsMnemonic
+              ? { ...mnemonicStyle, flexShrink: 1, minWidth: 0, overflow: "hidden", fontSize: mnFit === 1 ? "85%" : undefined }
+              : {
+                  flexShrink: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+                  ...(labelTruncated
+                    ? {
+                        "--entviz-pill-label-overflow": `${labelOverflow}px`,
+                        "--entviz-pill-marquee-duration": `${marqueeSeconds(labelOverflow)}s`,
+                      } as CSSProperties
+                    : null),
+                },
+          },
+          shownLabel,
+        )
       : null,
     // Zero-width-space baseline anchor when nothing else is shown (typeSignal icon/none
     // with no label) — without it the pill has no baseline and drops below the line.
@@ -634,7 +735,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       },
       // No "View visualization" hover hint — the pointer cursor already signals
       // clickability. The tooltip previews the value instead (both postures; see above).
-      title: valuePreview,
+      // A truncated label joins the tooltip, above the value, so the whole of it is
+      // readable without motion (the reduced-motion path) or without waiting for the scroll.
+      title: labelTruncated ? `${label}\n${valuePreview}` : valuePreview,
       "aria-label": ariaLabel,
       "aria-expanded": isOpen,
       // outline:none — focus is shown by the pill body's :focus-within outline (below),
@@ -643,6 +746,8 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
         display: "inline-flex", alignItems: "baseline",
         font: "inherit", color: "inherit", background: "none", border: "none",
         padding: 0, margin: 0, cursor: "pointer", maxWidth: "100%", outline: "none",
+        // The flex item that yields when the body hits maxWidth; the kebab and glyph don't.
+        flex: "0 1 auto", minWidth: 0, overflow: "hidden",
       },
     },
     textBlock,
@@ -693,6 +798,7 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   const pillBody = h(
     "span",
     {
+      ref: bodyRef,
       className: "entviz-pill__body",
       style: {
         // position:relative anchors the absolutely-positioned leading colorbar cap.
@@ -752,7 +858,6 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
   // lateral recognition move, not a stage of the verification progression. Offered only
   // in Visualize (never mid-compare, never on an unrenderable pill). The label is
   // English-fallbacked so it ships before the per-locale CATALOG is translated.
-  const locateLabel = m.locateAction ?? "Find other occurrences…";
   const locateButton = locateAvailable
     ? h(
         "button",
@@ -830,7 +935,9 @@ export function EntvizPill(props: EntvizPillProps): ReactNode {
       // "baseline" seats the pill's TEXT on the surrounding line's baseline. This works
       // now that the leading cap (colorbar) is absolutely positioned — it no longer drags
       // the flex baseline down, so the text (first in-flow item) is the anchor.
-      style: { position: "relative", display: "inline-flex", verticalAlign: "baseline", ...style },
+      // maxWidth/minWidth let a percentage maxWidth on the body resolve against the
+      // host's container, so the pill shrinks inside a narrow card instead of spilling.
+      style: { position: "relative", display: "inline-flex", verticalAlign: "baseline", maxWidth: "100%", minWidth: 0, ...style },
       onMouseEnter: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.add("entviz-pill--hover"),
       onMouseLeave: (e: ReactMouseEvent<HTMLSpanElement>) => e.currentTarget.classList.remove("entviz-pill--hover"),
     },
@@ -866,6 +973,20 @@ const PILL_CSS = `
 @keyframes entviz-pill-grow { from { transform: scale(.72); } to { transform: none; } }
 .entviz-pill__pop { animation: entviz-pill-grow .26s cubic-bezier(.2,.85,.25,1); transform-origin: var(--entviz-pill-pop-origin, 50% 50%); }
 @media (prefers-reduced-motion: reduce) { .entviz-pill__pop { animation-duration: 1ms; } }
+@keyframes entviz-pill-marquee {
+  0%, 15% { text-indent: 0; }
+  85%, 100% { text-indent: calc(-1 * var(--entviz-pill-label-overflow, 0px)); }
+}
+.entviz-pill--hover .entviz-pill__label[data-truncated],
+.entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] {
+  text-overflow: clip !important;
+  animation: entviz-pill-marquee var(--entviz-pill-marquee-duration, 4s) ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .entviz-pill--hover .entviz-pill__label[data-truncated],
+  .entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] { animation: none; text-overflow: ellipsis !important; }
+  .entviz-pill__wrap:focus-within .entviz-pill__label[data-truncated] { white-space: normal; overflow-wrap: anywhere; }
+}
 `;
 function useInjectStyles(): void {
   useLayoutEffect(() => {
@@ -883,6 +1004,10 @@ function useInjectStyles(): void {
 // entropy type.
 // The role caption sits at the SAME size as the type and surrounding text — it is
 // distinguished only by color (a lighter ink), never by size or baseline.
+// Type and role text give up their width before the label does (§3.4: the type is always
+// recoverable on expand), and show an ellipsis when cut.
+const yieldFirstStyle: CSSProperties = { flexShrink: 100, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" };
+
 const pillRoleStyle: CSSProperties = {
   opacity: 0.42,
   alignSelf: "center",
